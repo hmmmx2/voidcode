@@ -33,7 +33,26 @@ Combined from both halves. Nothing below is aspirational — where something is 
 | LoRA merge → AWQ quantize → vLLM serve | **NOT COMPLETE.** `llm/outputs/merged_model/` and `awq_model/` are 16 MB each and contain **zero** `.safetensors` shards — config and tokenizer files only. The chain was never finished. Do not claim this capability. |
 | Reward harness (`reward/`, CPU-only) | Built and mutation-tested (the RL half reports 10/10 mutants killed — see `docs/rl/README.md`) |
 | Packing correctness, fault-tolerant resume | Proved on CPU |
-| GRPO loop (P3), parallelism benchmarks (P2b/c), kernels/FP8 (P4) | **Not started.** `docs/rl/METRICS.md` is the ledger and its GPU rows read `NOT MEASURED`, which is accurate rather than pending. |
+| Triton kernel + RMSNorm **correctness tests** | **Pass on GPU** — 31 tests, 0 skipped, 0 failed, on an RTX 5060 Ti (Blackwell, sm_120) under WSL2 with torch 2.11.0+cu128 / triton 3.6.0. See "Running the GPU tests" below. This is a *correctness* result only — the kernel **benchmarks** (P4a) are still NOT BUILT and no throughput number has been measured. |
+| GRPO loop (P3), parallelism benchmarks (P2b/c), kernel/FP8 benchmarks (P4) | **Not started.** `docs/rl/METRICS.md` is the ledger and its GPU rows read `NOT MEASURED`, which is accurate rather than pending. Nothing above changes those rows. |
+
+### Running the GPU tests
+
+`tests/test_kernels.py`, `test_rmsnorm.py`, `test_memory_guard_cuda.py` and the rlimit case in
+`test_limits.py` **skip on Windows** — Triton ships no official Windows build and rlimits are POSIX-only.
+They are not skipping because the GPU is busy. Run them from WSL2:
+
+```bash
+python3 -m venv ~/vc-venv
+~/vc-venv/bin/pip install --index-url https://download.pytorch.org/whl/cu128 torch
+~/vc-venv/bin/pip install pytest numpy pyyaml
+cd "/mnt/c/Users/User/Documents/project X/VOIDCODE"
+~/vc-venv/bin/python -m pytest tests/test_kernels.py tests/test_rmsnorm.py \
+    tests/test_memory_guard_cuda.py tests/test_limits.py -q
+```
+
+The `cu128` index matters: the 5060 Ti is **sm_120**, and an older cu121 wheel installs cleanly and then
+fails at kernel launch. Verify with `torch.cuda.get_device_capability(0)` → `(12, 0)`.
 
 ---
 
