@@ -61,6 +61,36 @@ all links inactive and `topo -m` shows `PIX` - a PCIe switch - so this is PCIe p
 expectation that the top band needed an NVLink bridge was wrong, which is the useful part: no need to
 hunt for bridge-equipped pods.
 
+> ### ⚠ Second Secure run, 2026-09-06 — the interconnect is NOT stable across pods
+>
+> A repeat of this probe on a different `a40_x2_secure` pod (`pispwg70ci8nz2`, CA-MTL-1) did **not**
+> reproduce the interconnect result. Record: `docs/rl/probe-a40_x2_secure.json`.
+>
+> | Metric | First run (above) | 2026-09-06 run |
+> |---|---|---|
+> | GPU topology | **PIX** (PCIe switch) | **PXB** (multiple PCIe bridges) |
+> | NCCL transport | **P2P** | **SHM** |
+> | busbw >=256 MiB | **22.11 GB/s** | **7.72 GB/s** |
+> | Default-transport all-reduce | completed | **DEADLOCKS** (exit 124) |
+> | Route | ZeRO-2 and ZeRO-3 both viable | **ZeRO-2 / FSDP2 `SHARD_GRAD_OP` only** |
+> | BF16 matmul | 107.18 TFLOP/s | 106.05 TFLOP/s |
+> | `ncu` present | no | **yes** (`nsys` still absent) |
+>
+> **The BF16 figures agree to ~1%, so both are genuine A40 Secure pods.** What differs is the fabric.
+> On the 2026-09-06 pod the default transport does not merely run slowly — it **hangs**, and only
+> completes with `NCCL_P2P_DISABLE=1`, at which point NCCL stages through shared memory. This was
+> reproduced on **two** independent pods that day (one of which RunPod separately flagged as faulty
+> and which measured a further-degraded 2.90 GB/s — quarantined in `p0-evidence/`).
+>
+> **Consequence: the "no need to hunt for bridge-equipped pods" conclusion above is too strong.** The
+> tier does not determine the fabric; the individual pod does. `make rl-probe` must be treated as a
+> per-pod gate, not a once-per-tier measurement, and P2b's achievable table depends on which pod it
+> lands on. A pod that fails the gate cannot produce the ZeRO-3 / `FULL_SHARD` rows at all.
+>
+> Diagnostic that separates the two cases: run `all_reduce_perf` under `timeout`. Exit **124** means a
+> deadlocked collective, not a slow one — NCCL busy-waits, so a hung collective shows **100% GPU
+> utilisation** and is indistinguishable from healthy work on `nvidia-smi`.
+
 **No Nsight tooling.** `ncu` and `nsys` are both absent, so kernel work cannot report occupancy or a
 roofline from this pod - only wall clock, memory and numerics. `torch.profiler` does return CUDA
 events. The local box is the control here: it has `ncu` and a working `torch.profiler`.

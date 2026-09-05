@@ -285,6 +285,27 @@ The routing table is in `training/platform_probe.py` and is applied to NCCL busb
 **Measured on Secure: 22.11 GB/s, transport P2P.** That clears the top band, so **ZeRO-2, ZeRO-3,
 FSDP2 `SHARD_GRAD_OP` and `FULL_SHARD` are all viable** and P2b runs the full five-row table.
 
+> **Reopened 2026-09-06 — the route is per-pod, not per-tier.**
+>
+> A second `a40_x2_secure` probe (`pispwg70ci8nz2`, CA-MTL-1, record
+> `docs/rl/probe-a40_x2_secure.json`) measured **7.72 GB/s over SHM**, not 22.11 over P2P. On that
+> pod the default-transport all-reduce **deadlocks** (`timeout` → exit 124) and completes only under
+> `NCCL_P2P_DISABLE=1`. Topology was `PXB`, not `PIX`. Reproduced on two independent pods the same
+> day. BF16 matmul agreed with the first run to ~1% (106.05 vs 107.18), so both are real A40s —
+> the fabric is what differs.
+>
+> **7.72 GB/s falls in the middle band → ZeRO-2 / FSDP2 `SHARD_GRAD_OP` only, high gradient
+> accumulation. The ZeRO-3 and `FULL_SHARD` rows are unobtainable on such a pod.**
+>
+> So this decision cannot be closed once for the tier. **`make rl-probe` is a per-pod gate**: run it
+> at the start of every P2b session and let the measured band decide which rows that session can
+> produce. A pod that hangs on the default transport must not be used for P2b at all — the numbers
+> would describe a fallback path, not a parallelism strategy.
+>
+> The cheap diagnostic: run `all_reduce_perf` under `timeout`. **Exit 124 means deadlock, not
+> slowness.** NCCL busy-waits, so a hung collective sits at 100% GPU utilisation and looks healthy
+> on `nvidia-smi` — this cost ~10 minutes of a paid session before it was recognised.
+
 It cleared it **without NVLink**. `nvidia-smi nvlink -s` reported all links inactive and `topo -m`
 showed `PIX`, a PCIe switch, so this is PCIe peer-to-peer. D-009 argued the A40's NVLink bridge might
 be what made the top band reachable; the measurement says PCIe P2P on this host is enough on its

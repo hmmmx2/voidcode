@@ -7,9 +7,21 @@ measured on a host that RunPod flagged as faulty *during the session*:
 > the root cause and apologize for any inconvenience. We would recommend backing up your data and
 > creating a new pod in the meantime."
 
-That notice arrived **after** the collective failure below, and is the most likely explanation for
-it. A number measured on hardware the vendor has declared broken is not platform truth about the
-A40 — it is a measurement of a broken machine.
+That notice arrived **after** the collective failure below.
+
+> ## Correction, same day — the fault explains the *bandwidth*, not the *hang*
+>
+> The P2P deadlock **reproduced on a second, healthy Secure pod** (`pispwg70ci8nz2`) a few hours
+> later: identical `PXB` topology, identical `exit 124` on the default transport, and it likewise
+> only completed with `NCCL_P2P_DISABLE=1`. So the hang is **not** attributable to the faulty host —
+> it is a property of this pod topology and reproduces across machines.
+>
+> What the fault *does* explain is the bandwidth. The faulty host managed **2.90 GB/s** over SHM;
+> the healthy one managed **7.72 GB/s** over the same fallback transport — 2.6× better. Quarantining
+> the 2.90 figure was therefore correct, but for a narrower reason than first written.
+>
+> The healthy pod's run is the one that counts and is recorded in `../probe-a40_x2_secure.json`.
+> Everything below stands as the record of the faulty machine.
 
 ## What was observed
 
