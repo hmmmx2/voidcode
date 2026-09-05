@@ -76,12 +76,33 @@ def main() -> None:
 
     print("[1/4] Loading base model in fp16 (no BnB — full weights needed for merge)...")
     print("      This downloads ~14 GB from HuggingFace on first run.")
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL_ID,
-        dtype=torch.float16,        # transformers >=4.52 prefers `dtype` over `torch_dtype`
-        device_map=DEVICE_MAP,
-        trust_remote_code=True,
-    )
+
+    # The fp16 kwarg was renamed, and this line previously hard-coded the NEW name with the
+    # comment "transformers >=4.52 prefers `dtype` over `torch_dtype`". That is wrong: 4.52.4
+    # raises `TypeError: Qwen2ForCausalLM.__init__() got an unexpected keyword argument 'dtype'`
+    # — the alias landed later in the 4.x line. It cost a paid GPU session to find, because the
+    # failure only appears AFTER the ~14 GB base-model download.
+    #
+    # Pinning either name breaks the other half of the version range, and the range is not
+    # optional: llmcompressor 0.6.0.1 (needed by quantize_awq.py) pins transformers to 4.52.4,
+    # while transformers 5.x removed `torch_dtype`.
+    #
+    # Signature inspection does not settle it — `from_pretrained` takes **kwargs, so the name is
+    # absent from the signature either way. Just try the modern name and fall back. The retry is
+    # cheap: the weights are in the HF cache by the time the TypeError is raised, so only the
+    # (fast) instantiation repeats, not the download.
+    _load = {"device_map": DEVICE_MAP, "trust_remote_code": True}
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_ID, dtype=torch.float16, **_load
+        )
+    except TypeError as exc:
+        if "dtype" not in str(exc):
+            raise
+        print("      (this transformers predates the `dtype` kwarg; using `torch_dtype`)")
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_ID, torch_dtype=torch.float16, **_load
+        )
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_ID, trust_remote_code=True)
     print(f"      Base model loaded ({sum(p.numel() for p in model.parameters()) / 1e9:.1f}B parameters)")
 

@@ -140,12 +140,22 @@ def main() -> None:
 
     tokenizer = AutoTokenizer.from_pretrained(MERGED_PATH, trust_remote_code=True)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        MERGED_PATH,
-        dtype=torch.float16,        # transformers >=4.52 prefers `dtype` over `torch_dtype`
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    # Same kwarg-rename trap as merge_lora.py, and it bites harder here: the failure lands only
+    # after the full ~14 GB model has been read off disk. `dtype` is the 5.x / late-4.x name;
+    # `torch_dtype` is the one 4.52.4 accepts — and 4.52.4 is exactly what llmcompressor 0.6.0.1
+    # pins, so this script cannot assume the modern name. Try the new name, fall back to the old.
+    _load = {"device_map": "auto", "trust_remote_code": True}
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            MERGED_PATH, dtype=torch.float16, **_load
+        )
+    except TypeError as exc:
+        if "dtype" not in str(exc):
+            raise
+        print("      (this transformers predates the `dtype` kwarg; using `torch_dtype`)")
+        model = AutoModelForCausalLM.from_pretrained(
+            MERGED_PATH, torch_dtype=torch.float16, **_load
+        )
     print("      Model loaded.")
 
     # ── Build calibration dataset ────────────────────────────────────────────
