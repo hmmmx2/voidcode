@@ -117,8 +117,15 @@ llm/data/*.jsonl
 # failure a second time, in the fix for the first one. `test_every_gold_file_is_tracked_by_git`
 # checks this by asking git rather than by reading this pattern.
 !llm/data/eval_*gold*.jsonl
-llm/outputs/awq_model/
-llm/outputs/merged_model/
+# Ignore the CONTENTS, not the directories themselves. Git cannot un-ignore a file inside an
+# ignored directory, and these two dirs each hold an INCOMPLETE.md explaining that the weights
+# live off-repo, how to regenerate them, and the transformers/llmcompressor version trap that
+# left them empty for months. That explanation is documentation and belongs in git; the 5-15 GB
+# of weights beside it does not. Ignoring the directory hid the explanation too.
+llm/outputs/awq_model/*
+!llm/outputs/awq_model/INCOMPLETE.md
+llm/outputs/merged_model/*
+!llm/outputs/merged_model/INCOMPLETE.md
 *.bak
 
 # Derived: cached out-of-fold IRT predictions from features/export_calibration.py.
