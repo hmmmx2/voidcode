@@ -43,3 +43,12 @@ base-model download — which is exactly why this directory sat empty for months
 
 **Also fixed:** `.gitignore` used to ignore this directory wholesale, so this explanation was itself
 untracked. It now ignores the contents and keeps the marker.
+
+## Serving
+
+**vLLM serves this artifact** — demonstrated 2026-09-06: loaded natively as `compressed-tensors`
+W4A16 (no conversion step) and generated **157.1 tok/s** across a 3-prompt batch, all answers
+correct. The working stack is **vllm 0.11.0 + torch 2.8.0+cu128 + transformers<5**, and all three
+pins matter: a bare `pip install vllm` takes torch cu130, which the CUDA-12.8 driver refuses, and
+vllm 0.11.0 needs the transformers 4.x tokenizer API. See
+[`docs/rl/model-chain-evidence/vllm_serving.md`](../../../docs/rl/model-chain-evidence/vllm_serving.md).
