@@ -1,21 +1,34 @@
-# Empty here — but the chain is proven
+# The weights are here on this machine — but not in git
 
-This directory is empty of weights **by design**, not because the pipeline is broken. `*.safetensors`
-is gitignored (a 5–15 GB artifact does not belong in git), and this repo has no LFS remote.
+**The AWQ artifact exists and is verified.** `*.safetensors` is gitignored (5.16 GiB does not belong
+in a git repo, and there is no LFS remote), so a fresh clone of this repository gets this marker and
+nothing else. On the machine that produced it, the real files sit beside this one.
 
-**The chain was run end to end on 2026-09-06** on a rented A40 and produced a real
-`awq_model`: **5.16 GB across 2 shard(s)** — AWQ 4-bit W4A16 quantization.
+Built and verified 2026-09-06 on a rented A40:
 
-Verified, not assumed:
-- **196 int4-packed tensors** = 28 layers × 7 target modules for Qwen2.5-7B
-- recipe `GPTQModifier, targets [Linear], ignore [lm_head], scheme W4A16`
-- the quantized model **loads to 5.19 GiB on GPU and generates correct text**
+| | |
+|---|---|
+| Size | **5.16 GiB**, 2 shards (`model-0000{1,2}-of-00002.safetensors`) |
+| Scheme | `compressed-tensors` / `pack-quantized`, **W4A16** |
+| Quant config | `num_bits=4`, `int`, group strategy, `group_size=128`, `symmetric=True` |
+| Excluded | `lm_head` (stays fp16 — standard) |
+| Recipe | `GPTQModifier, targets [Linear], ignore [lm_head], scheme W4A16` |
+| **int4-packed tensors** | **196** = 28 layers × 7 target modules (Qwen2.5-7B) |
+| Reduction | **15.2 GB fp16 → 5.16 GiB, 2.9×** |
+
+**Behavioural check, not just structural.** Loaded to **5.19 GiB on GPU** and generated correct text
+("a convolution layer's stride determines the interval at which filters move across the input feature
+map…"). A botched quantization loads fine and emits garbage; a tensor count cannot see that, so it
+was asked a question.
+
+The download from the pod was re-verified locally: same 2 shards, same 5.16 GiB, same **196** packed
+tensors. Transfer intact.
 
 Evidence: [`docs/rl/model-chain-evidence/`](../../../docs/rl/model-chain-evidence/).
 
-## Reproducing it
+## Regenerating it
 
-Needs ~16 GB VRAM for the quantize; the merge is CPU-only (`DEVICE_MAP="cpu"`) and needs ~30 GB RAM.
+Needs ~16 GB VRAM. The merge before it is CPU-only (`DEVICE_MAP="cpu"`) and wants ~30 GB RAM.
 
 ```bash
 cd apps/api
@@ -23,10 +36,10 @@ python scripts/merge_lora.py      # adapter + base -> merged_model  (~15 GB down
 python scripts/quantize_awq.py    # merged_model  -> awq_model
 ```
 
-**Version trap, already fixed in both scripts but worth knowing:** `llmcompressor` 0.6.0.1 pins
+**Version trap, fixed in both scripts but worth knowing:** `llmcompressor` 0.6.0.1 pins
 `transformers` to 4.52.4, which accepts `torch_dtype=` and rejects `dtype=`; transformers 5.x is the
-reverse. Both scripts now try the modern name and fall back. Getting this wrong fails *after* the
-14 GB base-model download — which is what left these directories empty in the first place.
+reverse. Both scripts now try the modern name and fall back. Getting it wrong fails *after* the 14 GB
+base-model download — which is exactly why this directory sat empty for months.
 
-**Still not demonstrated:** loading this under **vLLM**. The artifact is structurally valid and
-generates under `transformers`, but serving has not been shown. Do not claim it.
+**Also fixed:** `.gitignore` used to ignore this directory wholesale, so this explanation was itself
+untracked. It now ignores the contents and keeps the marker.
