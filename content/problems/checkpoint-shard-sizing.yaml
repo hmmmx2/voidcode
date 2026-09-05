@@ -1,0 +1,84 @@
+slug: checkpoint-shard-sizing
+title: Size a sharded checkpoint write
+difficulty: medium
+categories:
+- Systems
+concepts:
+- checkpointing_recovery
+- memory_accounting
+description: 'Input: `n_params_billions bytes_per_param optimizer_states max_shard_gb`.
+
+
+  A checkpoint holds the weights plus `optimizer_states` tensors of the same shape (2 for Adam''s two
+  moments, 0 for plain SGD). Compute the total size in GB and the number of shards needed at `max_shard_gb`
+  each, as `total_gb shards`, with the total rounded to 2 decimal places and shards an integer.
+
+
+  Use 1 GB = 1e9 bytes. Sharding exists because a single multi-gigabyte file is slow to write, impossible
+  to write in parallel, and awkward to resume from — but the count is what tells you whether a save will
+  stall the training loop.'
+order_index: 57
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def shards(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().shards(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def shards(self, tokens):\n        n\
+  \ = float(tokens[0]); bpp = float(tokens[1])\n        states = float(tokens[2]); cap = float(tokens[3])\n\
+  \        total_bytes = n * 1e9 * bpp * (1 + states)\n        gb = total_bytes / 1e9\n        shards\
+  \ = 0 if cap <= 0 else math.ceil(gb / cap)\n        return str(round(gb, 2)) + ' ' + str(int(shards))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 7 2 2 5
+  expected_output: 42.0 9
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 7 2 0 5
+  expected_output: 14.0 3
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 4 2 10
+  expected_output: 12.0 2
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 70 2 2 20
+  expected_output: 420.0 21
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 7 2 2 0
+  expected_output: 42.0 0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0.5 2 2 5
+  expected_output: 3.0 1
+  is_hidden: true
+hints:
+- Total tensors per parameter is 1 + optimizer_states.
+- n_params_billions * 1e9 * bytes_per_param * (1 + states) gives bytes.
+- Shards is a ceiling division, not a floor.
+hint_ladder:
+  level_0: Total tensors per parameter is 1 + optimizer_states.
+  level_1: n_params_billions * 1e9 * bytes_per_param * (1 + states) gives bytes.
+  level_2: Shards is a ceiling division, not a floor.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

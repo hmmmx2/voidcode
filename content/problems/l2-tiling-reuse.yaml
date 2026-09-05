@@ -1,0 +1,88 @@
+slug: l2-tiling-reuse
+title: How much does tiling reduce memory traffic?
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- memory_hierarchy
+- tiled_matmul
+description: 'Input: `n tile`, for an `n x n` by `n x n` matmul.
+
+
+  Untiled, each output element reads a full row and a full column: `2 * n^3` element reads. Tiled with
+  `t x t` blocks, each tile of the output reads `n/t` pairs of tiles, so the traffic is `2 * n^3 / t`
+  element reads.
+
+
+  Return `untiled tiled reduction_factor`, the first two as integers and the factor rounded to 1 decimal
+  place.
+
+
+  The reduction factor IS the tile size, which is the cleanest statement of why tiling works: every element
+  loaded into shared memory is reused `t` times before it is evicted. Return `-1 -1 -1.0` when `tile`
+  does not divide `n`.'
+order_index: 76
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def reuse(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().reuse(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def reuse(self, tokens):\n        n = int(tokens[0]);\
+  \ t = int(tokens[1])\n        if n <= 0 or t <= 0 or n % t != 0:\n            return '-1 -1 -1.0'\n\
+  \        un = 2 * n ** 3\n        ti = 2 * n ** 3 // t\n        return str(un) + ' ' + str(ti) + ' '\
+  \ + str(round(un / ti, 1))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1024 32
+  expected_output: 2147483648 67108864 32.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1024 16
+  expected_output: 2147483648 134217728 16.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1024 33
+  expected_output: -1 -1 -1.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 64 64
+  expected_output: 524288 8192 64.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 8
+  expected_output: -1 -1 -1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 256 8
+  expected_output: 33554432 4194304 8.0
+  is_hidden: true
+hints:
+- Untiled traffic is 2n^3 regardless of anything else.
+- Tiled traffic divides by t exactly -- the reuse factor is the tile width.
+- Require n % tile == 0 so the arithmetic stays exact.
+hint_ladder:
+  level_0: Untiled traffic is 2n^3 regardless of anything else.
+  level_1: Tiled traffic divides by t exactly -- the reuse factor is the tile width.
+  level_2: Require n % tile == 0 so the arithmetic stays exact.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,137 @@
+slug: iq-implement-auc
+title: Compute ROC-AUC on a whiteboard
+difficulty: medium
+categories:
+- ML
+concepts:
+- loss_functions
+description: 'Given `y_true` (0/1 labels) and `y_score` (any real-valued scores, higher meaning more positive),
+  return the ROC-AUC.
+
+
+  **Do not build the curve.** Do not sweep thresholds. There is a closed form that needs one sort, and
+  finding it is the question.
+
+
+  AUC is the probability that a randomly chosen positive scores above a randomly chosen negative, with
+  ties counting as half. Written that way it is a rank statistic, and the Mann-Whitney U identity gives
+  it to you directly:
+
+
+  `AUC = (sum of ranks of positives - n_pos(n_pos + 1) / 2) / (n_pos * n_neg)`
+
+
+  **Ties matter.** Equal scores must share the average of the ranks they span, or every tied model is
+  scored wrongly. Constant-score predictions should give exactly 0.5, and that is one of the tests.
+
+
+  Return the value rounded to 6 decimal places. If either class is absent, AUC is undefined — return `None`.'
+inferred_concepts: true
+review_needed: true
+order_index: 1
+examples:
+- input: y_true = [0, 0, 1, 1], y_score = [0.1, 0.4, 0.35, 0.8]
+  output: '0.75'
+  explanation: Three of the four positive/negative pairs are ordered correctly; (0.4, 0.35) is not. 3/4
+    = 0.75.
+- input: y_true = [0, 1], y_score = [0.5, 0.5]
+  output: '0.5'
+  explanation: A tie counts as half, so a constant score gives 0.5.
+constraints:
+- 1 <= len(y_true) == len(y_score) <= 10^4
+- y_true[i] is 0 or 1
+- Return None if either class is missing.
+- Ties share the average rank.
+- Round to 6 decimal places.
+- Standard library only -- no numpy, no sklearn.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: y_true
+    value: '[0, 0, 1, 1]'
+  - name: y_score
+    value: '[0.1, 0.4, 0.35, 0.8]'
+  stdin: '[0, 0, 1, 1]
+
+    [0.1, 0.4, 0.35, 0.8]'
+  expected_output: '0.75'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: y_true
+    value: '[0, 1]'
+  - name: y_score
+    value: '[0.5, 0.5]'
+  stdin: '[0, 1]
+
+    [0.5, 0.5]'
+  expected_output: '0.5'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: y_true
+    value: '[0, 0, 1, 1]'
+  - name: y_score
+    value: '[0.1, 0.2, 0.8, 0.9]'
+  stdin: '[0, 0, 1, 1]
+
+    [0.1, 0.2, 0.8, 0.9]'
+  expected_output: '1.0'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: y_true
+    value: '[1, 0, 1, 0, 1, 0]'
+  - name: y_score
+    value: '[0.5, 0.5, 0.5, 0.2, 0.9, 0.9]'
+  stdin: '[1, 0, 1, 0, 1, 0]
+
+    [0.5, 0.5, 0.5, 0.2, 0.9, 0.9]'
+  expected_output: '0.611111'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: y_true
+    value: '[1, 1, 1]'
+  - name: y_score
+    value: '[0.2, 0.5, 0.9]'
+  stdin: '[1, 1, 1]
+
+    [0.2, 0.5, 0.9]'
+  expected_output: None
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def roc_auc(self, y_true, y_score):\n        \"\"\"\n \
+    \       :type y_true: List[int]\n        :type y_score: List[float]\n        :rtype: float | None\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    y_true = json.loads(_in[0])
+
+    y_score = json.loads(_in[1])
+
+    _r = Solution().roc_auc(y_true, y_score)
+
+    print(None if _r is None else round(_r, 6))
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def roc_auc(self, y_true, y_score):\n        n = len(y_true)\n\
+  \        n_pos = sum(1 for y in y_true if y == 1)\n        n_neg = n - n_pos\n        if n_pos == 0\
+  \ or n_neg == 0:\n            return None\n\n        # Rank by score, averaging ranks across ties.\n\
+  \        order = sorted(range(n), key=lambda i: y_score[i])\n        ranks = [0.0] * n\n        i =\
+  \ 0\n        while i < n:\n            j = i\n            while j + 1 < n and y_score[order[j + 1]]\
+  \ == y_score[order[i]]:\n                j += 1\n            average = (i + j) / 2.0 + 1.0\n       \
+  \     for k in range(i, j + 1):\n                ranks[order[k]] = average\n            i = j + 1\n\n\
+  \        rank_sum = sum(ranks[i] for i in range(n) if y_true[i] == 1)\n        return (rank_sum - n_pos\
+  \ * (n_pos + 1) / 2.0) / (n_pos * n_neg)\n"

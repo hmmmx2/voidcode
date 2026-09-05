@@ -1,0 +1,83 @@
+slug: bleu-brevity-penalty
+title: The brevity penalty, and the degenerate output it stops
+difficulty: medium
+categories:
+- LLM
+concepts:
+- tokenization
+description: 'Input: `candidate_len reference_len`.
+
+
+  BLEU''s brevity penalty is `1` when the candidate is at least as long as the reference, and `exp(1 -
+  r/c)` otherwise. Return it rounded to 4 decimal places.
+
+
+  Without it, precision-based scoring rewards saying almost nothing: emit a single word you are confident
+  about and precision is 1.0. The penalty is what makes a one-word answer score near zero.
+
+
+  Return `0.0` for a candidate of length 0 — there is nothing to score.'
+order_index: 75
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def bp(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().bp(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def bp(self, tokens):\n        c = float(tokens[0]);\
+  \ r = float(tokens[1])\n        if c <= 0:\n            return 0.0\n        if c >= r:\n           \
+  \ return 1.0\n        return round(math.exp(1 - r / c), 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 10 10
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 5 10
+  expected_output: '0.3679'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 10
+  expected_output: '0.0001'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 20 10
+  expected_output: '1.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 10
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 9 10
+  expected_output: '0.8948'
+  is_hidden: true
+hints:
+- c >= r gives exactly 1.0, with no penalty at all.
+- The penalty is multiplicative on the precision term.
+- It penalises SHORT output only; BLEU has no length ceiling.
+hint_ladder:
+  level_0: c >= r gives exactly 1.0, with no penalty at all.
+  level_1: The penalty is multiplicative on the precision term.
+  level_2: It penalises SHORT output only; BLEU has no length ceiling.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

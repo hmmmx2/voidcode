@@ -1,0 +1,112 @@
+slug: iq-residual-jacobian
+title: Decompose a residual stack's gradient by path length
+difficulty: medium
+categories:
+- DL
+concepts:
+- backpropagation
+description: "A stack of `L` residual blocks computes `x -> x + F_l(x)` at each layer. Treat each block's\
+  \ Jacobian `dF_l/dx` as a scalar `j_l`, so the end-to-end derivative is\n\n```\nprod_{l=1..L} (1 + j_l)\n\
+  ```\n\nExpanding that product gives one term per **subset** of layers — a term that passes through the\
+  \ blocks in the subset and skips the rest via the identity route. Group the terms by subset size:\n\n\
+  ```\nspectrum[k] = sum over all subsets S of size k of  prod_{l in S} j_l\n```\n\nWrite\n\n```\nclass\
+  \ Solution(object):\n    def path_spectrum(self, jacobians):\n        # -> [spectrum[0], spectrum[1],\
+  \ ..., spectrum[L]]\n```\n\nreturning a list of length `L + 1`.\n\n**What the two ends mean.** `spectrum[0]`\
+  \ is always exactly `1.0` — the empty subset, the route from the loss all the way back through zero\
+  \ Jacobians. That term is why the gradient cannot vanish uniformly no matter what the deep terms do.\
+  \ `spectrum[L]` is the product of every Jacobian, which is precisely what a plain stack `y = F(x)` would\
+  \ give you and nothing else. Everything between is the ensemble of shallower paths. The whole list sums\
+  \ to `prod(1 + j_l)`.\n\n**Do not enumerate the subsets.** There are `2^L` of them and `L` reaches 25\
+  \ in the tests. One pass over the layers, carrying the whole spectrum, is `O(L^2)`: after absorbing\
+  \ a new layer `j`, the size-`k` sums pick up `spectrum[k-1] * j`. Update the entries from the high index\
+  \ down, or a single layer will be counted more than once.\n\n**Edge case.** An empty list returns `[1.0]`\
+  \ — no blocks, derivative is the identity.\n\nThe driver rounds every entry to 6 decimal places.\n\n\
+  Standard library only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 11
+examples:
+- input: jacobians = [0.9, 0.9]
+  output: '[1.0, 1.8, 0.81]'
+  explanation: One empty path (1.0), two single-block paths (0.9 each), one path through both (0.81).
+    They sum to 3.61 = 1.9^2 = prod(1 + j).
+- input: jacobians = [0.0]
+  output: '[1.0, 0.0]'
+  explanation: Zero-initialising F's last layer makes j = 0, so every path through the block contributes
+    nothing and the block is exactly the identity at step 0.
+constraints:
+- 0 <= L <= 25
+- -10.0 <= jacobians[i] <= 10.0
+- Return a list of length L + 1; spectrum[0] is 1.0.
+- Do not enumerate the 2^L subsets -- that will time out.
+- Round every entry to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: jacobians
+    value: '[0.9, 0.9]'
+  stdin: '[0.9, 0.9]'
+  expected_output: '[1.0, 1.8, 0.81]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: jacobians
+    value: '[0.5, -0.5, 2.0]'
+  stdin: '[0.5, -0.5, 2.0]'
+  expected_output: '[1.0, 2.0, -0.25, -0.5]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: jacobians
+    value: '[]'
+  stdin: '[]'
+  expected_output: '[1.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: jacobians
+    value: '[0.0, 0.0, 0.0]'
+  stdin: '[0.0, 0.0, 0.0]'
+  expected_output: '[1.0, 0.0, 0.0, 0.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: jacobians
+    value: 25 layers of 0.9
+  stdin: '[0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9,
+    0.9, 0.9, 0.9, 0.9, 0.9, 0.9]'
+  expected_output: '[1.0, 22.5, 243.0, 1676.7, 8299.665, 31372.7337, 94118.2011, 229917.31983, 465582.572656,
+    791490.373515, 1139746.137861, 1398779.351012, 1468718.318562, 1321846.486706, 1019710.146887, 673008.696946,
+    378567.392032, 180376.227968, 72150.491187, 23923.58392, 6459.367658, 1384.150213, 226.497308, 26.588814,
+    1.994161, 0.07179]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def path_spectrum(self, jacobians):\n        \"\"\"\n \
+    \       :type jacobians: List[float]\n        :rtype: List[float]  -- length len(jacobians) + 1\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    jacobians = json.loads(_in[0])
+
+    _r = Solution().path_spectrum(jacobians)
+
+    print([round(x, 6) for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def path_spectrum(self, jacobians):\n        n = len(jacobians)\n\
+  \        # spectrum[k] = sum over subsets of size k of the product of their j's.\n        spectrum =\
+  \ [1.0] + [0.0] * n\n        filled = 0\n        for j in jacobians:\n            filled += 1\n    \
+  \        # High index downward, so this layer is absorbed at most once.\n            for k in range(filled,\
+  \ 0, -1):\n                spectrum[k] = spectrum[k] + spectrum[k - 1] * j\n        return spectrum\n"

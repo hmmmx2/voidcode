@@ -1,0 +1,224 @@
+slug: iq-kv-cache-memory
+title: Size the KV cache and count concurrent requests
+difficulty: medium
+categories:
+- CUDA
+- LLM
+concepts:
+- kv_cache
+description: "Implement:\n\n```python\nclass Solution(object):\n    def kv_capacity(self, layers, kv_heads,\
+  \ head_dim, dtype_bytes, seq_len, free_bytes):\n        ...\n```\n\nEvery decoder layer caches one key\
+  \ vector and one value vector per token per KV head, so:\n\n```\nbytes_per_token   = 2 * layers * kv_heads\
+  \ * head_dim * dtype_bytes\nbytes_per_request = bytes_per_token * seq_len\nmax_concurrent    = free_bytes\
+  \ // bytes_per_request\n```\n\nReturn `[bytes_per_token, bytes_per_request, max_concurrent]`. All three\
+  \ are exact integers -- no rounding, no floats anywhere in the answer.\n\n`free_bytes` is what is left\
+  \ after weights, activations and workspace; you do not subtract anything yourself. `kv_heads` is the\
+  \ number of **key/value** heads, which is smaller than the query-head count under grouped-query attention\
+  \ and equal to 1 under multi-query attention -- that ratio is the entire memory story, so the signature\
+  \ does not even take the query-head count.\n\n**Floor, not round.** A request reserving its full context\
+  \ either fits or it does not, so `max_concurrent` is a floor and may legitimately be 0. Rounding to\
+  \ nearest hands you a slot that would run the device out of memory mid-decode.\n\nStandard library only\
+  \ -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 32
+examples:
+- input: layers = 32, kv_heads = 32, head_dim = 128, dtype_bytes = 2, seq_len = 8192, free_bytes = 64424509440
+  output: '[524288, 4294967296, 15]'
+  explanation: 2 * 32 * 32 * 128 * 2 = 524,288 bytes = 512 KiB per token. At 8192 tokens that is exactly
+    4 GiB per request, and 60 GiB of free memory holds 15 of them -- so the cache, not the 14 GB of weights,
+    is what binds.
+- input: layers = 32, kv_heads = 8, head_dim = 128, dtype_bytes = 2, seq_len = 8192, free_bytes = 64424509440
+  output: '[131072, 1073741824, 60]'
+  explanation: Dropping from 32 KV heads to 8 divides the cache by four and multiplies concurrency by
+    four, from an architectural decision made at training time.
+constraints:
+- 1 <= layers <= 200
+- 1 <= kv_heads <= 128
+- 1 <= head_dim <= 512
+- dtype_bytes is 1, 2 or 4
+- 1 <= seq_len <= 10^6
+- 0 <= free_bytes <= 10^13
+- All three returned values are integers; use floor division.
+- max_concurrent may be 0.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: layers
+    value: '32'
+  - name: kv_heads
+    value: '32'
+  - name: head_dim
+    value: '128'
+  - name: dtype_bytes
+    value: '2'
+  - name: seq_len
+    value: '8192'
+  - name: free_bytes
+    value: '64424509440'
+  stdin: '32
+
+    32
+
+    128
+
+    2
+
+    8192
+
+    64424509440'
+  expected_output: '[524288, 4294967296, 15]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: layers
+    value: '32'
+  - name: kv_heads
+    value: '8'
+  - name: head_dim
+    value: '128'
+  - name: dtype_bytes
+    value: '2'
+  - name: seq_len
+    value: '8192'
+  - name: free_bytes
+    value: '64424509440'
+  stdin: '32
+
+    8
+
+    128
+
+    2
+
+    8192
+
+    64424509440'
+  expected_output: '[131072, 1073741824, 60]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: kv_heads
+    value: '8'
+  - name: dtype_bytes
+    value: '1'
+  stdin: '32
+
+    8
+
+    128
+
+    1
+
+    8192
+
+    64424509440'
+  expected_output: '[65536, 536870912, 120]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: layers
+    value: '2'
+  - name: kv_heads
+    value: '1'
+  - name: head_dim
+    value: '64'
+  - name: dtype_bytes
+    value: '2'
+  - name: seq_len
+    value: '10'
+  - name: free_bytes
+    value: '10000'
+  stdin: '2
+
+    1
+
+    64
+
+    2
+
+    10
+
+    10000'
+  expected_output: '[512, 5120, 1]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: free_bytes
+    value: '1000'
+  stdin: '2
+
+    1
+
+    64
+
+    2
+
+    10
+
+    1000'
+  expected_output: '[512, 5120, 0]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: layers
+    value: '80'
+  - name: kv_heads
+    value: '1'
+  - name: seq_len
+    value: '131072'
+  stdin: '80
+
+    1
+
+    128
+
+    2
+
+    131072
+
+    64424509440'
+  expected_output: '[40960, 5368709120, 12]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def kv_capacity(self, layers, kv_heads, head_dim, dtype_bytes,\
+    \ seq_len, free_bytes):\n        \"\"\"\n        :type layers: int\n        :type kv_heads: int  \
+    \    -- key/value heads, not query heads\n        :type head_dim: int\n        :type dtype_bytes:\
+    \ int\n        :type seq_len: int\n        :type free_bytes: int\n        :rtype: list  -- [bytes_per_token,\
+    \ bytes_per_request, max_concurrent]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    layers = int(_in[0])
+
+    kv_heads = int(_in[1])
+
+    head_dim = int(_in[2])
+
+    dtype_bytes = int(_in[3])
+
+    seq_len = int(_in[4])
+
+    free_bytes = int(_in[5])
+
+    _r = Solution().kv_capacity(layers, kv_heads, head_dim, dtype_bytes, seq_len, free_bytes)
+
+    print(json.dumps([_r[0], _r[1], _r[2]]))
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def kv_capacity(self, layers, kv_heads, head_dim, dtype_bytes,\
+  \ seq_len, free_bytes):\n        per_token = 2 * layers * kv_heads * head_dim * dtype_bytes\n      \
+  \  per_request = per_token * seq_len\n        fits = free_bytes // per_request\n        return [per_token,\
+  \ per_request, fits]\n"

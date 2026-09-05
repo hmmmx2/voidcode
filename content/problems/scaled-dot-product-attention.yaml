@@ -1,0 +1,173 @@
+slug: scaled-dot-product-attention
+title: Scaled Dot-Product Attention
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- attention_scaled_dot
+description: 'Implement the operation at the centre of every transformer:
+
+
+  `Attention(Q, K, V) = softmax(Q @ K.T / sqrt(d_k)) @ V`
+
+
+  Two details carry most of the marks.
+
+
+  **The scale.** Dividing by `sqrt(d_k)` is not cosmetic. Dot products grow with dimension, and without
+  the scale the softmax saturates -- one weight goes to 1, the rest to 0, and the gradient vanishes.
+
+
+  **The causal mask.** When `causal` is true, position `i` may only attend to positions `j <= i`. Masked
+  positions must be excluded *before* the softmax so they receive exactly zero weight -- not zeroed afterwards,
+  which would leave the row un-normalised.
+
+
+  Return the output matrix, one row per query.'
+inferred_concepts: true
+review_needed: true
+order_index: 5
+examples:
+- input: Q = [[1,0]], K = [[1,0],[0,1]], V = [[1,2],[3,4]], causal = false
+  output: '[[1.660477, 2.660477]]'
+  explanation: The query matches K[0] more strongly, so the output leans toward V[0] without ignoring
+    V[1].
+- input: Q = [[1,0],[0,1]], K = [[1,0],[0,1]], V = [[1,0],[0,1]], causal = true
+  output: '[[1.0, 0.0], [0.330238, 0.669762]]'
+  explanation: Row 0 can only see position 0, so its weight is exactly 1. Row 1 sees both.
+- input: Q = [[0,0]], K = [[1,2],[3,4]], V = [[5,6],[7,8]], causal = false
+  output: '[[6.0, 7.0]]'
+  explanation: A zero query gives every score 0, so attention is uniform and the output is the mean of
+    V.
+constraints:
+- 1 <= len(Q), len(K) <= 512, and len(K) == len(V)
+- Q and K share the same feature dimension d_k.
+- When causal is true, position i attends only to j <= i.
+- Return values rounded to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints:
+- 'Build it in three stages and check each: the score matrix Q @ K.T scaled by sqrt(d_k), then a softmax
+  over each row, then the weighted sum of V rows.'
+- Reuse the numerically stable softmax from the first problem -- subtract the row max before exponentiating.
+  Attention scores are exactly where overflow shows up in practice.
+- For the causal mask, skip masked positions entirely when taking the row max and give them an exponential
+  of 0. Setting their score to -inf works too; setting the WEIGHT to 0 after the softmax does not, because
+  the row no longer sums to 1.
+hint_ladder:
+  level_0: 'Build it in three stages and check each: the score matrix Q @ K.T scaled by sqrt(d_k), then
+    a softmax over each row, then the weighted sum of V rows.'
+  level_1: Reuse the numerically stable softmax from the first problem -- subtract the row max before
+    exponentiating. Attention scores are exactly where overflow shows up in practice.
+  level_2: For the causal mask, skip masked positions entirely when taking the row max and give them an
+    exponential of 0. Setting their score to -inf works too; setting the WEIGHT to 0 after the softmax
+    does not, because the row no longer sums to 1.
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: Q
+    value: '[[1.0, 0.0]]'
+  - name: K
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: V
+    value: '[[1.0, 2.0], [3.0, 4.0]]'
+  - name: causal
+    value: 'false'
+  stdin: '[[1.0, 0.0]]
+
+    [[1.0, 0.0], [0.0, 1.0]]
+
+    [[1.0, 2.0], [3.0, 4.0]]
+
+    false'
+  expected_output: '[[1.660477, 2.660477]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: Q
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: K
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: V
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: causal
+    value: 'true'
+  stdin: '[[1.0, 0.0], [0.0, 1.0]]
+
+    [[1.0, 0.0], [0.0, 1.0]]
+
+    [[1.0, 0.0], [0.0, 1.0]]
+
+    true'
+  expected_output: '[[1.0, 0.0], [0.330238, 0.669762]]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: Q
+    value: '[[0.0, 0.0]]'
+  - name: K
+    value: '[[1.0, 2.0], [3.0, 4.0]]'
+  - name: V
+    value: '[[5.0, 6.0], [7.0, 8.0]]'
+  - name: causal
+    value: 'false'
+  stdin: '[[0.0, 0.0]]
+
+    [[1.0, 2.0], [3.0, 4.0]]
+
+    [[5.0, 6.0], [7.0, 8.0]]
+
+    false'
+  expected_output: '[[6.0, 7.0]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: Q
+    value: '[[1.0, 1.0], [2.0, 0.0], [0.0, 2.0]]'
+  - name: K
+    value: '[[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]'
+  - name: V
+    value: '[[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]'
+  - name: causal
+    value: 'true'
+  stdin: '[[1.0, 1.0], [2.0, 0.0], [0.0, 2.0]]
+
+    [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+
+    [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+
+    true'
+  expected_output: '[[1.0, 0.0], [0.80443, 0.19557], [0.554192, 0.891617]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def attention(self, Q, K, V, causal):\n\
+    \        \"\"\"\n        :type Q: List[List[float]]\n        :type K: List[List[float]]\n        :type\
+    \ V: List[List[float]]\n        :type causal: bool\n        :rtype: List[List[float]]\n        \"\"\
+    \"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    Q = json.loads(_in[0]); K = json.loads(_in[1]); V = json.loads(_in[2])
+
+    causal = _in[3].strip().lower() == "true"
+
+    print([[round(v, 6) for v in row] for row in Solution().attention(Q, K, V, causal)])
+
+    '
+source_kind: problem
+reference_solution: "import math\nclass Solution(object):\n    def attention(self, Q, K, V, causal):\n\
+  \        d = len(Q[0])\n        scale = math.sqrt(d)\n        out = []\n        for i, q in enumerate(Q):\n\
+  \            scores = []\n            for j, k in enumerate(K):\n                if causal and j > i:\n\
+  \                    scores.append(None)\n                else:\n                    scores.append(sum(a\
+  \ * b for a, b in zip(q, k)) / scale)\n            valid = [s for s in scores if s is not None]\n  \
+  \          m = max(valid)\n            exps = [0.0 if s is None else math.exp(s - m) for s in scores]\n\
+  \            total = sum(exps)\n            weights = [e / total for e in exps]\n            out.append([sum(w\
+  \ * V[j][c] for j, w in enumerate(weights))\n                        for c in range(len(V[0]))])\n \
+  \       return out\n"

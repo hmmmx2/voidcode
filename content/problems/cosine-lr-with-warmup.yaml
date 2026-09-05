@@ -1,0 +1,75 @@
+slug: cosine-lr-with-warmup
+title: Learning rate at step n under warmup plus cosine decay
+difficulty: medium
+categories:
+- DL
+concepts:
+- lr_scheduling
+description: "Input: `base_lr warmup_steps total_steps step`. Return the learning rate at `step`, rounded\
+  \ to 6 decimal places.\n\nDuring warmup the rate rises linearly from 0 to `base_lr` over `warmup_steps`.\
+  \ After that it follows a cosine from `base_lr` down to 0 across the remaining steps:\n\n    progress\
+  \ = (step - warmup) / (total - warmup)\n    lr = base_lr * 0.5 * (1 + cos(pi * progress))\n\nClamp `progress`\
+  \ into [0,1] so a step past `total_steps` returns 0 rather than rising again — a cosine keeps going,\
+  \ and a schedule that turns back up at the end of a long run is a real and confusing bug."
+order_index: 45
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def lr(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().lr(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def lr(self, tokens):\n        base =\
+  \ float(tokens[0]); warm = int(tokens[1])\n        total = int(tokens[2]); step = int(tokens[3])\n \
+  \       if warm > 0 and step < warm:\n            return round(base * step / warm, 6)\n        span\
+  \ = max(total - warm, 1)\n        progress = (step - warm) / span\n        progress = min(max(progress,\
+  \ 0.0), 1.0)\n        return round(base * 0.5 * (1 + math.cos(math.pi * progress)), 6)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0.001 100 1000 0
+  expected_output: '0.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 0.001 100 1000 50
+  expected_output: '0.0005'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0.001 100 1000 100
+  expected_output: '0.001'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0.001 100 1000 1000
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.001 100 1000 5000
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0.001 0 1000 500
+  expected_output: '0.0005'
+  is_hidden: true
+hints:
+- At step 0 with warmup, the rate is 0, not base_lr.
+- At step == warmup_steps, warmup has finished and cosine progress is 0.
+- cos(pi) = -1, so the schedule reaches exactly 0 at the end.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

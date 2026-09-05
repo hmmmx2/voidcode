@@ -1,0 +1,46 @@
+slug: llm-observability-design
+title: What do you log for an LLM service, and what must you not?
+difficulty: medium
+categories:
+- Systems
+- LLM
+concepts:
+- serving_latency
+- sampling_decoding
+grading: rubric
+description: 'Design the observability for a tutor backed by an LLM. Cover the metrics that make an incident
+  diagnosable and the traces that make a bad answer reproducible.
+
+
+  Be specific about which latency numbers matter and why an average is useless here.
+
+
+  Then the harder half: learner prompts contain their code, their errors and sometimes personal context.
+  **Say what you would not log, and how you would still debug a bad answer without it.**'
+hints:
+- Prefill and decode have different latency profiles; one number hides both.
+- Reproducing a generation needs more than the prompt.
+- A hash is not the content, and it still tells you two requests were identical.
+hint_ladder:
+  level_0: Prefill and decode have different latency profiles; one number hides both.
+  level_1: Reproducing a generation needs more than the prompt.
+  level_2: A hash is not the content, and it still tells you two requests were identical.
+rubric:
+- criterion: Separates time-to-first-token from inter-token latency and explains that averaging them describes
+    neither phase.
+  weight: 0.25
+- criterion: 'Names what makes a generation reproducible: model version, prompt template version, sampling
+    parameters and seed -- not just the prompt text.'
+  weight: 0.25
+- criterion: States a retention and redaction position on prompt content, treating learner code as sensitive
+    by default.
+  weight: 0.2
+- criterion: Proposes debugging without raw retention -- hashes, structured metadata, opt-in capture,
+    short-lived buffers.
+  weight: 0.2
+- criterion: Mentions token-level cost or throughput accounting as an operational metric rather than only
+    latency.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

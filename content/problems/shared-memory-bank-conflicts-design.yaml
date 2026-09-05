@@ -1,0 +1,50 @@
+slug: shared-memory-bank-conflicts-design
+title: Diagnose and fix shared-memory bank conflicts in a tiled transpose
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- memory_hierarchy
+- tiled_matmul
+- gpu_execution_model
+grading: rubric
+description: 'A tiled 32x32 matrix transpose stages each tile in shared memory declared as `__shared__
+  float tile[32][32]`. The kernel is correct and roughly 4x slower than expected.
+
+
+  Explain what is happening, why the *write* to shared memory is fine while the *read* back is not, and
+  give the one-line fix.
+
+
+  Then answer the part most answers skip: **why does padding to `[32][33]` cost almost nothing?** Quantify
+  the extra shared memory per block and say what it does to occupancy.
+
+
+  Shared memory is split into 32 banks of 4 bytes, striped consecutively. Requests from a warp to distinct
+  addresses in the *same* bank serialise; requests to distinct banks, or all to one address (a broadcast),
+  do not.'
+hints:
+- Write down which bank `tile[threadIdx.y][threadIdx.x]` lands in, then do the same for the transposed
+  read `tile[threadIdx.x][threadIdx.y]`.
+- A column of a [32][32] float array is 32 elements apart. 32 mod 32 = 0.
+- Padding changes the row stride from 32 to 33, so consecutive rows shift by one bank.
+rubric:
+- criterion: 'Identifies a 32-way bank conflict on the transposed read: a warp reading down a column hits
+    addresses all congruent mod 32, so every lane lands in the same bank and the access serialises 32
+    ways.'
+  weight: 0.3
+- criterion: Explains why the write is conflict-free — consecutive threadIdx.x map to consecutive banks
+    — so the asymmetry is in the access pattern, not the declaration.
+  weight: 0.2
+- criterion: Gives the padding fix `__shared__ float tile[32][33]` and explains that a stride of 33 makes
+    column neighbours land in different banks.
+  weight: 0.2
+- criterion: 'Quantifies the cost: 32 extra floats = 128 bytes per block, against 4 KB for the tile, so
+    roughly 3% more shared memory and essentially no occupancy change.'
+  weight: 0.2
+- criterion: Notes a condition that changes the answer — a different element size, a tile width that is
+    not a multiple of 32, or using a swizzle instead of padding.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

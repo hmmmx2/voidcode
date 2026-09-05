@@ -1,0 +1,57 @@
+{
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "train_problems": 1060,
+  "dead_groups": 51,
+  "history": [
+    {
+      "step": 0,
+      "problems": 60,
+      "solved_any": 6,
+      "solve_rate": 0.1,
+      "mean_case_fraction": 0.0944,
+      "case_fraction_se": 0.0107,
+      "greedy_solved": 4,
+      "greedy_case_fraction": 0.1231
+    },
+    {
+      "step": 50,
+      "problems": 60,
+      "solved_any": 5,
+      "solve_rate": 0.0833,
+      "mean_case_fraction": 0.0906,
+      "case_fraction_se": 0.0108,
+      "greedy_solved": 3,
+      "greedy_case_fraction": 0.1358
+    },
+    {
+      "step": 100,
+      "problems": 60,
+      "solved_any": 7,
+      "solve_rate": 0.1167,
+      "mean_case_fraction": 0.0938,
+      "case_fraction_se": 0.0107,
+      "greedy_solved": 3,
+      "greedy_case_fraction": 0.1231
+    },
+    {
+      "step": 150,
+      "problems": 60,
+      "solved_any": 6,
+      "solve_rate": 0.1,
+      "mean_case_fraction": 0.0922,
+      "case_fraction_se": 0.0107,
+      "greedy_solved": 4,
+      "greedy_case_fraction": 0.1342
+    },
+    {
+      "step": 200,
+      "problems": 60,
+      "solved_any": 7,
+      "solve_rate": 0.1167,
+      "mean_case_fraction": 0.0882,
+      "case_fraction_se": 0.0103,
+      "greedy_solved": 3,
+      "greedy_case_fraction": 0.1236
+    }
+  ]
+}

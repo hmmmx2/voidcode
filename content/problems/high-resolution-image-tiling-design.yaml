@@ -1,0 +1,48 @@
+slug: high-resolution-image-tiling-design
+title: A 1500x1000 screenshot into a 336px encoder. Design the strategy.
+difficulty: hard
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- image_preprocessing
+- vision_transformer
+grading: rubric
+description: 'Your vision encoder takes 336x336 inputs. A learner uploads a 1500x1000 screenshot of an
+  error message. Downscaling to 336x336 makes the text unreadable, and unreadable text is the whole content
+  of the image.
+
+
+  Design a strategy that preserves legibility. Cover how the image is divided, whether a downscaled view
+  of the whole image is also included and why, and how the pieces are ordered for the language model.
+
+
+  Then do the arithmetic that decides whether the design is usable: **at 576 tokens per 336x336 tile,
+  what does your scheme cost in context?** State the number and say what you would give up to reduce it.'
+hints:
+- Tiling preserves detail but destroys global layout. What restores the global view?
+- Count the tiles your scheme needs for 1500x1000, then multiply.
+- Attention is quadratic in sequence length, and this is only one message.
+hint_ladder:
+  level_0: Tiling preserves detail but destroys global layout. What restores the global view?
+  level_1: Count the tiles your scheme needs for 1500x1000, then multiply.
+  level_2: Attention is quadratic in sequence length, and this is only one message.
+rubric:
+- criterion: Proposes tiling the image into encoder-sized crops at native or near-native resolution so
+    fine detail survives.
+  weight: 0.25
+- criterion: 'Includes a downscaled thumbnail of the whole image alongside the tiles, and justifies it:
+    tiles alone lose global layout and spatial relationships between them.'
+  weight: 0.25
+- criterion: Does the token arithmetic concretely — roughly 15 tiles at 1500x1000 plus a thumbnail, so
+    on the order of 9,000+ tokens — and recognises this is a large fraction of context.
+  weight: 0.25
+- criterion: Addresses ordering or position signalling so the model can reconstruct tile layout rather
+    than seeing an unordered bag of crops.
+  weight: 0.15
+- criterion: 'Names a concrete reduction with its cost: token pooling, a resampler, fewer tiles, or selecting
+    tiles by relevance.'
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,37 @@
+# Local-measurement overrides for docker-compose.sglang.yml. NOT a deployment file.
+#
+#   docker compose -f docker-compose.sglang.yml -f docker-compose.sglang.local.yml up -d sglang-server
+#
+# WHY THIS EXISTS
+# ---------------
+# The base file's `--mem-fraction-static 0.90` is sized for a card that serves ONLY the tutor. On the
+# local 5060 Ti the same GPU also has to hold:
+#
+#   * the Windows desktop            ~1.4 GB (already resident, cannot be reclaimed)
+#   * Ollama `nomic-embed-text`      ~0.6 GB (grounding embedder — `_ground` needs it DURING the run)
+#
+# 0.90 of 16311 MiB is 14.7 GB, which leaves ~0.2 GB after the desktop. SGLang would start fine and
+# then Ollama could not load the embedder, so every grounded scenario would fail open and the run
+# would report retrieval numbers for a system that did no retrieval. That is a silent wrong answer,
+# not a crash — the exact failure mode this measurement exists to rule out.
+#
+# 0.80 -> ~13.0 GB, leaving ~1.9 GB for the desktop and the embedder together.
+#
+# This value is part of the run's provenance: the numbers were produced under it, not under 0.90.
+services:
+  sglang-server:
+    command: >
+      python -m sglang.launch_server
+      --model-path /model_cache/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a
+      --served-model-name default
+      --host 0.0.0.0
+      --port 30000
+      --mem-fraction-static 0.80
+      --context-length 16384
+      --quantization fp8
+      --kv-cache-dtype fp8_e5m2
+      --dtype bfloat16
+      --trust-remote-code
+      --attention-backend triton
+      --enable-metrics
+      --log-level info

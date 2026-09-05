@@ -1,0 +1,41 @@
+slug: grid-stride-loop-design
+title: Justify the grid-stride loop over one-thread-per-element
+difficulty: easy
+categories:
+- CUDA
+concepts:
+- gpu_execution_model
+- occupancy
+grading: rubric
+description: "Two ways to write an elementwise kernel over `n` elements:\n\n  A. Launch exactly `ceil(n\
+  \ / block)` blocks; each thread handles one element, guarded by `if (i < n)`.\n  B. Launch a fixed grid\
+  \ sized to the device, and have each thread loop `for (i = tid; i < n; i += gridDim.x * blockDim.x)`.\n\
+  \nGive two concrete advantages of B, and one situation where A is genuinely the better choice. Then\
+  \ state what B requires of the kernel body that A does not."
+hints:
+- What happens to A when n is larger than the maximum grid dimension?
+- Think about launching the same kernel across two GPUs with different SM counts.
+- For very small n, is a device-sized grid sensible?
+hint_ladder:
+  level_0: What happens to A when n is larger than the maximum grid dimension?
+  level_1: Think about launching the same kernel across two GPUs with different SM counts.
+  level_2: For very small n, is a device-sized grid sensible?
+rubric:
+- criterion: 'Gives the size-independence advantage: B handles any n with a fixed grid, including n beyond
+    the maximum grid dimension, without changing the launch configuration.'
+  weight: 0.3
+- criterion: Gives a second real advantage — grid size tunable to the device for better occupancy and
+    reuse, or amortising per-thread setup across several elements.
+  weight: 0.25
+- criterion: 'Names a case where A is better: small or fixed n, where a device-sized grid launches more
+    threads than there is work for.'
+  weight: 0.2
+- criterion: Notes what B requires — the body must be correct for a thread processing multiple indices,
+    so per-thread state must be reset or accumulated deliberately.
+  weight: 0.15
+- criterion: Mentions that both need the bounds guard, and that B's stride must be the full grid size
+    rather than the block size.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

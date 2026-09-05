@@ -1,0 +1,201 @@
+slug: sgd-momentum-step
+title: SGD Step with Momentum
+difficulty: medium
+categories:
+- ML
+- DL
+- PyTorch
+concepts:
+- optimizers_sgd
+description: 'Perform one optimiser step of SGD with momentum and weight decay, matching `torch.optim.SGD`.
+
+
+  For each parameter, in this order:
+
+
+  1. `g = grad + weight_decay * param`
+
+  2. `v = momentum * v + g`
+
+  3. `param = param - lr * v`
+
+
+  **The order matters.** Weight decay is folded into the gradient *before* the momentum buffer updates,
+  so decay accumulates in the buffer too. Applying it to the parameter afterwards instead is a different
+  algorithm -- that one is AdamW-style decoupled decay.
+
+
+  Return the updated parameters and the updated velocity buffer, as `[params, velocity]`.'
+inferred_concepts: true
+review_needed: true
+order_index: 4
+examples:
+- input: params = [1.0, 2.0], grads = [0.1, 0.2], velocity = [0.0, 0.0], lr = 0.1, momentum = 0.9, weight_decay
+    = 0.0
+  output: '[[0.99, 1.98], [0.1, 0.2]]'
+  explanation: With a zero buffer the first step is plain SGD, and the buffer ends holding the gradient.
+- input: params = [1.0], grads = [0.5], velocity = [0.3], lr = 0.01, momentum = 0.9, weight_decay = 0.0
+  output: '[[0.9923], [0.77]]'
+  explanation: v = 0.9 * 0.3 + 0.5 = 0.77, so the existing buffer carries most of the previous direction.
+- input: params = [1.0, -1.0], grads = [0.1, 0.1], velocity = [0.0, 0.0], lr = 0.1, momentum = 0.0, weight_decay
+    = 0.01
+  output: '[[0.989, -1.009], [0.11, 0.09]]'
+  explanation: Decay pulls each parameter toward zero, so it adds to the gradient of the positive one
+    and subtracts from the negative one.
+constraints:
+- 1 <= len(params) <= 10^4
+- len(grads) == len(velocity) == len(params)
+- 0 <= momentum < 1, 0 < lr <= 1, 0 <= weight_decay <= 1
+- Return [params, velocity], both rounded to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints:
+- Each parameter is independent. Write the update for one of them, then apply it element by element.
+- 'Three steps in a fixed order: fold weight decay into the gradient, update the velocity buffer with
+  momentum, then step the parameter using the new velocity.'
+- g = grad + weight_decay * param; v = momentum * v + g; param = param - lr * v. Note the step uses the
+  NEW v, not the old one.
+hint_ladder:
+  level_0: Each parameter is independent. Write the update for one of them, then apply it element by element.
+  level_1: 'Three steps in a fixed order: fold weight decay into the gradient, update the velocity buffer
+    with momentum, then step the parameter using the new velocity.'
+  level_2: g = grad + weight_decay * param; v = momentum * v + g; param = param - lr * v. Note the step
+    uses the NEW v, not the old one.
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: params
+    value: '[1.0, 2.0]'
+  - name: grads
+    value: '[0.1, 0.2]'
+  - name: velocity
+    value: '[0.0, 0.0]'
+  - name: lr
+    value: '0.1'
+  - name: momentum
+    value: '0.9'
+  - name: weight_decay
+    value: '0.0'
+  stdin: '[1.0, 2.0]
+
+    [0.1, 0.2]
+
+    [0.0, 0.0]
+
+    0.1
+
+    0.9
+
+    0.0'
+  expected_output: '[[0.99, 1.98], [0.1, 0.2]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: params
+    value: '[1.0]'
+  - name: grads
+    value: '[0.5]'
+  - name: velocity
+    value: '[0.3]'
+  - name: lr
+    value: '0.01'
+  - name: momentum
+    value: '0.9'
+  - name: weight_decay
+    value: '0.0'
+  stdin: '[1.0]
+
+    [0.5]
+
+    [0.3]
+
+    0.01
+
+    0.9
+
+    0.0'
+  expected_output: '[[0.9923], [0.77]]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: params
+    value: '[1.0, -1.0]'
+  - name: grads
+    value: '[0.1, 0.1]'
+  - name: velocity
+    value: '[0.0, 0.0]'
+  - name: lr
+    value: '0.1'
+  - name: momentum
+    value: '0.0'
+  - name: weight_decay
+    value: '0.01'
+  stdin: '[1.0, -1.0]
+
+    [0.1, 0.1]
+
+    [0.0, 0.0]
+
+    0.1
+
+    0.0
+
+    0.01'
+  expected_output: '[[0.989, -1.009], [0.11, 0.09]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: params
+    value: '[0.5]'
+  - name: grads
+    value: '[0.0]'
+  - name: velocity
+    value: '[1.0]'
+  - name: lr
+    value: '0.1'
+  - name: momentum
+    value: '0.5'
+  - name: weight_decay
+    value: '0.1'
+  stdin: '[0.5]
+
+    [0.0]
+
+    [1.0]
+
+    0.1
+
+    0.5
+
+    0.1'
+  expected_output: '[[0.445], [0.55]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def sgdStep(self, params, grads, velocity, lr, momentum,\
+    \ weight_decay):\n        \"\"\"\n        :type params: List[float]\n        :type grads: List[float]\n\
+    \        :type velocity: List[float]\n        :type lr: float\n        :type momentum: float\n   \
+    \     :type weight_decay: float\n        :rtype: List[List[float]]  # [new_params, new_velocity]\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    params = json.loads(_in[0]); grads = json.loads(_in[1]); velocity = json.loads(_in[2])
+
+    lr = float(_in[3]); momentum = float(_in[4]); wd = float(_in[5])
+
+    p, v = Solution().sgdStep(params, grads, velocity, lr, momentum, wd)
+
+    print([[round(a, 6) for a in p], [round(b, 6) for b in v]])
+
+    '
+source_kind: problem
+reference_solution: "class Solution(object):\n    def sgdStep(self, params, grads, velocity, lr, momentum,\
+  \ weight_decay):\n        new_v, new_p = [], []\n        for p, g, v in zip(params, grads, velocity):\n\
+  \            g = g + weight_decay * p\n            v = momentum * v + g\n            new_v.append(v)\n\
+  \            new_p.append(p - lr * v)\n        return [new_p, new_v]\n"

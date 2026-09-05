@@ -1,0 +1,48 @@
+slug: bias-variance-decomposition
+title: Split test error into bias, variance and noise
+difficulty: hard
+categories:
+- ML
+concepts:
+- tensors_and_shapes
+description: Given M models each fit on a different resample, their predictions on N test points, the
+  noise-free targets and the noise variance, return squared bias, variance, noise, their total, and the
+  total for an average of k independent models. Squared bias is the square of the mean error, not the
+  mean of the squared errors, and the variance divides by M.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Google DeepMind
+- Anthropic
+prompt: Given M models each fit on a different resample, their predictions on N test points, the noise-free
+  targets and the noise variance, return squared bias, variance, noise, their total, and the total for
+  an average of k independent models. Squared bias is the square of the mean error, not the mean of the
+  squared errors, and the variance divides by M.
+approach: 'Work column by column: the mean prediction at each test point is the pivot both terms are measured
+  against. Squared bias compares that mean to the target, variance measures the spread of the M models
+  around it, and the ensemble total reuses both with the variance scaled by 1/k.'
+model_answer: "Let y = f(x) + eps with E[eps] = 0, Var(eps) = sigma². Write f_bar = E_D[f_hat(x)], the\
+  \ average prediction over training sets.\n\n    E[(y - f_hat)²] = E[(f + eps - f_hat)²]\n\nInsert f_bar\
+  \ and group:\n    = E[( eps + (f - f_bar) + (f_bar - f_hat) )²]\n\nExpanding gives three squares and\
+  \ three cross terms:\n\n    E[eps²]           = sigma²                 irreducible noise\n    (f - f_bar)²\
+  \      = bias²                  deterministic\n    E[(f_bar-f_hat)²] = variance\n\nCROSS TERMS.\n  \
+  \  2 E[eps (f - f_bar)] = 2 (f - f_bar) E[eps] = 0     (E[eps] = 0)\n    2 E[eps (f_bar - f_hat)] =\
+  \ 0   (noise on the test point is\n                                    independent of the training set)\n\
+  \    2 (f - f_bar) E[f_bar - f_hat] = 0   (E[f_hat] = f_bar by defn)\n\nSo    E[(y - f_hat)²] = sigma²\
+  \ + bias² + variance.\n\nWHAT ENSEMBLING DOES. Averaging M models trained on resampled data leaves f_bar\
+  \ unchanged, so bias is untouched, but the variance of the average is Var/M for independent models —\
+  \ in practice Var*(rho + (1-rho)/M) with correlation rho. That is exactly why bagging works and why\
+  \ decorrelating trees matters more than adding them: as M grows the term floors at rho*Var, so random\
+  \ feature selection buys more than a larger forest.\n\nAnd sigma² bounds everything. No model beats\
+  \ it, which is why a residual error floor is not necessarily a modelling failure."
+follow_ups:
+- Where exactly is the independence assumption used?
+- Why does boosting reduce bias where bagging reduces variance?
+- Does this decomposition hold for 0-1 loss?
+red_flags:
+- Quoting the three terms without showing the cross terms vanish.
+- Thinking ensembling reduces bias.
+- Not knowing sigma² is a floor no model can beat.
+source_kind: interview_question

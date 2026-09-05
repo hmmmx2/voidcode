@@ -1,0 +1,30 @@
+{
+  "capability": "8.6",
+  "cross_entropy": {
+    "baseline_ms": 3.882615764935811,
+    "baseline_peak_mib": 594.0009765625,
+    "fused_ms": 3.1976521015167236,
+    "fused_peak_mib": 445.5009765625,
+    "memory_saved_pct": 25.0,
+    "shape": [
+      512,
+      152064
+    ],
+    "speedup": 1.214
+  },
+  "device": "NVIDIA A40",
+  "rmsnorm": {
+    "baseline_ms": 1.2866999953985214,
+    "baseline_peak_mib": 168.01806640625,
+    "fused_ms": 1.9008835777640343,
+    "fused_peak_mib": 98.14453125,
+    "memory_saved_pct": 41.6,
+    "shape": [
+      2048,
+      3584
+    ],
+    "speedup": 0.677
+  },
+  "spec": "a40_x1_secure",
+  "torch": "2.4.1+cu124"
+}

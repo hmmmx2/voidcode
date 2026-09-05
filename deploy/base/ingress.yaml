@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voidcode
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # SSE. The chat completions stream and the notification feed both hold a
+    # connection open and send incrementally; the default proxy buffering collects the
+    # whole response before forwarding, so the tutor appears to hang for a full
+    # generation and then dumps its answer at once. The Next.js proxy route was
+    # written not to buffer for the same reason — an ingress that buffers undoes it.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Defence in depth behind ratelimit.py, which is per-identity. This one is per-IP
+    # at the edge and catches a flood before it reaches Python at all.
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [voidcode.example]
+      secretName: voidcode-tls
+  rules:
+    - host: voidcode.example
+      http:
+        paths:
+          # EVERYTHING goes to the web tier. The API is deliberately NOT routed here.
+          #
+          # Browser calls reach it through /api/proxy on the Next.js server, which is
+          # what signs the identity. Exposing the API directly would restore exactly
+          # the hole that closed: an unsigned X-User-Id from the public internet. It
+          # would also publish /metrics, which has no authentication.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: voidcode-web
+                port: { name: http }

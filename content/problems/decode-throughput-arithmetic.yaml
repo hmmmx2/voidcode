@@ -1,0 +1,53 @@
+slug: decode-throughput-arithmetic
+title: Bound decode throughput from memory bandwidth
+difficulty: hard
+categories:
+- LLM
+- CUDA
+concepts:
+- sampling_decoding
+description: 'Write `decode_throughput(params, dtype_bytes, kv_bytes_per_seq, batch, bandwidth, efficiency)`
+  returning `[bytes_per_step, tokens_per_s, ms_per_token]`, treating an autoregressive decode step as
+  purely bandwidth bound. The trap is which term scales with `batch`: the weights stream once per step
+  no matter how many sequences ride along, while the KV cache is per sequence -- multiply the wrong one
+  and either batching stops helping entirely or it helps forever.'
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Anthropic
+prompt: 'Write `decode_throughput(params, dtype_bytes, kv_bytes_per_seq, batch, bandwidth, efficiency)`
+  returning `[bytes_per_step, tokens_per_s, ms_per_token]`, treating an autoregressive decode step as
+  purely bandwidth bound. The trap is which term scales with `batch`: the weights stream once per step
+  no matter how many sequences ride along, while the KV cache is per sequence -- multiply the wrong one
+  and either batching stops helping entirely or it helps forever.'
+approach: Bytes per step is weight bytes plus batch times the per-sequence cache bytes. Divide by usable
+  bandwidth for seconds per step; the step emits `batch` tokens, so aggregate throughput is batch divided
+  by step time while a single user still waits one whole step. No FLOP count enters anywhere.
+model_answer: "AT BATCH 1. Generating one token touches every weight exactly once:\n    bytes/token =\
+  \ 7e9 params * 2 bytes = 14 GB\n    tokens/s <= 2e12 / 14e9 ≈ **143 tokens/s**\n\nThat is an upper bound\
+  \ assuming perfect bandwidth utilisation; 60-70% is realistic, so ~90-100 tok/s. Note compute never\
+  \ entered: the model does ~14 GFLOP per token against a card capable of hundreds of TFLOP/s, so arithmetic\
+  \ intensity is ≈ 1 FLOP/byte and the GPU is idle waiting on memory.\n\nWHAT BATCHING CHANGES. The weights\
+  \ are read once per *step*, not per sequence. At batch B you still move 14 GB of weights but produce\
+  \ B tokens, so aggregate throughput scales nearly linearly with B while per-user latency is unchanged.\
+  \ This is why serving stacks batch aggressively and why throughput and latency are not in tension here\
+  \ — up to a point.\n\nWHERE IT STOPS. The KV cache is per-sequence and must also be read every step.\
+  \ Once B * (cache per sequence) approaches the weight bytes, cache traffic dominates and the linear\
+  \ scaling flattens. For a 7B at 8k context with MHA the cache is ~4 GB per sequence, so by B ≈ 4 the\
+  \ cache already outweighs the weights — which is precisely the arithmetic that makes GQA worth a small\
+  \ quality cost, since cutting 32 KV heads to 8 divides that by four.\n\nPrefill is the opposite regime:\
+  \ all prompt tokens at once, high intensity, compute bound. The two phases need different reasoning,\
+  \ and continuous batching exists because they interleave badly."
+follow_ups:
+- At what batch size does KV cache traffic overtake weight traffic here?
+- How does int8 weight quantisation change the batch-1 bound?
+- Why does speculative decoding help a bandwidth-bound regime at all?
+red_flags:
+- Computing a FLOP bound when decode is bandwidth bound.
+- Believing larger batches hurt per-user latency in this regime.
+- Forgetting the KV cache must be re-read every step.
+source_kind: interview_question

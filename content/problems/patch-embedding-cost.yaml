@@ -1,0 +1,48 @@
+slug: patch-embedding-cost
+title: Share of a ViT spent in the patch stem
+difficulty: medium
+categories:
+- VLM
+- DL
+concepts:
+- embeddings
+- vision_transformer
+description: Write a function returning the patch embedding's parameter and FLOP counts alongside its
+  share of the whole model. The projection runs once per token, so dropping the token factor reports the
+  cost of embedding a single patch and understates the stem by two orders of magnitude.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- Meta
+- NVIDIA
+- Google DeepMind
+prompt: Write a function returning the patch embedding's parameter and FLOP counts alongside its share
+  of the whole model. The projection runs once per token, so dropping the token factor reports the cost
+  of embedding a single patch and understates the stem by two orders of magnitude.
+approach: Derive the token count from the grid and the flattened patch dimension from patch size and channels,
+  then form the stem's parameter and FLOP counts. Set each against the per-layer transformer figures given
+  in the statement, multiplied by the depth.
+model_answer: "PATCH EMBEDDING. Each 14×14 RGB patch flattens to 14*14*3 = 588 values, projected to d\
+  \ = 1024:\n    params = 588 * 1024 + 1024 = **603,136 ≈ 0.6M**\n\nTokens: (224/14)² = 256.\n    FLOPs\
+  \ = 2 * 256 * 588 * 1024 = **3.08e8 ≈ 0.31 GFLOP**\n\nONE TRANSFORMER LAYER at d = 1024, n = 256:\n\
+  \    params ≈ 12d² = 12.6M\n    FLOPs  ≈ 24nd² + 4n²d\n           = 24*256*1024² + 4*256²*1024\n   \
+  \        = 6.4e9 + 2.7e8 ≈ 6.7 GFLOP\n\nCOMPARISON.\n    params: 0.6M vs 12.6M × 24 = 302M   ->  stem\
+  \ is **0.2%**\n    FLOPs:  0.31 vs 6.7 × 24 = 161 GFLOP ->  stem is **0.2%**\n\nSo no — the stem is\
+  \ rounding error and optimising it is wasted effort. That is the point: people assume the pixel-facing\
+  \ layer is expensive because it touches the most raw data, when it actually compresses 150k pixels into\
+  \ 256 tokens with one cheap projection, and everything after that is where the cost lives.\n\nWhat the\
+  \ stem *does* control is token count — and token count is quadratic in attention. Halving patch size\
+  \ to 7 gives 1024 tokens: 4× the tokens, and the attention term alone grows 16×. So the stem is not\
+  \ worth optimising for its own cost, but it is the single most important architectural decision for\
+  \ total cost."
+follow_ups:
+- Recompute at patch size 7. Which term grows fastest?
+- Why is the patch embedding usually written as a strided convolution?
+- At what token count does the n² term overtake the nd² terms here?
+red_flags:
+- Assuming the pixel-facing layer dominates because it sees the most data.
+- Forgetting attention is quadratic when changing patch size.
+- Computing per-patch FLOPs but forgetting to multiply by token count.
+source_kind: interview_question

@@ -1,0 +1,47 @@
+slug: why-scale-by-sqrt-dk
+title: Size the attention score divisor from head width
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- attention_scaled_dot
+description: 'Write `score_stats(d_model, n_heads, var_q, var_k)` returning the head width, the standard
+  deviation of a raw query-key score, the divisor a transformer actually applies, and the standard deviation
+  left after dividing. The trap is that the divisor is fixed by the head width alone: it is not derived
+  from `d_model`, and it is not whatever value would happen to normalise these particular component variances.'
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- Meta
+- NVIDIA
+prompt: 'Write `score_stats(d_model, n_heads, var_q, var_k)` returning the head width, the standard deviation
+  of a raw query-key score, the divisor a transformer actually applies, and the standard deviation left
+  after dividing. The trap is that the divisor is fixed by the head width alone: it is not derived from
+  `d_model`, and it is not whatever value would happen to normalise these particular component variances.'
+approach: 'Two lines of variance algebra: the score is a sum of independent zero-mean products, so the
+  per-term variances add and the count is the head width. Then keep the architectural divisor separate
+  from the empirical standard deviation — the fourth return value is exactly the gap between them.'
+model_answer: "Let q_i, k_i be independent, mean 0, variance 1.\n\n    q·k = sum_{i=1..d_k} q_i k_i\n\
+  \    E[q_i k_i]   = E[q_i]E[k_i] = 0\n    Var(q_i k_i) = E[q_i^2 k_i^2] = E[q_i^2]E[k_i^2] = 1\n\nIndependent\
+  \ terms, so variances add:\n    Var(q·k) = d_k,    sd = sqrt(d_k)\n\nDividing by sqrt(d_k) restores\
+  \ unit variance for any head width.\n\nAT d_k = 128, UNSCALED. sd = sqrt(128) ≈ 11.3, so logits span\
+  \ roughly ±11 rather than ±1. Softmax over logits that far apart is effectively argmax: one weight ≈\
+  \ 1, the rest ≈ 0.\n\nThe damage is in the gradient. The softmax Jacobian diag(p) - p p^T carries entries\
+  \ of order p_i(1 - p_i). At p ≈ 1 or p ≈ 0 that is ≈ 0, so dL/dz vanishes and attention cannot learn\
+  \ to move where it looks. It stays frozen at whatever initialisation happened to favour, and it gets\
+  \ worse as d_k grows.\n\nNote the scale is per *head* dimension, d_k = d_model/h, so it adapts automatically\
+  \ when head count changes — correct, since the variance argument is per-head."
+follow_ups:
+- Why sqrt(d_k) and not d_k?
+- What does QK-norm fix that scaling alone does not?
+- Once q and k are learned they are not unit variance. Does the argument survive?
+red_flags:
+- Saying 'it keeps values small' with no variance calculation.
+- Not connecting softmax saturation to the p(1-p) term in the Jacobian.
+- Scaling by d_model rather than head dimension.
+source_kind: interview_question

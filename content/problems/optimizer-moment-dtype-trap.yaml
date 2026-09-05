@@ -1,0 +1,88 @@
+slug: optimizer-moment-dtype-trap
+title: Why did the bf16 run use less memory than it should have?
+difficulty: hard
+categories:
+- Systems
+concepts:
+- mixed_precision
+- memory_accounting
+description: "A parallelism benchmark reports peak memory per device for five strategies. Two of them\
+  \ were run\nwith the model in BF16 and `torch.optim.AdamW`; the other three used FP32 master weights\
+  \ with\nBF16 compute. The BF16-native rows used dramatically less memory and the table concluded that\n\
+  their parallelism strategy was more efficient.\n\n**The conclusion was wrong, and the ranking reversed\
+  \ once it was fixed.**\n\nWrite `moment_bytes(param_dtype, optimizer)` returning the bytes per parameter\
+  \ of *optimizer\nstate* that PyTorch will actually allocate.\n\n- `torch.optim.AdamW` allocates `exp_avg`\
+  \ and `exp_avg_sq` **in the parameter's dtype**. A BF16\n  model therefore gets BF16 moments — 4 bytes/param,\
+  \ not the 8 an FP32 assumption predicts.\n- `Adafactor` factors the second moment and keeps it in FP32\
+  \ regardless of parameter dtype.\n\n`param_dtype` is `\"bf16\"`, `\"fp16\"` or `\"fp32\"`; `optimizer`\
+  \ is `\"adamw\"` or `\"adafactor\"`.\n\n**Why this matters more than a memory number.** If one arm of\
+  \ a comparison silently holds its\nmoments at half precision, the table is measuring *precision*, not\
+  \ parallelism — and it will\nrank the numerically weaker configuration first. The fix is to record the\
+  \ moment dtype alongside\nevery row so a reader can see the comparison is like-for-like, rather than\
+  \ taking it on trust.\n"
+inferred_concepts: false
+review_needed: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def moment_bytes(self, param_dtype, optimizer):\n     \
+    \   \"\"\"\n        :type param_dtype: str  # \"bf16\" | \"fp16\" | \"fp32\"\n        :type optimizer:\
+    \ str    # \"adamw\" | \"adafactor\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _d, _o = sys.stdin.read().split()
+
+    print(Solution().moment_bytes(_d, _o))
+
+    '
+test_cases:
+- is_hidden: false
+  order_index: 0
+  stdin: bf16 adamw
+  expected_output: '4'
+  label: Case 1
+  inputs: []
+- is_hidden: false
+  order_index: 1
+  stdin: fp32 adamw
+  expected_output: '8'
+  label: Case 2
+  inputs: []
+- is_hidden: true
+  order_index: 2
+  stdin: fp16 adamw
+  expected_output: '4'
+  label: Hidden 1
+  inputs: []
+- is_hidden: true
+  order_index: 3
+  stdin: bf16 adafactor
+  expected_output: '4'
+  label: Hidden 2
+  inputs: []
+- is_hidden: true
+  order_index: 4
+  stdin: fp32 adafactor
+  expected_output: '4'
+  label: Hidden 3
+  inputs: []
+- is_hidden: true
+  order_index: 5
+  stdin: fp16 adafactor
+  expected_output: '4'
+  label: Hidden 4
+  inputs: []
+hints:
+- Adam keeps two moments per parameter. Adafactor keeps a factored second moment and no first moment.
+- The question is what dtype torch allocates them in, not what dtype you would choose.
+- Adafactor's state is FP32 whatever the parameters are, so its answer does not vary.
+hint_ladder:
+  level_0: Adam keeps two moments per parameter. Adafactor keeps a factored second moment and no first
+    moment.
+  level_1: The question is what dtype torch allocates them in, not what dtype you would choose.
+  level_2: Adafactor's state is FP32 whatever the parameters are, so its answer does not vary.
+source_kind: problem
+order_index: 14
+reference_solution: "class Solution(object):\n    WIDTH = {\"bf16\": 2, \"fp16\": 2, \"fp32\": 4}\n\n\
+  \    def moment_bytes(self, param_dtype, optimizer):\n        if optimizer == \"adafactor\":\n     \
+  \       return 4\n        return 2 * self.WIDTH[param_dtype]\n"

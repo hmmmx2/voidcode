@@ -1,0 +1,81 @@
+slug: flashattention-online-softmax-design
+title: Why can attention be tiled at all? Derive the online softmax
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- kernel_fusion
+- memory_hierarchy
+- tiled_matmul
+grading: rubric
+description: 'Standard attention materialises an N x N score matrix, so memory grows quadratically in
+  sequence length. FlashAttention does not — yet softmax needs a denominator summed over the *whole* row,
+  which appears to require seeing every score first.
+
+
+  Resolve that apparent contradiction. Show how a running maximum and a running sum let you process key/value
+  blocks one at a time and still get the exact softmax, including the rescaling applied when a new block
+  raises the maximum.
+
+
+  Be explicit that the result is **exact, not an approximation** — this is the point most answers get
+  wrong. Then state what the backward pass must do differently and why recomputation is preferred over
+  storing the scores.
+
+
+
+  MEASURED ON AN NVIDIA A40: THE EXACTNESS CLAIM HOLDS
+
+  ------------------------------------------------------
+
+  Tiled online softmax against a full softmax, maximum absolute difference:
+
+
+  | block size | max abs diff |
+
+  |------------|--------------|
+
+  | 64         | 8.941e-08    |
+
+  | 128        | 8.196e-08    |
+
+  | 512        | 4.470e-08    |
+
+  | 2048       | 5.215e-08    |
+
+
+  Every value is **below fp32 epsilon (1.192e-07)**, and the error does not grow as the block shrinks
+
+  -- 64 and 2048 are the same order. That is the signature of floating-point rounding, not of
+
+  approximation: an approximate method loses more as the tiles get smaller, because it would be
+
+  discarding more. This is the evidence for the "exact, not approximate" claim.
+
+  '
+hints:
+- softmax(x) is invariant to subtracting a constant from every element. That is what makes a running maximum
+  safe.
+- When a new block's maximum exceeds the running one, the accumulated numerator and denominator both need
+  scaling by exp(old_max - new_max).
+- The backward pass needs the scores again. It can either store them (quadratic memory) or recompute them
+  from Q and K.
+rubric:
+- criterion: States the shift-invariance of softmax and uses it to justify tracking a running maximum
+    for numerical stability.
+  weight: 0.2
+- criterion: Describes the running state per query row — max, denominator sum, and the accumulated weighted
+    output — and how each is updated per key/value block.
+  weight: 0.25
+- criterion: 'Gets the rescaling right: on a new maximum, previously accumulated numerator and denominator
+    are multiplied by exp(old_max - new_max) before adding the new block.'
+  weight: 0.25
+- criterion: Asserts and justifies that the result is exact, not an approximation — no scores are dropped,
+    only the order of accumulation changes.
+  weight: 0.15
+- criterion: 'Backward pass: recomputes the scores from Q and K rather than storing the N x N matrix,
+    trading extra FLOPs for the memory saving that is the entire point.'
+  weight: 0.15
+inferred_concepts: false
+review_needed: false
+source_kind: problem

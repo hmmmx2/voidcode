@@ -1,0 +1,80 @@
+slug: ema-decay-halflife
+title: Convert an EMA decay to a half-life
+difficulty: medium
+categories:
+- DL
+concepts:
+- optimizers_adaptive
+description: 'Input: `decay`.
+
+
+  An exponential moving average with decay `d` weights an observation from `n` steps ago by `d^n`. Return
+  the half-life — the `n` where that weight reaches 0.5 — rounded to 2 decimal places, and the approximate
+  window `1 / (1 - d)` rounded to 1, as `half_life window`.
+
+
+  Return `-1.0 -1.0` for `decay <= 0` or `decay >= 1`, both of which have no half-life.
+
+
+  The point is intuition for the numbers people type: 0.999 is a window of 1000 steps, and on a run of
+  2000 steps that is not a smoothing constant, it is most of the run.'
+order_index: 70
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def halflife(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().halflife(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def halflife(self, tokens):\n       \
+  \ d = float(tokens[0])\n        if d <= 0 or d >= 1:\n            return '-1.0 -1.0'\n        hl = math.log(0.5)\
+  \ / math.log(d)\n        return str(round(hl, 2)) + ' ' + str(round(1 / (1 - d), 1))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: '0.9'
+  expected_output: 6.58 10.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: '0.999'
+  expected_output: 692.8 1000.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: '0.5'
+  expected_output: 1.0 2.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: '1.0'
+  expected_output: -1.0 -1.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: '0.0'
+  expected_output: -1.0 -1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: '0.99'
+  expected_output: 68.97 100.0
+  is_hidden: true
+hints:
+- d^n = 0.5 gives n = ln(0.5) / ln(d).
+- The 1/(1-d) window is the standard rule of thumb; compare it to the half-life.
+- decay = 0.9 has a half-life under 7 steps.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

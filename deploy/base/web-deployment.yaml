@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voidcode-web
+  labels: { app: voidcode-web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: voidcode-web }
+  template:
+    metadata:
+      labels: { app: voidcode-web }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000            # the `node` user in node:22-alpine
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: voidcode-web:latest
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            # Server-side only. This is the half of the identity fix that lives in the
+            # web tier: the proxy route handler signs X-User-Id with it, and the browser
+            # never sees it. It MUST equal the API's value or every signed request 401s.
+            - name: INTERNAL_API_SECRET
+              valueFrom:
+                secretKeyRef: { name: voidcode-web-secrets, key: INTERNAL_API_SECRET }
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef: { name: voidcode-web-secrets, key: AUTH_SECRET }
+            # In-cluster address, so browser traffic and server-to-server traffic take
+            # different paths. NEXT_PUBLIC_API_URL is NOT here: it is inlined into the
+            # bundle at build time, so setting it now would do nothing — see the
+            # Dockerfile's ARG.
+            - { name: API_INTERNAL_URL, value: "http://voidcode-api:8000" }
+            - { name: AUTH_TRUST_HOST, value: "true" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            # Next.js writes its image-optimisation cache under .next/cache at runtime,
+            # so a read-only rootfs needs this or the first optimised image 500s.
+            - { name: cache, mountPath: /app/apps/web/.next/cache }
+          startupProbe:
+            httpGet: { path: /login, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            # A real route, not `/`. `/` redirects for a signed-in visitor and the
+            # middleware runs on it; `/login` renders unconditionally, so a failure
+            # here means the server is genuinely not serving.
+            httpGet: { path: /login, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /login, port: http }
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+      volumes:
+        - { name: cache, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voidcode-web
+spec:
+  selector: { app: voidcode-web }
+  ports:
+    - { name: http, port: 3000, targetPort: http }

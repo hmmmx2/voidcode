@@ -1,0 +1,49 @@
+slug: occupancy-from-resources
+title: Compute occupancy from the binding resource
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- occupancy
+description: Write `occupancy(...)` returning the resident blocks per SM, the resident warps, and the
+  occupancy fraction, given a kernel's per-block cost and an SM's limits. The trap is that four independent
+  ceilings apply -- registers, shared memory, threads and a hard block cap -- and the answer is the smallest
+  of them, floored, which can be zero.
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+prompt: Write `occupancy(...)` returning the resident blocks per SM, the resident warps, and the occupancy
+  fraction, given a kernel's per-block cost and an SM's limits. The trap is that four independent ceilings
+  apply -- registers, shared memory, threads and a hard block cap -- and the answer is the smallest of
+  them, floored, which can be zero.
+approach: 'Convert each SM resource into a blocks-per-SM ceiling with integer division, take the minimum
+  over all of them, then convert blocks to warps against the SM''s warp capacity. Guard the divisions:
+  a kernel that allocates no shared memory is not limited by shared memory.'
+model_answer: "BLOCKS PER SM, resource by resource.\n    Registers: 256 threads × 64 regs = 16,384 per\
+  \ block\n               65,536 / 16,384 = **4 blocks**\n    Shared:    100 KB / 32 KB      = **3 blocks**\
+  \   <- binding\n    Threads:   2048 / 256          = 8 blocks\n\nShared memory binds at 3 blocks = 768\
+  \ threads = 24 warps.\n    occupancy = 768 / 2048 = **37.5%**\n\nWHY IT MATTERS AT ALL. Warps are how\
+  \ a GPU hides latency — there is no out-of-order execution, so when a warp stalls on a ~400-cycle global\
+  \ load the SM issues from another resident warp. Too few warps and the SM idles through the latency.\n\
+  \nWHY RAISING IT MAY NOT HELP. Occupancy only needs to be high enough to cover the latency you actually\
+  \ have. A compute-bound kernel with heavy register reuse can run near peak at 25% because each warp\
+  \ has enough instruction-level parallelism to hide its own stalls. Cutting shared memory to 16KB would\
+  \ double occupancy — but if that shared memory was buying data reuse, you have traded fewer bytes moved\
+  \ for more warps and may well end up slower.\n\nNote the register trap too: 64 regs/thread is already\
+  \ high, and pushing past the limit makes the compiler spill to *local* memory, which is HBM-backed.\
+  \ A register-pressure problem then becomes a bandwidth problem, and occupancy looks fine while performance\
+  \ collapses.\n\nSo I would measure achieved bandwidth and stall reasons rather than tune occupancy as\
+  \ a number."
+follow_ups:
+- How does instruction-level parallelism substitute for occupancy?
+- How would you detect register spilling?
+- Shared memory drops to 16KB. Recompute — and is it faster?
+red_flags:
+- Treating 100% occupancy as the goal.
+- Computing only the thread limit and ignoring registers and shared memory.
+- Not knowing spilled registers land in HBM-backed local memory.
+source_kind: interview_question

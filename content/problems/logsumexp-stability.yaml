@@ -1,0 +1,50 @@
+slug: logsumexp-stability
+title: Merge log-sum-exp across tiles seen one at a time
+difficulty: medium
+categories:
+- LLM
+- DL
+concepts:
+- numerical_stability
+description: Write `streaming_lse(tiles)` that walks a list of score tiles in order carrying only a running
+  maximum `m` and a running sum `s`, and returns `[m, s, m + log(s)]`. When a tile arrives holding a larger
+  score than anything seen so far, `s` was accumulated against the old maximum and must be corrected by
+  a single multiplicative factor before the new tile is folded in -- naming that factor is the question.
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- OpenAI
+- NVIDIA
+- Anthropic
+prompt: Write `streaming_lse(tiles)` that walks a list of score tiles in order carrying only a running
+  maximum `m` and a running sum `s`, and returns `[m, s, m + log(s)]`. When a tile arrives holding a larger
+  score than anything seen so far, `s` was accumulated against the old maximum and must be corrected by
+  a single multiplicative factor before the new tile is folded in -- naming that factor is the question.
+approach: Hold m = the largest score seen and s = sum of exp(z - m) over everything seen. When a tile's
+  own maximum exceeds m, multiply s by exp(m_old - m_new) before adding the new tile's terms; that one
+  factor rewrites every earlier term against the new reference point exactly. Skip empty tiles, and never
+  exponentiate a raw score.
+model_answer: "INVARIANCE. For any constant c,\n\n    softmax(z - c)_i = e^(z_i - c) / sum_j e^(z_j -\
+  \ c)\n                     = (e^-c e^z_i) / (e^-c sum_j e^z_j)\n                     = e^z_i / sum_j\
+  \ e^z_j = softmax(z)_i\n\nThe e^-c factors cancel exactly, so softmax is invariant to any shift. Choosing\
+  \ c = max(z) makes the largest exponent exactly e^0 = 1 and every other term <= 1.\n\nWITHOUT IT. fp32's\
+  \ maximum is ~3.4e38, and e^x overflows at x ≈ 88.7 (fp64 at ≈ 709). So e^800 = inf, giving inf/inf\
+  \ = **NaN** — the whole row is destroyed, and in a transformer that NaN propagates through every subsequent\
+  \ layer within one step.\n\nUnderflow is the quieter failure: e^-800 = 0, so a very negative logit contributes\
+  \ exactly 0. With the max subtracted this is fine (that token genuinely has negligible probability),\
+  \ but taking log of it later gives -inf, which is why cross-entropy is computed as a fused log_softmax\
+  \ rather than log(softmax(x)).\n\nLOG-SUM-EXP. The same shift gives the stable form:\n    log sum_j\
+  \ e^z_j = m + log sum_j e^(z_j - m),   m = max(z)\nwhich is what log_softmax uses, and what lets FlashAttention\
+  \ combine partial softmax results across tiles: it carries a running max and rescales previous partial\
+  \ sums when a larger one appears, which is exactly why the n×n matrix never has to exist."
+follow_ups:
+- At what logit value does exp overflow in fp16?
+- Why is log_softmax fused rather than composed from log and softmax?
+- How does FlashAttention's online rescaling use this identity?
+red_flags:
+- Unable to show the e^-c factors cancel.
+- Thinking the max subtraction changes the result.
+- Not knowing the overflow threshold is around 88 in fp32, not 3.4e38.
+source_kind: interview_question

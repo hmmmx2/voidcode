@@ -1,0 +1,134 @@
+slug: broadcast-shapes
+title: Broadcasting Shapes
+difficulty: medium
+categories:
+- TensorFlow
+- PyTorch
+- ML
+concepts:
+- tensors_and_shapes
+description: 'Given two tensor shapes, return the shape they broadcast to.
+
+
+  Broadcasting is the rule that lets `(256, 256, 3)` and `(3,)` be added together, and it is identical
+  in NumPy, PyTorch and TensorFlow. Align the shapes from the **right**, then compare each pair of dimensions:
+
+
+  * equal -- keep it
+
+  * one of them is `1` -- it stretches to the other
+
+  * a missing dimension counts as `1`
+
+  * anything else -- the shapes are incompatible
+
+
+  Return the resulting shape, or an **empty list** if they cannot broadcast.
+
+
+  A scalar has shape `[]` and broadcasts against anything.'
+inferred_concepts: true
+review_needed: true
+order_index: 11
+examples:
+- input: a = [3, 1, 5], b = [1, 4, 5]
+  output: '[3, 4, 5]'
+  explanation: Each pair either matches or has a 1 that stretches. Both operands stretch here, in different
+    axes.
+- input: a = [256, 256, 3], b = [3]
+  output: '[256, 256, 3]'
+  explanation: An image and a per-channel constant. b right-aligns to the last axis; its missing dimensions
+    count as 1.
+- input: a = [2, 3], b = [4, 5]
+  output: '[]'
+  explanation: 2 against 4, with neither equal to 1. Incompatible, so the result is empty.
+constraints:
+- 0 <= len(shape) <= 8 for both inputs
+- 1 <= dimension <= 10^6
+- Align from the right; a missing leading dimension counts as 1.
+- Return [] when the shapes cannot broadcast.
+- Standard library only -- no numpy, no torch.
+hints:
+- Align from the RIGHT, not the left. Reversing both shapes first turns the alignment into a plain index-by-index
+  walk.
+- Iterate to the length of the LONGER shape. Whenever one shape has run out, substitute 1 -- that is exactly
+  what a missing leading dimension means.
+- 'For each pair: if they are equal, or either is 1, the result is max(da, db). Otherwise return [] immediately.
+  Remember to reverse the accumulated result before returning it.'
+hint_ladder:
+  level_0: Align from the RIGHT, not the left. Reversing both shapes first turns the alignment into a
+    plain index-by-index walk.
+  level_1: Iterate to the length of the LONGER shape. Whenever one shape has run out, substitute 1 --
+    that is exactly what a missing leading dimension means.
+  level_2: 'For each pair: if they are equal, or either is 1, the result is max(da, db). Otherwise return
+    [] immediately. Remember to reverse the accumulated result before returning it.'
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: a
+    value: '[3, 1, 5]'
+  - name: b
+    value: '[1, 4, 5]'
+  stdin: '[3, 1, 5]
+
+    [1, 4, 5]'
+  expected_output: '[3, 4, 5]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: a
+    value: '[256, 256, 3]'
+  - name: b
+    value: '[3]'
+  stdin: '[256, 256, 3]
+
+    [3]'
+  expected_output: '[256, 256, 3]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: a
+    value: '[2, 3]'
+  - name: b
+    value: '[4, 5]'
+  stdin: '[2, 3]
+
+    [4, 5]'
+  expected_output: '[]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: a
+    value: '[]'
+  - name: b
+    value: '[7, 2]'
+  stdin: '[]
+
+    [7, 2]'
+  expected_output: '[7, 2]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def broadcast(self, a, b):\n        \"\"\"\n        :type\
+    \ a: List[int]\n        :type b: List[int]\n        :rtype: List[int]  # [] if incompatible\n    \
+    \    \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    a = json.loads(_in[0]); b = json.loads(_in[1])
+
+    print(Solution().broadcast(a, b))
+
+    '
+source_kind: problem
+reference_solution: "class Solution(object):\n    def broadcast(self, a, b):\n        ra, rb = list(reversed(a)),\
+  \ list(reversed(b))\n        out = []\n        for i in range(max(len(ra), len(rb))):\n            da\
+  \ = ra[i] if i < len(ra) else 1\n            db = rb[i] if i < len(rb) else 1\n            if da ==\
+  \ db or da == 1 or db == 1:\n                out.append(max(da, db))\n            else:\n          \
+  \      return []\n        return list(reversed(out))\n"

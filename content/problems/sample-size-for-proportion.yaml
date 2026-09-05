@@ -1,0 +1,79 @@
+slug: sample-size-for-proportion
+title: How many learners to detect the effect you care about
+difficulty: hard
+categories:
+- ML
+concepts:
+- probability_expectation
+description: "Input: `baseline mde` for 80% power at alpha 0.05, using z_alpha/2 = 1.96 and z_beta = 0.8416.\n\
+  \n    n_per_arm = ceil( (z_a + z_b)^2 * (p0(1-p0) + p1(1-p1)) / mde^2 )\n\nwhere `p1 = baseline + mde`.\
+  \ Return `n_per_arm total` for two arms.\n\n`mde` is ABSOLUTE: 0.05 on a baseline of 0.30 means detecting\
+  \ 0.35. Absolute and relative effects are confused constantly and differ by a factor of several in n.\
+  \ Return `-1 -1` when `p1` falls outside (0,1) or `mde <= 0`.\n\nThe number this produces is usually\
+  \ the answer to \"can we run this experiment at all\"."
+order_index: 74
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def n(self, tokens):\n        \"\"\"\n        :rtype: see\
+    \ the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().n(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def n(self, tokens):\n        p0 = float(tokens[0]);\
+  \ mde = float(tokens[1])\n        p1 = p0 + mde\n        if mde <= 0 or p1 <= 0 or p1 >= 1 or p0 <=\
+  \ 0 or p0 >= 1:\n            return '-1 -1'\n        za, zb = 1.96, 0.8416\n        var = p0 * (1 -\
+  \ p0) + p1 * (1 - p1)\n        per = math.ceil((za + zb) ** 2 * var / (mde ** 2))\n        return str(per)\
+  \ + ' ' + str(per * 2)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0.30 0.05
+  expected_output: 1374 2748
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 0.30 0.10
+  expected_output: 354 708
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0.30 0.025
+  expected_output: 5393 10786
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0.50 0.05
+  expected_output: 1562 3124
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.30 0.0
+  expected_output: -1 -1
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0.95 0.10
+  expected_output: -1 -1
+  is_hidden: true
+hints:
+- Halving the mde roughly quadruples n -- the effect enters squared.
+- Both arms contribute variance, hence the sum of the two p(1-p) terms.
+- Round the per-arm figure UP; you cannot recruit a fraction of a learner.
+hint_ladder:
+  level_0: Halving the mde roughly quadruples n -- the effect enters squared.
+  level_1: Both arms contribute variance, hence the sum of the two p(1-p) terms.
+  level_2: Round the per-arm figure UP; you cannot recruit a fraction of a learner.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

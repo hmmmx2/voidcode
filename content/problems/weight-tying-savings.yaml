@@ -1,0 +1,82 @@
+slug: weight-tying-savings
+title: What does tying the embedding and output layer save?
+difficulty: easy
+categories:
+- LLM
+concepts:
+- embeddings
+description: 'Input: `vocab_size d_model total_params_millions`.
+
+
+  Weight tying reuses the input embedding matrix as the output projection, removing one `vocab_size x
+  d_model` matrix. Return `saved_millions saved_pct`, the first rounded to 2 decimal places and the percentage
+  to 1.
+
+
+  The saving is large on small models and negligible on large ones, because the embedding is a fixed size
+  while the rest of the model grows. That crossover is the whole reason tying is common at 100M and rare
+  at 70B.'
+order_index: 67
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def tying(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().tying(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def tying(self, tokens):\n        v = float(tokens[0]);\
+  \ d = float(tokens[1]); tot = float(tokens[2])\n        saved = v * d / 1e6\n        pct = 0.0 if tot\
+  \ == 0 else round(saved / tot * 100, 1)\n        return str(round(saved, 2)) + ' ' + str(pct)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 50000 768 125
+  expected_output: 38.4 30.7
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 50000 768 7000
+  expected_output: 38.4 0.5
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 32000 4096 7000
+  expected_output: 131.07 1.9
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 50000 512 50
+  expected_output: 25.6 51.2
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1000 128 10
+  expected_output: 0.13 1.3
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 50000 768 0
+  expected_output: 38.4 0.0
+  is_hidden: true
+hints:
+- The removed matrix is exactly vocab_size * d_model parameters.
+- Convert to millions by dividing by 1e6.
+- saved_pct is against the ORIGINAL total, not the tied total.
+hint_ladder:
+  level_0: The removed matrix is exactly vocab_size * d_model parameters.
+  level_1: Convert to millions by dividing by 1e6.
+  level_2: saved_pct is against the ORIGINAL total, not the tied total.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

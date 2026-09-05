@@ -1,0 +1,133 @@
+slug: zero-stage-memory-arithmetic
+title: Which ZeRO stage does this model need?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- zero_sharding
+- memory_accounting
+description: 'You are given a model''s parameter count, an optimizer, and a per-GPU memory budget. Return
+  the
+
+  **lowest** ZeRO stage that fits, or `None` if no stage does.
+
+
+  Write `lowest_zero_stage(params, gpus, gib_per_gpu, optimizer)`.
+
+
+  `optimizer` is one of `"adamw"`, `"adamw8bit"`, or `"adafactor"`. Assume BF16 parameters and
+
+  gradients, and account for these per-parameter costs:
+
+
+  | component | bytes/param | sharded by |
+
+  |---|---|---|
+
+  | parameters (bf16) | 2 | stage 3 only |
+
+  | gradients (bf16) | 2 | stages 2 and 3 |
+
+  | optimizer state | 12 adamw / 6 adamw8bit / 2 adafactor | stages 1, 2 and 3 |
+
+
+  Sharded components are divided by `gpus`; unsharded ones are replicated in full on every GPU.
+
+  Stage 0 shards nothing. Ignore activations — this question is about *static* state.
+
+
+  Return the smallest stage in `0, 1, 2, 3` whose per-GPU total is at or below the budget.
+
+
+  **Why the answer is not simply "use stage 3".** Each stage buys memory with communication.
+
+  Stage 3 re-gathers parameters on every forward *and* every backward, for every micro-batch, and
+
+  gradient accumulation does not amortise that. On a slow interconnect the extra collectives can
+
+  cost more than the memory saves — so the lowest stage that fits is the right answer, not the
+
+  most aggressive one.
+
+  '
+inferred_concepts: false
+review_needed: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def lowest_zero_stage(self, params, gpus, gib_per_gpu,\
+    \ optimizer):\n        \"\"\"\n        :type params: int\n        :type gpus: int\n        :type gib_per_gpu:\
+    \ float\n        :type optimizer: str  # \"adamw\" | \"adamw8bit\" | \"adafactor\"\n        :rtype:\
+    \ int | None    # lowest stage in 0..3 that fits, else None\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().lowest_zero_stage(int(_p[0]), int(_p[1]), float(_p[2]), _p[3]))
+
+    '
+test_cases:
+- is_hidden: false
+  order_index: 0
+  stdin: 7615616512 2 44.0 adamw
+  expected_output: None
+  label: Case 1
+  inputs: []
+- is_hidden: false
+  order_index: 1
+  stdin: 7615616512 2 44.0 adafactor
+  expected_output: '0'
+  label: Case 2
+  inputs: []
+- is_hidden: true
+  order_index: 2
+  stdin: 1500000000 1 16.0 adamw
+  expected_output: None
+  label: Hidden 1
+  inputs: []
+- is_hidden: true
+  order_index: 3
+  stdin: 7615616512 8 40.0 adamw
+  expected_output: '1'
+  label: Hidden 2
+  inputs: []
+- is_hidden: true
+  order_index: 4
+  stdin: 7615616512 2 30.0 adafactor
+  expected_output: '2'
+  label: Hidden 3
+  inputs: []
+- is_hidden: true
+  order_index: 5
+  stdin: 70000000000 8 80.0 adamw
+  expected_output: None
+  label: Hidden 4
+  inputs: []
+- is_hidden: true
+  order_index: 6
+  stdin: 70000000000 2 80.0 adamw
+  expected_output: None
+  label: Hidden 5
+  inputs: []
+- is_hidden: true
+  order_index: 7
+  stdin: 1500000000 4 4.0 adafactor
+  expected_output: '3'
+  label: Hidden 6
+  inputs: []
+hints:
+- Compute bytes per parameter per GPU for each stage, then compare against the budget once.
+- Stage 1 shards optimizer state only. Stage 2 adds gradients. Stage 3 adds parameters.
+- A GiB is 2**30 bytes. Convert once, at the end, rather than per component.
+hint_ladder:
+  level_0: Compute bytes per parameter per GPU for each stage, then compare against the budget once.
+  level_1: Stage 1 shards optimizer state only. Stage 2 adds gradients. Stage 3 adds parameters.
+  level_2: A GiB is 2**30 bytes. Convert once, at the end, rather than per component.
+source_kind: problem
+order_index: 13
+reference_solution: "class Solution(object):\n    OPT_BYTES = {\"adamw\": 12, \"adamw8bit\": 6, \"adafactor\"\
+  : 2}\n\n    def lowest_zero_stage(self, params, gpus, gib_per_gpu, optimizer):\n        opt = self.OPT_BYTES[optimizer]\n\
+  \        budget = gib_per_gpu * (2 ** 30)\n        for stage in (0, 1, 2, 3):\n            p = 2 / gpus\
+  \ if stage == 3 else 2\n            g = 2 / gpus if stage >= 2 else 2\n            o = opt / gpus if\
+  \ stage >= 1 else opt\n            if params * (p + g + o) <= budget:\n                return stage\n\
+  \        return None\n"

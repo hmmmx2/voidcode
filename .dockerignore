@@ -1,0 +1,74 @@
+# Build context exclusions.
+#
+# THERE WAS NO .dockerignore ANYWHERE, and the consequences were worse than slow.
+#
+# 1. SECRETS. `apps/web/Dockerfile`'s builder stage runs `COPY . .`, so every .env in
+#    the repo — including apps/api/.env with a live Resend API key — was being copied
+#    into an image layer. The runner stage does not carry it forward, but the BUILDER
+#    layer does, and a builder layer that reaches a registry or a shared cache is a
+#    leaked secret. `docker history` shows it; deleting the file in a later layer does
+#    not remove it.
+#
+# 2. SIZE. The context measured 1.1 GB and was still climbing: node_modules, .next,
+#    .git, and llm/outputs (model checkpoints). Every one of those is either rebuilt
+#    inside the image or irrelevant to it.
+#
+# Ordered most-important-first rather than alphabetically, because the first block is
+# the one that must never be relaxed.
+
+# ── secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!**/.env.example
+**/.env
+**/.env.local
+**/.env.docker
+*.pem
+*.key
+
+# ── version control and tooling state ────────────────────────────────────────
+.git
+.gitignore
+.github
+.claude
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+
+# ── dependencies and build output, all regenerated inside the image ──────────
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+**/.turbo
+dist
+build
+
+# ── model weights, checkpoints and datasets ──────────────────────────────────
+# Tens of gigabytes, and the API image loads them from a mounted volume rather than
+# from its own filesystem.
+llm/outputs
+llm/data
+**/*.safetensors
+**/*.gguf
+**/*.bin
+**/*.pt
+**/checkpoint-*
+
+# ── data and local artefacts ─────────────────────────────────────────────────
+warehouse
+*.parquet
+*.jsonl
+!llm/configs/*.jsonl
+scripts/memory_audit/out_*.jsonl
+
+# ── docs and editor noise ────────────────────────────────────────────────────
+*.md
+!README.md
+.vscode
+.idea

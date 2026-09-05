@@ -1,0 +1,223 @@
+slug: iq-vit-token-budget
+title: Token count and attention cost across two ViT configurations
+difficulty: easy
+categories:
+- VLM
+- CUDA
+concepts:
+- attention_scaled_dot
+- tokenization
+- vision_transformer
+description: 'Write `token_budget(side_a, patch_a, side_b, patch_b, include_cls)`.
+
+
+  A square image of `side` pixels is cut into non-overlapping `patch x patch` squares. The grid is `side
+  // patch` per axis -- leftover pixels along the right and bottom edges are dropped, so this is floor
+  division, not rounding.
+
+
+  ```
+
+  tokens = (side // patch) ** 2 + (1 if include_cls else 0)
+
+  ```
+
+
+  Self-attention is quadratic in the token count, so configuration B costs
+
+
+  ```
+
+  attn_ratio = (tokens_b / tokens_a) ** 2
+
+  ```
+
+
+  times what configuration A costs. Return `[tokens_a, tokens_b, attn_ratio]`.
+
+
+  `tokens_a` and `tokens_b` are integers. The driver rounds `attn_ratio` to 6 decimals.
+
+
+  **The class token** is one extra row that never came from a patch. It is a rounding error at 9216 tokens
+  and a real 0.4% at 256, so including it shifts the ratio even though it barely shifts either token count.
+
+
+  **Order matters.** The ratio is B relative to A, so a configuration B that is smaller than A must give
+  a value below 1.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 27
+examples:
+- input: side_a = 224, patch_a = 14, side_b = 1344, patch_b = 14, include_cls = False
+  output: '[256, 9216, 1296.0]'
+  explanation: 224 // 14 = 16 giving 16^2 = 256 tokens; 1344 // 14 = 96 giving 96^2 = 9216. Six times
+    the side is 36 times the tokens and 36^2 = 1296 times the attention cost.
+- input: side_a = 224, patch_a = 14, side_b = 224, patch_b = 7, include_cls = False
+  output: '[256, 1024, 16.0]'
+  explanation: Halving the patch at fixed resolution quadruples the token count, which is 16x the attention
+    cost -- the patch size is the real resolution knob.
+constraints:
+- 1 <= side_a, side_b <= 8192
+- 1 <= patch_a <= side_a and 1 <= patch_b <= side_b
+- include_cls is a bool and adds exactly one token to each configuration
+- Use floor division for the grid; leftover pixels are dropped.
+- The ratio is B relative to A, not A relative to B.
+- Round the ratio to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: side_a
+    value: '224'
+  - name: patch_a
+    value: '14'
+  - name: side_b
+    value: '1344'
+  - name: patch_b
+    value: '14'
+  - name: include_cls
+    value: '0'
+  stdin: '224
+
+    14
+
+    1344
+
+    14
+
+    0'
+  expected_output: '[256, 9216, 1296.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: side_a
+    value: '224'
+  - name: patch_a
+    value: '14'
+  - name: side_b
+    value: '224'
+  - name: patch_b
+    value: '7'
+  - name: include_cls
+    value: '0'
+  stdin: '224
+
+    14
+
+    224
+
+    7
+
+    0'
+  expected_output: '[256, 1024, 16.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: side_a
+    value: '224'
+  - name: patch_a
+    value: '14'
+  - name: side_b
+    value: '1344'
+  - name: patch_b
+    value: '14'
+  - name: include_cls
+    value: '1'
+  stdin: '224
+
+    14
+
+    1344
+
+    14
+
+    1'
+  expected_output: '[257, 9217, 1286.213099]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: side_a
+    value: '224'
+  - name: patch_a
+    value: '14'
+  - name: side_b
+    value: '1020'
+  - name: patch_b
+    value: '14'
+  - name: include_cls
+    value: '0'
+  stdin: '224
+
+    14
+
+    1020
+
+    14
+
+    0'
+  expected_output: '[256, 5184, 410.0625]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: side_a
+    value: '1344'
+  - name: patch_a
+    value: '14'
+  - name: side_b
+    value: '224'
+  - name: patch_b
+    value: '14'
+  - name: include_cls
+    value: '0'
+  stdin: '1344
+
+    14
+
+    224
+
+    14
+
+    0'
+  expected_output: '[9216, 256, 0.000772]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def token_budget(self, side_a, patch_a, side_b, patch_b,\
+    \ include_cls):\n        \"\"\"\n        :type side_a: int\n        :type patch_a: int\n        :type\
+    \ side_b: int\n        :type patch_b: int\n        :type include_cls: bool\n        :rtype: List \
+    \ -- [tokens_a, tokens_b, attn_ratio]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    side_a = int(_in[0])
+
+    patch_a = int(_in[1])
+
+    side_b = int(_in[2])
+
+    patch_b = int(_in[3])
+
+    include_cls = bool(int(_in[4]))
+
+    _r = Solution().token_budget(side_a, patch_a, side_b, patch_b, include_cls)
+
+    print([int(_r[0]), int(_r[1]), round(_r[2], 6)])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def token_budget(self, side_a, patch_a, side_b, patch_b,\
+  \ include_cls):\n        extra = 1 if include_cls else 0\n        ta = (side_a // patch_a) ** 2 + extra\n\
+  \        tb = (side_b // patch_b) ** 2 + extra\n        ratio = float(tb) / float(ta)\n        return\
+  \ [ta, tb, ratio * ratio]\n"

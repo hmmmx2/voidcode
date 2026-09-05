@@ -1,0 +1,313 @@
+slug: flashattention
+title: 'FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness'
+difficulty: hard
+categories:
+- CUDA
+- LLM
+- DL
+concepts:
+- flash_attention
+- attention_scaled_dot
+description: TODO
+inferred_concepts: true
+review_needed: true
+authors: Dao, Fu, Ermon, Rudra, Ré
+year: 2022
+venue: NeurIPS
+arxiv_id: '2205.14135'
+pdf_url: https://arxiv.org/pdf/2205.14135
+order_index: 3
+abstract: 'Attention was thought to be compute-bound and quadratic in memory. This paper shows it is neither:
+  the bottleneck is reading and writing the n-by-n score matrix to HBM, and tiling the computation so
+  that matrix never materialises makes attention linear in memory and several times faster — while computing
+  exactly the same function. Not an approximation. Long context became practical because of this.'
+related_problem_slugs:
+- scaled-dot-product-attention
+- stable-softmax
+- parallel-reduction
+key_equations:
+- label: Online softmax rescaling
+  latex: \ell^{(new)} = e^{m^{(old)} - m^{(new)}}\,\ell^{(old)} + \sum_j e^{s_j - m^{(new)}}
+  note: The trick the whole paper rests on. When a later tile raises the running maximum, the accumulated
+    sum is corrected by one exponential factor.
+- label: Memory traffic
+  latex: O\!\left(\frac{N^2 d^2}{M}\right) \text{ vs } O(N^2)
+  note: HBM accesses with tiling versus without, where M is SRAM size. This is the entire speedup.
+sections:
+  architecture: '## The observation
+
+
+    Standard attention is three kernels:
+
+
+    ```
+
+    S = QK^T        # write an N x N matrix to HBM
+
+    P = softmax(S)  # read it, write it again
+
+    O = PV          # read it again
+
+    ```
+
+
+    Each step round-trips the `N x N` score matrix through HBM. At `N = 4096` in
+
+    fp16 that is 32MB, read and written three times, per head, per layer.
+
+
+    **The FLOPs were never the problem.** GPUs have roughly two orders of magnitude
+
+    more arithmetic throughput than memory bandwidth, so a kernel that moves 100MB
+
+    to do a few hundred MFLOPs is bandwidth-bound with the ALUs idle.
+
+
+    ## The fix
+
+
+    Tile the computation so the score matrix never exists in full. Load a block of
+
+    Q, loop over blocks of K and V, keep the running output in SRAM, and never write
+
+    `S` to HBM at all.
+
+
+    The obstacle is softmax: it needs a denominator over the *whole* row, and a tile
+
+    only sees part of it. That is what the online rescaling solves — see the
+
+    mathematics section.
+
+
+    ## Memory hierarchy is the whole story
+
+
+    - **HBM** — 40-80GB, roughly 1.5-2 TB/s
+
+    - **SRAM** — around 20MB total, roughly 19 TB/s
+
+
+    An order of magnitude in bandwidth. The paper''s framing is that attention should
+
+    be designed around *where data lives*, not around how many operations it takes,
+
+    and that reframing is more important than the kernel.
+
+
+    ## What it is not
+
+
+    **Not an approximation.** Sparse and low-rank attention variants trade accuracy
+
+    for speed; this computes exactly the same function as standard attention, bit
+
+    for bit modulo floating-point association order. That is why it was adopted
+
+    universally and they were not.
+
+
+    The backward pass recomputes the score matrix from Q and K rather than storing
+
+    it — trading FLOPs for memory, the same bargain as gradient checkpointing.
+
+    '
+  implementation: "## The shape of the kernel\n\n```\nfor each block of Q:\n    load Q_i into SRAM\n \
+    \   m, l, O_i = -inf, 0, 0          # running max, running sum, running output\n    for each block\
+    \ of K, V:\n        load K_j, V_j into SRAM\n        S_ij = Q_i @ K_j^T / sqrt(d)\n        m_new =\
+    \ max(m, rowmax(S_ij))\n        P_ij  = exp(S_ij - m_new)\n        l = exp(m - m_new) * l + rowsum(P_ij)\n\
+    \        O_i = exp(m - m_new) * O_i + P_ij @ V_j\n        m = m_new\n    write O_i / l\n```\n\nThe\
+    \ two `exp(m - m_new)` factors are the entire algorithm. Everything else is\nordinary tiled matmul.\n\
+    \n**Related problems:** `scaled-dot-product-attention` for the function being\ncomputed, `stable-softmax`\
+    \ for why the max is subtracted at all, and\n`parallel-reduction` for how `rowmax` and `rowsum` are\
+    \ computed across a block.\n\n## Why you will not write this yourself\n\nThe reference implementation\
+    \ is CUDA C++ with hand-tuned tile sizes per\narchitecture, warp-level primitives, and careful shared-memory\
+    \ bank-conflict\navoidance. It is a few hundred lines that took real expertise.\n\n**Use `F.scaled_dot_product_attention`.**\
+    \ PyTorch dispatches to FlashAttention\nautomatically when the shapes and dtype allow it. The value\
+    \ of understanding the\nkernel is knowing *when* it will not dispatch — an unsupported mask shape,\
+    \ an\nodd head dimension, fp32 — and why your model suddenly used four times the\nmemory.\n\n## Choosing\
+    \ the tile size\n\nTiles must fit in SRAM alongside the running state: roughly\n`(B_r + B_c) * d *\
+    \ 2 bytes` plus the block of scores. Too large and you spill to\nHBM, losing the entire point. Too\
+    \ small and you reload K and V more times than\nnecessary.\n\nThis is why the kernel is compiled per\
+    \ head dimension. There is no single tile\nsize that is right for `d = 64` and `d = 128`.\n"
+  systems: '## What actually got faster
+
+
+    The paper reports 2-4x wall-clock on typical sequence lengths and up to 10-20x
+
+    memory reduction. The memory number is the more consequential one: quadratic
+
+    memory is what capped context length, and removing it is what made 8k, 32k and
+
+    beyond feasible at all.
+
+
+    Note the speedup is **not** from fewer FLOPs. The backward pass does *more*
+
+    arithmetic than the standard implementation, because it recomputes the scores.
+
+    It is still faster, because arithmetic is cheap and memory traffic is not.
+
+
+    ## Where it does not help
+
+
+    **Decode.** Generating one token attends over the whole KV cache but computes
+
+    one row of scores. There is no `N x N` matrix to avoid, and the step is bound by
+
+    streaming the cache out of HBM. FlashAttention is a prefill optimisation;
+
+    decode needs PagedAttention and grouped-query attention instead.
+
+
+    **Short sequences.** Below roughly 512 tokens the score matrix fits comfortably
+
+    and the tiling overhead is not repaid.
+
+
+    **Small batches on large GPUs.** If there is not enough parallel work to fill
+
+    the SMs, you are latency-bound and the kernel is not the constraint.
+
+
+    ## The general lesson
+
+
+    Arithmetic intensity — FLOPs per byte moved — decides which limit binds. Every
+
+    GPU has a ridge point where the two costs cross; on an A100 it is around 200
+
+    FLOPs per byte.
+
+
+    Attention as three kernels sits far below that ridge and is bandwidth-bound.
+
+    Fusing them raises intensity and moves the same computation across the ridge.
+
+    **Same maths, different position on the roofline.** That reasoning generalises
+
+    far beyond attention, and it is why kernel fusion is the first thing to try on
+
+    any elementwise-heavy pipeline.
+
+    '
+  mathematics: '## The problem with tiled softmax
+
+
+    Softmax needs a denominator over the entire row:
+
+
+    ```math
+
+    p_i = \frac{e^{s_i - m}}{\sum_j e^{s_j - m}}, \qquad m = \max_j s_j
+
+    ```
+
+
+    A tile sees only part of the row, so it knows neither the true maximum nor the
+
+    true sum. Computing softmax per tile and concatenating gives the wrong answer,
+
+    because each tile normalised by a different denominator.
+
+
+    ## The online correction
+
+
+    Keep two running values: the maximum seen so far `m`, and the sum accumulated
+
+    under that maximum `l`. When a new tile arrives with maximum `m''`, the new
+
+    running maximum is `m_new = max(m, m'')`, and every previously accumulated term
+
+    was scaled by the wrong exponential. Correct it:
+
+
+    ```math
+
+    \ell^{(new)} = e^{m - m_{new}}\,\ell + \sum_{j \in tile} e^{s_j - m_{new}}
+
+    ```
+
+
+    The factor `e^{m - m_new}` is exactly the ratio between what you divided by and
+
+    what you should have divided by. Since
+
+
+    ```math
+
+    e^{s - m} = e^{s - m_{new}} \cdot e^{m_{new} - m}
+
+    ```
+
+
+    rescaling by `e^{m - m_new}` converts every earlier term to the new basis
+
+    **exactly**. No error accumulates, which is why the result is the same function
+
+    and not an approximation.
+
+
+    ## The same correction applies to the output
+
+
+    The running output `O` is a weighted sum of value vectors, weighted by
+
+    unnormalised probabilities under the old maximum. It needs the identical
+
+    rescale:
+
+
+    ```math
+
+    O^{(new)} = e^{m - m_{new}} O + P_{tile} V_{tile}
+
+    ```
+
+
+    Two accumulators, one shared correction factor. If you only rescale the
+
+    denominator and forget the output, the result is subtly wrong in a way that
+
+    still looks like a probability distribution — which is the hardest kind of bug
+
+    to find.
+
+
+    ## Why it stays numerically stable
+
+
+    Subtracting the running maximum before exponentiating means every exponent is at
+
+    most 0, so `exp` never overflows. And `m_new >= m` always, so the correction
+
+    factor `e^{m - m_new}` is at most 1 — it only ever shrinks the accumulator,
+
+    never amplifies it. The algorithm cannot blow up.
+
+
+    ## The IO complexity result
+
+
+    The paper''s theoretical contribution is a bound on HBM accesses:
+
+
+    ```math
+
+    \Theta\!\left(\frac{N^2 d^2}{M}\right)
+
+    ```
+
+
+    for SRAM of size `M`, against `\Theta(N^2)` for the standard implementation.
+
+    With `M` around 100KB and `d = 64`, that is roughly a 9x reduction in traffic —
+
+    and they prove no exact attention algorithm can do asymptotically better, which
+
+    is the part that makes it a result rather than an engineering trick.
+
+    '
+source_kind: paper

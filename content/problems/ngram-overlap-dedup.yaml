@@ -1,0 +1,87 @@
+slug: ngram-overlap-dedup
+title: Near-duplicate detection by n-gram overlap
+difficulty: medium
+categories:
+- ML
+concepts:
+- dataloading
+- tokenization
+description: 'Input: `n`, then the tokens of document A, then `|`, then the tokens of document B.
+
+
+  Return the Jaccard similarity of their sets of n-grams, rounded to 4 decimal places: `|A ∩ B| / |A ∪
+  B|`.
+
+
+  Return `0.0` when either document is shorter than `n`, since it produces no n-grams.
+
+
+  Exact-match deduplication misses the documents that matter most — a training corpus is full of near-duplicates
+  that differ by a header or a licence block, and they are what makes a model memorise.'
+order_index: 83
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def overlap(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().overlap(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def overlap(self, tokens):\n        n = int(tokens[0])\n\
+  \        rest = tokens[1:]\n        if '|' not in rest:\n            return 0.0\n        cut = rest.index('|')\n\
+  \        a, b = rest[:cut], rest[cut + 1:]\n        def grams(xs):\n            return {tuple(xs[i:i\
+  \ + n]) for i in range(len(xs) - n + 1)} if len(xs) >= n else set()\n        ga, gb = grams(a), grams(b)\n\
+  \        if not ga or not gb:\n            return 0.0\n        u = len(ga | gb)\n        return 0.0\
+  \ if u == 0 else round(len(ga & gb) / u, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 a b c | a b c
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 a b c | x y z
+  expected_output: '0.0'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 2 a | a b
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 1 a b | b c
+  expected_output: '0.3333'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 3 a b c d | b c d e
+  expected_output: '0.3333'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 a b c d | a b x d
+  expected_output: '0.2'
+  is_hidden: true
+hints:
+- An n-gram is a tuple of n consecutive tokens; use a set of them.
+- Jaccard is intersection over union of those SETS, so repeats do not count twice.
+- A document shorter than n contributes no n-grams at all.
+hint_ladder:
+  level_0: An n-gram is a tuple of n consecutive tokens; use a set of them.
+  level_1: Jaccard is intersection over union of those SETS, so repeats do not count twice.
+  level_2: A document shorter than n contributes no n-grams at all.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

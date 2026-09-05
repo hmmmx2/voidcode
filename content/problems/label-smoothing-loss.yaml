@@ -1,0 +1,80 @@
+slug: label-smoothing-loss
+title: Cross-entropy with label smoothing
+difficulty: medium
+categories:
+- DL
+concepts:
+- loss_functions
+- numerical_stability
+description: 'Input: `eps true_class`, then the logits for each class.
+
+
+  Label smoothing replaces the one-hot target with `1 - eps + eps/C` on the true class and `eps/C` elsewhere,
+  then takes the cross-entropy against that. Return the loss rounded to 4 decimal places.
+
+
+  Compute log-softmax with the max-subtraction trick. Exponentiating a large logit directly overflows,
+  and the result is `inf` rather than an error — a wrong number, not a crash.'
+order_index: 46
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def loss(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().loss(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def loss(self, tokens):\n        eps\
+  \ = float(tokens[0]); true = int(tokens[1])\n        logits = [float(x) for x in tokens[2:]]\n     \
+  \   c = len(logits)\n        m = max(logits)\n        lse = m + math.log(sum(math.exp(v - m) for v in\
+  \ logits))\n        logp = [v - lse for v in logits]\n        total = 0.0\n        for i in range(c):\n\
+  \            t = (1 - eps + eps / c) if i == true else (eps / c)\n            total -= t * logp[i]\n\
+  \        return round(total, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0.0 0 2.0 1.0 0.1
+  expected_output: '0.417'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 0.1 0 2.0 1.0 0.1
+  expected_output: '0.5137'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0.0 2 2.0 1.0 0.1
+  expected_output: '2.317'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0.2 1 5.0 5.0
+  expected_output: '0.6931'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.0 0 1000.0 0.0
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0.5 0 0.0 0.0 0.0 0.0
+  expected_output: '1.3863'
+  is_hidden: true
+hints:
+- log_softmax(x)_i = x_i - max - log(sum(exp(x_j - max))).
+- 'The smoothed target is a distribution: its entries sum to 1.'
+- Loss = -sum(target_i * log_softmax_i) over every class, not just the true one.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,156 @@
+slug: iq-logsumexp-stability
+title: Merge log-sum-exp across tiles seen one at a time
+difficulty: medium
+categories:
+- LLM
+- DL
+concepts:
+- numerical_stability
+description: 'A tiled attention kernel never materialises a whole score row: it sees the row in chunks
+  and has to combine partial results as it goes. Implement that combination for log-sum-exp.
+
+
+  `streaming_lse(self, tiles) -> list`
+
+
+  `tiles` is a list of lists of floats. Concatenated in order they form one score row `z`. Process the
+  tiles **in order**, carrying exactly two running values:
+
+
+  - `m` -- the largest score seen so far
+
+  - `s` -- `sum(exp(z_j - m))` over every score seen so far
+
+
+  Return `[m, s, m + log(s)]`, each rounded to 6 decimals by the driver. The third value is `log(sum(exp(z_j)))`
+  over the entire row.
+
+
+  **The rescale.** Suppose you hold `(m_old, s_old)` and the next tile''s own maximum `m_new` is larger.
+  Every term inside `s_old` was divided by `exp(m_old)`; against the new reference they must be divided
+  by `exp(m_new)` instead, so
+
+
+  ```
+
+  s = s_old * exp(m_old - m_new)
+
+  ```
+
+
+  and only then do you add `sum(exp(z - m_new))` for the new tile. When the tile''s maximum is not larger,
+  `m` is unchanged and you simply add. The factor is always `<= 1`, so `s` never grows on a rescale.
+
+
+  **Why it is written this way.** `exp` overflows a float64 above roughly 709, so a row containing a score
+  of 1000 makes a direct `log(sum(exp(z)))` raise `OverflowError`; a row of very negative scores underflows
+  to 0 and then `log(0)` raises `ValueError`. Subtracting the running maximum pins the largest term at
+  exactly `exp(0) = 1` and keeps every other term in `(0, 1]`, so neither happens. One hidden case is
+  built from scores near 1000 and one from scores near -800.
+
+
+  This is also why the score matrix never has to exist: two running scalars per row are enough to reconstruct
+  the exact same answer a single pass over the full row would give.
+
+
+  **Edge cases.** A tile may be empty and must be skipped without disturbing `m` or `s`. At least one
+  score exists across all tiles. Scores may repeat, and the maximum may arrive in the first tile or the
+  last.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 23
+examples:
+- input: tiles = [[0.0], [1.0]]
+  output: '[1.0, 1.367879, 1.313262]'
+  explanation: 'After tile 1: m = 0, s = 1. Tile 2''s maximum is 1 > 0, so s becomes 1*exp(0-1) = 0.367879,
+    then adding exp(1-1) = 1 gives 1.367879. The result 1 + log(1.367879) = 1.313262 equals log(e^0 +
+    e^1).'
+- input: tiles = [[0.0, 0.0], [10.0]]
+  output: '[10.0, 1.000091, 10.000091]'
+  explanation: Skipping the rescale would leave s = 2 + 1 = 3 and an answer of 11.098612 -- nearly a full
+    nat wrong, from one missing factor.
+constraints:
+- 1 <= number of tiles <= 10^3
+- 0 <= len(tile) <= 10^3; at least one score exists overall
+- -1000 <= score <= 1000
+- Empty tiles must be skipped without disturbing m or s.
+- Never exponentiate a raw score.
+- Round each returned value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: tiles
+    value: '[[0.0], [1.0]]'
+  stdin: '[[0.0], [1.0]]'
+  expected_output: '[1.0, 1.367879, 1.313262]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: tiles
+    value: '[[0.0, 0.0], [10.0]]'
+  stdin: '[[0.0, 0.0], [10.0]]'
+  expected_output: '[10.0, 1.000091, 10.000091]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: tiles
+    value: '[[1000.0, 1001.0], [999.0]]'
+  stdin: '[[1000.0, 1001.0], [999.0]]'
+  expected_output: '[1001.0, 1.503215, 1001.407606]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: tiles
+    value: '[[3.0, 1.0], [], [-5.0, 2.0], [8.0]]'
+  stdin: '[[3.0, 1.0], [], [-5.0, 2.0], [8.0]]'
+  expected_output: '[8.0, 1.010131, 8.01008]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: tiles
+    value: '[[-800.0, -799.0]]'
+  stdin: '[[-800.0, -799.0]]'
+  expected_output: '[-799.0, 1.367879, -798.686738]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: tiles
+    value: '[[5.0], [4.0], [3.0], [2.0]]'
+  stdin: '[[5.0], [4.0], [3.0], [2.0]]'
+  expected_output: '[5.0, 1.553002, 5.44019]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def streaming_lse(self, tiles):\n      \
+    \  \"\"\"\n        :type tiles: List[List[float]]\n        :rtype: List[float]  -- [m, s, m + log(s)]\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    tiles = json.loads(_in[0])
+
+    _r = Solution().streaming_lse(tiles)
+
+    print([round(x, 6) for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def streaming_lse(self, tiles):\n   \
+  \     m = None\n        s = 0.0\n        for tile in tiles:\n            if not tile:\n            \
+  \    continue\n            tm = max(tile)\n            if m is None:\n                m = tm\n     \
+  \           s = sum(math.exp(z - m) for z in tile)\n            else:\n                if tm > m:\n\
+  \                    s *= math.exp(m - tm)\n                    m = tm\n                s += sum(math.exp(z\
+  \ - m) for z in tile)\n        return [m, s, m + math.log(s)]\n"

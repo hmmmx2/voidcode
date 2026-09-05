@@ -1,0 +1,220 @@
+slug: iq-derive-logistic-gradient
+title: Gradient of the logistic log-loss
+difficulty: medium
+categories:
+- ML
+concepts:
+- backpropagation
+- loss_functions
+description: 'Implement `logistic_grad(X, y, w, b, l2)`, returning the gradient of
+
+
+  ```
+
+  L = (1/N) * sum_i -[ y_i*log(p_i) + (1-y_i)*log(1-p_i) ]  +  (l2/2) * sum_j w_j^2
+
+  ```
+
+
+  where `z_i = w . x_i + b` and `p_i = sigmoid(z_i) = 1/(1+exp(-z_i))`.
+
+
+  **Return a flat list of length d+1**: the partial derivatives with respect to `w[0]..w[d-1]`, followed
+  by the partial derivative with respect to `b`. Round every value to 6 decimal places.
+
+
+  The derivation collapses because `sigmoid''(z) = p(1-p)`, which cancels the `1/(p(1-p))` that falls
+  out of the log term. What survives is a plain residual:
+
+
+  ```
+
+  dL/dw_j = (1/N) * sum_i (p_i - y_i) * x_ij  +  l2 * w_j
+
+  dL/db   = (1/N) * sum_i (p_i - y_i)
+
+  ```
+
+
+  **Two things to get right.**
+
+
+  1. **The bias is not penalised.** `l2 * w_j` is added to the weight gradients only. Adding `l2 * b`
+  to the bias gradient is wrong: penalising the intercept makes the fit depend on where you happened to
+  put the origin.
+
+  2. **Do not overflow.** `1/(1+exp(-z))` raises `OverflowError` once `z` drops below about -710, and
+  real feature scales reach that. Branch on the sign: use `1/(1+exp(-z))` when `z >= 0`, and `exp(z)/(1+exp(z))`
+  when `z < 0`. Both are algebraically the same function; only one of them is safe at each end.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 4
+examples:
+- input: X = [[1.0], [2.0]], y = [1, 0], w = [0.0], b = 0.0, l2 = 0.0
+  output: '[0.25, 0.0]'
+  explanation: Both logits are 0, so p = 0.5 for each row and the residuals are -0.5 and +0.5. dL/dw =
+    (-0.5*1.0 + 0.5*2.0)/2 = 0.25, and the residuals cancel in the bias term, giving 0.0.
+- input: X = [[1.0, 0.0], [0.0, 1.0]], y = [1, 0], w = [0.5, -0.5], b = 0.0, l2 = 0.1
+  output: '[-0.13877, 0.13877, 0.0]'
+  explanation: 'p = (0.622459, 0.377541), so the residuals are -0.377541 and +0.377541. Each feature is
+    active in one row only: dL/dw0 = -0.377541/2 + 0.1*0.5 = -0.13877, mirrored for w1. The bias gradient
+    stays 0.0 because the residuals cancel -- and no 0.1*b term is added to it.'
+constraints:
+- 1 <= N <= 10^4, 1 <= d <= 100
+- y[i] is 0 or 1
+- l2 >= 0; the penalty applies to w only, never to b
+- '|z| may exceed 700 -- the sigmoid must not overflow'
+- 'Return d+1 values: the d weight gradients, then the bias gradient.'
+- Round every value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: X
+    value: '[[1.0], [2.0]]'
+  - name: y
+    value: '[1, 0]'
+  - name: w
+    value: '[0.0]'
+  - name: b
+    value: '0.0'
+  - name: l2
+    value: '0.0'
+  stdin: '[[1.0], [2.0]]
+
+    [1, 0]
+
+    [0.0]
+
+    0.0
+
+    0.0'
+  expected_output: '[0.25, 0.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: X
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: y
+    value: '[1, 0]'
+  - name: w
+    value: '[0.5, -0.5]'
+  - name: b
+    value: '0.0'
+  - name: l2
+    value: '0.1'
+  stdin: '[[1.0, 0.0], [0.0, 1.0]]
+
+    [1, 0]
+
+    [0.5, -0.5]
+
+    0.0
+
+    0.1'
+  expected_output: '[-0.13877, 0.13877, 0.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: X
+    value: '[[-1000.0], [1.0]]'
+  - name: y
+    value: '[0, 1]'
+  - name: w
+    value: '[1.0]'
+  stdin: '[[-1000.0], [1.0]]
+
+    [0, 1]
+
+    [1.0]
+
+    0.0
+
+    0.0'
+  expected_output: '[-0.134471, -0.134471]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: X
+    value: '[[1.0]]'
+  - name: b
+    value: '2.0'
+  - name: l2
+    value: '0.5'
+  stdin: '[[1.0]]
+
+    [1]
+
+    [0.0]
+
+    2.0
+
+    0.5'
+  expected_output: '[-0.119203, -0.119203]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: X
+    value: '[[1.0, 2.0], [1.0, -1.0], [0.0, 3.0]]'
+  - name: y
+    value: '[1, 0, 1]'
+  - name: w
+    value: '[0.2, -0.3]'
+  - name: b
+    value: '0.1'
+  stdin: '[[1.0, 2.0], [1.0, -1.0], [0.0, 3.0]]
+
+    [1, 0, 1]
+
+    [0.2, -0.3]
+
+    0.1
+
+    0.0'
+  expected_output: '[0.023738, -1.288155, -0.206254]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def logistic_grad(self, X, y, w, b, l2):\n\
+    \        \"\"\"\n        :type X: List[List[float]]  -- N rows of d features\n        :type y: List[int]\
+    \          -- 0/1 labels, length N\n        :type w: List[float]        -- d weights\n        :type\
+    \ b: float              -- bias\n        :type l2: float             -- L2 strength, on w only\n \
+    \       :rtype: List[float]         -- d weight grads, then the bias grad\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    X = json.loads(_in[0])
+
+    y = json.loads(_in[1])
+
+    w = json.loads(_in[2])
+
+    b = float(_in[3])
+
+    l2 = float(_in[4])
+
+    _r = Solution().logistic_grad(X, y, w, b, l2)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def logistic_grad(self, X, y, w, b, l2):\n\
+  \        n = len(X)\n        d = len(w)\n        gw = [0.0] * d\n        gb = 0.0\n        for xi, yi\
+  \ in zip(X, y):\n            z = b\n            for j in range(d):\n                z += w[j] * xi[j]\n\
+  \            # Branch-stable sigmoid: neither exp() argument is ever positive.\n            if z >=\
+  \ 0.0:\n                p = 1.0 / (1.0 + math.exp(-z))\n            else:\n                e = math.exp(z)\n\
+  \                p = e / (1.0 + e)\n            r = p - yi\n            for j in range(d):\n       \
+  \         gw[j] += r * xi[j]\n            gb += r\n        out = [gw[j] / n + l2 * w[j] for j in range(d)]\n\
+  \        out.append(gb / n)\n        return out\n"

@@ -1,0 +1,192 @@
+{
+  "disk": {
+    "hf_home": null,
+    "hf_hub_cache": null,
+    "mounts": {
+      "/": {
+        "fits_working_set": false,
+        "free_gib": 19.58,
+        "total_gib": 20.0
+      },
+      "/root": {
+        "fits_working_set": false,
+        "free_gib": 19.58,
+        "total_gib": 20.0
+      },
+      "/workspace": {
+        "fits_working_set": true,
+        "free_gib": 235749.21,
+        "total_gib": 987864.07
+      }
+    },
+    "working_set_gib_assumed": 30,
+    "workspace_is_separate_mount": true,
+    "workspace_present": true
+  },
+  "host": {
+    "cpu_count": 96,
+    "gpus": [
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      },
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      },
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      },
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      }
+    ],
+    "platform": "Linux-6.8.0-59-generic-x86_64-with-glibc2.35",
+    "pod": {},
+    "python": "3.11.10",
+    "topology": "\t\u001b[4mGPU0\tGPU1\tGPU2\tGPU3\tNIC0\tNIC1\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \tSYS\tSYS\tSYS\tSYS\tSYS\t0-23,48-71\t0\t\tN/A\nGPU1\tSYS\t X \tNODE\tNODE\tNODE\tNODE\t24-47,72-95\t1\t\tN/A\nGPU2\tSYS\tNODE\t X \tPXB\tNODE\tNODE\t24-47,72-95\t1\t\tN/A\nGPU3\tSYS\tNODE\tPXB\t X \tNODE\tNODE\t24-47,72-95\t1\t\tN/A\nNIC0\tSYS\tNODE\tNODE\tNODE\t X \tPIX\t\t\t\t\nNIC1\tSYS\tNODE\tNODE\tNODE\tPIX\t X \t\t\t\t\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks\n\nNIC Legend:\n\n  NIC0: mlx5_0\n  NIC1: mlx5_1\n\n"
+  },
+  "matmul": {
+    "dtype": "bfloat16",
+    "iterations": 1316,
+    "matrix": 8192,
+    "seconds": 13.481,
+    "tflops": 107.33
+  },
+  "nccl": {
+    "cmd": "/root/nccl-tests/build/all_reduce_perf -b 8 -e 1G -f 2 -g 4",
+    "diagnosis": "a hung collective is usually P2P or a half-configured fabric; rerun by hand with NCCL_DEBUG=INFO and watch which transport it selects before it stalls",
+    "failed": "all_reduce_perf did not finish within 900s",
+    "note": null,
+    "ok": false,
+    "peak_busbw_gbps_at_256mib_plus": null,
+    "route": null,
+    "rows": []
+  },
+  "profilers": {
+    "ncu_present": true,
+    "nsys_present": false,
+    "torch_profiler_cuda_events": 9,
+    "torch_profiler_error": null,
+    "torch_profiler_works": true
+  },
+  "schema": 1,
+  "spec": "a40_x4_secure",
+  "torch": {
+    "available": true,
+    "cuda": "12.4",
+    "cudnn": 90100,
+    "device_count": 4,
+    "devices": [
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 0,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      },
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 1,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      },
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 2,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      },
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 3,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      }
+    ],
+    "p2p": [
+      {
+        "can_access": true,
+        "from": 0,
+        "to": 1
+      },
+      {
+        "can_access": true,
+        "from": 0,
+        "to": 2
+      },
+      {
+        "can_access": true,
+        "from": 0,
+        "to": 3
+      },
+      {
+        "can_access": true,
+        "from": 1,
+        "to": 0
+      },
+      {
+        "can_access": true,
+        "from": 1,
+        "to": 2
+      },
+      {
+        "can_access": true,
+        "from": 1,
+        "to": 3
+      },
+      {
+        "can_access": true,
+        "from": 2,
+        "to": 0
+      },
+      {
+        "can_access": true,
+        "from": 2,
+        "to": 1
+      },
+      {
+        "can_access": true,
+        "from": 2,
+        "to": 3
+      },
+      {
+        "can_access": true,
+        "from": 3,
+        "to": 0
+      },
+      {
+        "can_access": true,
+        "from": 3,
+        "to": 1
+      },
+      {
+        "can_access": true,
+        "from": 3,
+        "to": 2
+      }
+    ],
+    "version": "2.4.1+cu124"
+  }
+}

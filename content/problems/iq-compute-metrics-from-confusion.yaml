@@ -1,0 +1,209 @@
+slug: iq-compute-metrics-from-confusion
+title: Score a classifier from four raw counts
+difficulty: easy
+categories:
+- ML
+concepts:
+- classification_metrics
+description: 'Implement `confusion_metrics(n, n_pos, n_flagged, n_tp)`.
+
+
+  - `n` -- total rows
+
+  - `n_pos` -- rows whose true label is 1
+
+  - `n_flagged` -- rows the model predicted 1
+
+  - `n_tp` -- rows that were both flagged and truly positive
+
+
+  Recover the four cells first:
+
+
+  ```
+
+  TP = n_tp
+
+  FP = n_flagged - n_tp
+
+  FN = n_pos - n_tp
+
+  TN = n - TP - FP - FN
+
+  ```
+
+
+  Return `[accuracy, precision, recall, f1, baseline]`, each rounded to 6 decimal places:
+
+
+  ```
+
+  accuracy  = (TP + TN) / n
+
+  precision = TP / (TP + FP)
+
+  recall    = TP / (TP + FN)
+
+  f1        = 2 * precision * recall / (precision + recall)
+
+  baseline  = max(n_pos, n - n_pos) / n
+
+  ```
+
+
+  **Empty denominators return 0.0; they do not raise.** A model that flags nothing has `TP + FP = 0`,
+  so precision is `0.0`. An evaluation split with no positives has `TP + FN = 0`, so recall is `0.0`.
+  If `precision + recall == 0`, F1 is `0.0`.
+
+
+  `baseline` is the accuracy of the constant classifier that always predicts the **larger** class, and
+  it is the number the other four should be read against. On a 1%-positive problem it is 0.99, so a model
+  reporting 0.988 accuracy is losing to a classifier that does nothing at all -- which is the entire reason
+  accuracy is the wrong headline metric on an imbalanced problem.
+
+
+  Standard library only -- no numpy, no sklearn.'
+inferred_concepts: false
+review_needed: false
+order_index: 5
+examples:
+- input: n = 10000, n_pos = 100, n_flagged = 180, n_tp = 80
+  output: '[0.988, 0.444444, 0.8, 0.571429, 0.99]'
+  explanation: TP=80, FP=100, FN=20, TN=9800. Accuracy is 9880/10000 = 0.988, which is below the 0.99
+    baseline even though the model catches 4 out of every 5 frauds.
+- input: n = 10, n_pos = 8, n_flagged = 5, n_tp = 5
+  output: '[0.7, 1.0, 0.625, 0.769231, 0.8]'
+  explanation: Here the positives are the majority, so the baseline is 8/10 = 0.8. Every flag was correct
+    (precision 1.0) but three positives were missed, and 0.7 accuracy still loses to always predicting
+    the positive class.
+constraints:
+- 1 <= n <= 10^7
+- 0 <= n_tp <= min(n_pos, n_flagged)
+- 0 <= n_pos <= n and 0 <= n_flagged <= n
+- An undefined precision, recall or F1 is 0.0, not an error.
+- baseline is the majority class rate, which may be the positive class.
+- Round each of the five values to 6 decimal places.
+- Standard library only -- no numpy, no sklearn.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: n
+    value: '10000'
+  - name: n_pos
+    value: '100'
+  - name: n_flagged
+    value: '180'
+  - name: n_tp
+    value: '80'
+  stdin: '10000
+
+    100
+
+    180
+
+    80'
+  expected_output: '[0.988, 0.444444, 0.8, 0.571429, 0.99]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: n
+    value: '10'
+  - name: n_pos
+    value: '8'
+  - name: n_flagged
+    value: '5'
+  - name: n_tp
+    value: '5'
+  stdin: '10
+
+    8
+
+    5
+
+    5'
+  expected_output: '[0.7, 1.0, 0.625, 0.769231, 0.8]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: n
+    value: '100'
+  - name: n_flagged
+    value: '0'
+  stdin: '100
+
+    10
+
+    0
+
+    0'
+  expected_output: '[0.9, 0.0, 0.0, 0.0, 0.9]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: n
+    value: '5'
+  - name: n_pos
+    value: '0'
+  stdin: '5
+
+    0
+
+    1
+
+    0'
+  expected_output: '[0.8, 0.0, 0.0, 0.0, 1.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: n
+    value: '4'
+  - name: n_tp
+    value: '2'
+  stdin: '4
+
+    2
+
+    2
+
+    2'
+  expected_output: '[1.0, 1.0, 1.0, 1.0, 0.5]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def confusion_metrics(self, n, n_pos, n_flagged, n_tp):\n\
+    \        \"\"\"\n        :type n: int          -- total rows\n        :type n_pos: int      -- rows\
+    \ truly positive\n        :type n_flagged: int  -- rows predicted positive\n        :type n_tp: int\
+    \       -- rows both flagged and truly positive\n        :rtype: List[float]   -- [accuracy, precision,\
+    \ recall, f1, baseline]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    n = int(_in[0])
+
+    n_pos = int(_in[1])
+
+    n_flagged = int(_in[2])
+
+    n_tp = int(_in[3])
+
+    _r = Solution().confusion_metrics(n, n_pos, n_flagged, n_tp)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def confusion_metrics(self, n, n_pos, n_flagged, n_tp):\n\
+  \        tp = n_tp\n        fp = n_flagged - n_tp\n        fn = n_pos - n_tp\n        tn = n - tp -\
+  \ fp - fn\n        accuracy = (tp + tn) / float(n)\n        precision = tp / float(tp + fp) if (tp +\
+  \ fp) > 0 else 0.0\n        recall = tp / float(tp + fn) if (tp + fn) > 0 else 0.0\n        if precision\
+  \ + recall > 0.0:\n            f1 = 2.0 * precision * recall / (precision + recall)\n        else:\n\
+  \            f1 = 0.0\n        baseline = max(n_pos, n - n_pos) / float(n)\n        return [accuracy,\
+  \ precision, recall, f1, baseline]\n"

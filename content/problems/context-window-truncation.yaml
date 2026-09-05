@@ -1,0 +1,85 @@
+slug: context-window-truncation
+title: Fit a conversation into the context budget
+difficulty: medium
+categories:
+- LLM
+- Systems
+concepts:
+- kv_cache
+- tokenization
+description: 'Input: `budget`, then the token count of each message in order, **oldest first**.
+
+
+  Keep the most recent messages that fit within `budget`, dropping from the oldest end. Return `kept tokens_used`
+  separated by a space.
+
+
+  The newest message is always kept even if it alone exceeds the budget — it is what the learner just
+  asked, and dropping it means answering a different question. Report the real token count in that case
+  rather than the budget, because the caller needs to know the overflow happened.'
+order_index: 49
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def fit(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().fit(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def fit(self, tokens):\n        budget = int(tokens[0])\n\
+  \        msgs = [int(x) for x in tokens[1:]]\n        if not msgs:\n            return '0 0'\n     \
+  \   kept = 1\n        used = msgs[-1]\n        for i in range(len(msgs) - 2, -1, -1):\n            if\
+  \ used + msgs[i] > budget:\n                break\n            used += msgs[i]\n            kept +=\
+  \ 1\n        return str(kept) + ' ' + str(used)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 100 10 20 30
+  expected_output: 3 60
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 25 10 20 30
+  expected_output: 1 30
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 5 10 20 300
+  expected_output: 1 300
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 1000 1 1 1 1
+  expected_output: 4 4
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 30 30
+  expected_output: 1 30
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 60 10 20 30
+  expected_output: 3 60
+  is_hidden: true
+hints:
+- Walk backwards from the newest message, accumulating until the next one would not fit.
+- The newest message is kept unconditionally, before any budget check.
+- tokens_used can exceed budget only in that single-message overflow case.
+hint_ladder:
+  level_0: Walk backwards from the newest message, accumulating until the next one would not fit.
+  level_1: The newest message is kept unconditionally, before any budget check.
+  level_2: tokens_used can exceed budget only in that single-message overflow case.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

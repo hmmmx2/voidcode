@@ -1,0 +1,47 @@
+slug: implement-causal-mask
+title: Softmax over a row that is entirely masked
+difficulty: easy
+categories:
+- LLM
+- DL
+concepts:
+- numerical_stability
+description: Write a masked softmax over one row of attention scores. A padded batch will hand you a row
+  where every position is masked, and the obvious implementation returns NaN there and poisons everything
+  downstream.
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- Meta
+- OpenAI
+- NVIDIA
+prompt: Write a masked softmax over one row of attention scores. A padded batch will hand you a row where
+  every position is masked, and the obvious implementation returns NaN there and poisons everything downstream.
+approach: Work out what exp(-inf) / sum(exp(-inf)) actually evaluates to. It is 0/0, not a masking bug
+  -- so the fix is to detect the empty row before dividing, not to pick a different mask value.
+model_answer: "    def causal_mask(scores):        # scores: (n, n), pre-softmax\n        n = len(scores)\n\
+  \        for i in range(n):\n            for j in range(i + 1, n):\n                scores[i][j] = float('-inf')\n\
+  \        return scores\n\nWHY -inf. Masking must happen *before* the softmax, because exp(-inf) = 0\
+  \ and the remaining weights renormalise to sum to 1 over the visible positions. Zeroing *after* the\
+  \ softmax also gives zero weight on masked positions, but the surviving weights no longer sum to 1 —\
+  \ every row is scaled down by however much probability the mask removed, so early tokens (which mask\
+  \ most positions) get systematically attenuated outputs. It trains, badly, and looks correct.\n\nIn\
+  \ practice a large negative constant like -1e9 is used instead of true -inf, because a fully-masked\
+  \ row would give exp(-inf) everywhere, a denominator of 0 and NaN. That row exists whenever padding\
+  \ covers an entire sequence.\n\nWITH PADDING. Combine the two masks with a logical OR before applying:\
+  \ position j is visible only if j <= i (causal) **and** j is a real token (padding). Applying them separately\
+  \ in sequence is a common bug when one of them writes 0 instead of -inf.\n\nThe mask is why one forward\
+  \ pass yields n independent training signals — position i predicts i+1 using only what precedes it —\
+  \ and it is what makes the KV cache valid: since nothing can depend on a later position, cached keys\
+  \ stay correct forever and never need recomputing."
+follow_ups:
+- Why does a fully-masked row produce NaN with true -inf?
+- Show why masking after the softmax attenuates early positions.
+- How is this mask implemented without materialising an n×n tensor?
+red_flags:
+- Masking after the softmax so rows stop summing to 1.
+- Using 0 rather than -inf as the masked value.
+- Not connecting causality to the validity of the KV cache.
+source_kind: interview_question

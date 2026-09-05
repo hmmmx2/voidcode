@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: voidcode
+
+resources:
+  - namespace.yaml
+  - api-deployment.yaml
+  - api-service.yaml
+  - api-hpa.yaml
+  - web-deployment.yaml
+  - ingress.yaml
+  - network-policy.yaml
+
+# Non-secret settings only. Everything here ends up readable by anyone with get on
+# ConfigMaps, so the split is not cosmetic: APP_ENV=production is what makes
+# assert_production_config() refuse to boot on a missing secret, and TRUSTED_PROXY_HOPS
+# must match the real number of proxies in front of the ingress or the rate limiter
+# reads an address the client chose.
+configMapGenerator:
+  - name: voidcode-api-config
+    literals:
+      - APP_ENV=production
+      - INTERNAL_AUTH_ENFORCE=false
+      - TRUSTED_PROXY_HOPS=1
+      - EMAIL_PROVIDER=resend
+      - JUDGE0_BASE_URL=http://judge0-server.voidcode-sandbox:2358
+      - ALLOWED_ORIGINS=https://voidcode.example
+      - APP_BASE_URL=https://voidcode.example
+
+# NO secretGenerator, on purpose.
+#
+# Generating Secrets from literals here would put every value in git, which is the
+# one thing this repo has been careful about — .gitignore's `.env*` and the template
+# tests exist for it. Create them out of band:
+#
+#   kubectl -n voidcode create secret generic voidcode-api-secrets \
+#     --from-env-file=apps/api/.env
+#   kubectl -n voidcode create secret generic voidcode-web-secrets \
+#     --from-literal=INTERNAL_API_SECRET=... --from-literal=AUTH_SECRET=...
+#
+# INTERNAL_API_SECRET must be IDENTICAL in both, or every signed request 401s.

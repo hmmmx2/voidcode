@@ -1,0 +1,337 @@
+{
+ "pe_mode=False (one combined prompt)": [
+  {
+   "id": "teach_attention_softmax_scale_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe key insight is that dividing by \u221ad_k helps with gradient flow during training. Let's break it down:\n\n1. **Gradient Flow**: During backpropagation, gradients can get very small or very large. Dividing by \u221ad_k helps keep gradients manageable.\n\n2. **Scaling Down**: d_k is the dimensionality of the key vector. By scaling down, we make the logits smaller. This means the softmax probabilities stay in a more comfortable range (0.01 to 0.99 instead of 1e-10 to 1).\n\n3. **Computational Efficiency**: Smaller logits mean fewer floating-point operations when computing the softmax. This can speed up training on large models.\n\n4. **Numerical Stability**: Smaller logits reduce the risk of numerical instability, especially with very large input values. This is crucial for deep networks.\n\n5. **Interpolation Property**: The choice of \u221ad_k comes from the theory that optimal performance is achieved when the dimensionality is scaled by \u221ad_k. This balances model capacity with computational efficiency.\n\n6. **Historical Convention**: It's become standard practice in the NLP community. While other values like 1 or 2 could work, \u221ad_k has been shown to perform well across many tasks.\n\nBy understanding these principles, you gain insight into why this particular scaling factor is used rather than another. This knowledge will help you remember the pattern for future attention mechanisms and related architectures.",
+   "bleed": false,
+   "fenced_code": false,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "variance"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_layernorm_placement_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe key difference lies in the position of normalization. Pre-Norm comes before the feedforward layer, while Post-Norm comes after.\n\n[TEMPLATE]\n```python\n# Pre-Norm\nx = self.mlp(x)\nx = self.norm(x)  # Line 1\n```\n\n```python\n# Post-Norm\nx = self.norm(x)  # Line 2\nx = self.mlp(x)\n```\n\n[GUIDE]\nLine 1: For Pre-Norm, where do we apply normalization? What does x represent here?\n```python\nx = self.norm(x)  # Line 1\n```\nLine 2: After normalization, what transformation are we applying? What does x represent now?\n```python\nx = self.mlp(x)  # Line 2\n```\n\nStart with Line 1. For Pre-Norm, where do we apply normalization? What does x represent here?",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 0,
+    "required": 2,
+    "missing": [
+     "residual",
+     "gradient"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_kv_cache_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe key insight is that decoding is a process that can benefit greatly from memoization. Once we decode a string, we don't need to redo the work if we encounter the same string again.\n\n[TEMPLATE]\n```python\ndef decode(self, s):\n    # Store decoded strings we've seen\n    seen = ____                          # Line 1\n    prefix = ''                          # Line 2\n    for i in range(len(s)):              # Line 3\n        char = s[____:____]              # Line 4\n        if char in 'abcdefghijklmnopqrstuvwxyz':  # Line 5\n            prefix += ____               # Line 6\n        elif char == '(':                # Line 7\n            # Recursively decode the nested string\n            nested = self.decode(____)   # Line 8\n            prefix = ____ + ____        # Line 9\n        elif char == ')':               # Line 10\n            return prefix               # Line 11\n    return prefix                        # Line 12\n```\n\n[GUIDE]\nLine 11: What does the function return? What stops the recursion?\n```python\n    return prefix                       # Line 12\n```\nLine 12: What does the function return? What stops the recursion?\n```python\n    return prefix                       # Line 12\n```\nLine 10: When do we stop? What signal tells us we're done building the current level?\n```python\n    return prefix                       # Line 12\n```\nLine 9: How do we build the result for the current level? Combine the prefix with the decoded nested string.\n```python\n    prefix = ____ + ____               # Line 9\n```\nLine 8: How do we find the substring to decode? Count characters until we hit '('.\n```python\n    nested = self.decode(____)         # Line 8\n```\nLine 7: How do we know we've hit a parenthesis? Is the character '('?\n```python\n    if char == '(':                    # Line 7\n```\nLine 6: Add the current character to the growing prefix.\n```python\n    prefix += ____                    # Line 6\n```\nLine 5: Is the character a letter? Check the character set.\n```python\n    if char in 'abcdefghijklmnopqrstuvwxyz':  # Line 5\n```\nLine 4: Get the character at position i. What slice gives us one character?\n```python\n    char = s[____:____]               # Line 4\n```\nLine 3: Loop through each position in the string. What range gives us all positions?\n```python\n    for i in range(len(s)):           # Line 3\n```\n\nStart with Line 11 \u2014 What does the function return? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the recursion? What stops the",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 0,
+    "required": 2,
+    "missing": [
+     "cache",
+     "token"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_lora_rank_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe rank parameter controls the model capacity. It's a trade-off between performance and memory. A higher rank means more model capacity, but also requires more memory.\n\n[TEMPLATE]\n```python\n# Determine the optimal rank for LoRA\ndef choose_rank(model_size, target_memory_usage=0.1):\n    # Calculate the maximum possible rank based on model size\n    max_rank = model_size // 8  # 8 is the typical width for LoRA matrices\n\n    # Calculate the required rank to achieve target_memory_usage\n    required_rank = model_size * target_memory_usage / 8\n\n    # Round to the nearest power of 2 (standard practice for efficiency)\n    import math\n    rank = round(math.log(required_rank, 2)) * 8\n\n    # Clip to safe range\n    rank = min(max(rank, 1), max_rank)  # minimum 1, maximum is model_size//8\n\n    return rank\n```\n\n[GUIDE]\nLine 3: Calculate the maximum possible rank based on model size. Each LoRA matrix is 8 bytes per element. How many elements can we fit into the model size?\n\n```python\n    max_rank = model_size // 8  # 8 is the typical width for LoRA matrices\n```\n\nLine 4: Calculate the required rank to achieve target_memory_usage. If we want 10% of the model size for LoRA, how much space do we need in bytes? Divide by 8 to convert to number of elements.\n\n```python\n    required_rank = model_size * target_memory_usage / 8\n```\n\nLine 5: Round to the nearest power of 2. Powers of 2 are standard for efficiency (faster bitwise operations). Which power of 2 is closest to required_rank?\n\n```python\n    import math\n    rank = round(math.log(required_rank, 2)) * 8\n```\n\nLine 6: Clip to safe range. The rank must be at least 1 (minimum functionality) and no more than model_size // 8 (maximum possible without exploding). Which of these is the new value for rank?\n\n```python\n    rank = min(max(rank, 1), max_rank)  # minimum 1, maximum is model_size//8\n```\n\nLine 7: Return the calculated rank. This is the final value we use for LoRA. What is the complete function with all blanks filled in?",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_grad_accum_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nGradient accumulation is a technique that simulates training with larger batches. It works by accumulating gradients over multiple mini-batches before updating weights. This effectively increases the batch size, which can improve convergence and stability.\n\n[TEMPLATE]\n```python\n# Track gradients\ntotal_gradients = [torch.zeros_like(param) for param in model.parameters()]\n\nfor _ in range(num_steps):\n    # Forward pass\n    output = model(inputs)\n    loss = criterion(output, targets)\n\n    # Backward pass\n    loss.backward()\n\n    # Accumulate gradients\n    total_gradients = [grad + acc_grad for grad, acc_grad in zip(total_gradients, model.parameters())]\n\n    # Log loss\n    print(f'Iteration {_ + 1}: Loss = {loss.item()}')\n\n# Update weights after accumulating gradients\noptimizer.zero_grad()\nfor param, accumulated_grad in zip(model.parameters(), total_gradients):\n    param.data -= learning_rate * accumulated_grad\n```\n\n[GUIDE]\nLine 1: We initialize empty lists to store gradients for each parameter.\n```python\ntotal_gradients = [torch.zeros_like(param) for param in model.parameters()]\n```\nLine 2: For each mini-batch, we accumulate gradients instead of updating immediately. This builds up the total gradient incrementally.\n```python\ntotal_gradients = [grad + acc_grad for grad, acc_grad in zip(total_gradients, model.parameters())]\n```\nLine 3: After processing all mini-batches, we update the weights using the accumulated gradients.\n```python\nfor param, accumulated_grad in zip(model.parameters(), total_gradients):\n    param.data -= learning_rate * accumulated_grad\n```\nLine 4: Zero gradients before starting the next epoch or training loop.\n```python\noptimizer.zero_grad()\n```\n\nLine 3 is key \u2014 Line 3 updates the weights using the accumulated gradients. Line 3 uses the accumulated gradients to update each parameter. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 is where the actual weight update happens after accumulating gradients over multiple mini-batches.\n\nLet's begin at Line 3. Line 3 updates the weights using the accumulated gradients. Line 3 uses the accumulated gradients to update each parameter. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 is where the actual weight update happens after accumulating gradients over multiple mini-batches. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value. Line 3 subtracts the learning rate times the accumulated gradient from the current parameter value.",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_mixed_precision_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nLet's break down why mixed precision training needs loss scaling. The key lies in the interaction between FP16 and gradient accumulation.\n\n[TEMPLATE]\n```python\n# We need to scale the loss before backpropagation to prevent underflow\nscaled_loss = loss * loss_scale  # Line 1\n```\n\n[GUIDE]\nLine 1: We multiply the loss by the scale factor. What goes here? Why do we need this multiplication?\n```python\nscaled_loss = loss * loss_scale  # Line 1\n```\n\nLine 1 is crucial because FP16 can lose precision. When we accumulate gradients, tiny errors can add up. The scale factor helps keep the numbers large enough to avoid underflow.\n```python\n# After backpropagation, we divide by the scale factor to restore original scale\ngradient = torch.autograd.grad(scaled_loss, model.parameters(), retain_graph=True)  # Line 2\n```\n\nLine 2: After backpropagation, we divide by the scale factor. What goes here? Why do we divide by the scale factor now?\n```python\ngradient = torch.autograd.grad(scaled_loss, model.parameters(), retain_graph=True)  # Line 2\n```\n\nLine 2: After backpropagation, we divide by the scale factor to restore the original scale. The gradient represents the direction of steepest descent \u2014 if the loss was scaled down, the gradient would be too small. Dividing by the scale factor ensures the gradient reflects the true direction of steepest descent.\n```python\nfor param, grad in zip(model.parameters(), gradient):\n    param.data -= learning_rate * grad / loss_scale  # Line 3\n```\n\nLine 3: Update the parameters using the gradient. What goes here? Why do we divide by the scale factor when updating the parameters?\n```python\nfor param, grad in zip(model.parameters(), gradient):\n    param.data -= learning_rate * grad / loss_scale  # Line 3\n```\n\nLine 3: Update the parameters using the gradient. We divide by the scale factor here to restore the original scale. If we didn't divide, the update would be too small. What should go here? Why do we need to divide by the scale factor when updating the parameters?",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": true
+  },
+  {
+   "id": "followup_batchnorm_eval_001",
+   "mode": "followup",
+   "text": "```python\n    batch_norm = model(batch)\n    batch_norm.eval()\n    normalized_batch = model(batch)\n```\n\nIn PyTorch, BatchNorm2d has two modes: training (train) and evaluation (eval). When in train mode, BatchNorm uses the batch statistics (mean and variance) to normalize the data. When in eval mode, BatchNorm uses the precomputed running mean and variance.\n\nLine 2: `batch_norm.eval()` switches the BatchNorm layer to eval mode. After this, the BatchNorm layer will use the stored running mean and variance instead of calculating new ones.\n\nLine 3: `normalized_batch = model(batch)` applies normalization using the stored statistics. The BatchNorm layer doesn't calculate new statistics \u2014 it uses the saved running mean and variance to normalize the input.\n\nIn practice:\n- **Training mode:** Uses batch stats (mean, variance) for normalization\n- **Evaluation mode:** Uses running stats (mean, variance) for normalization\n\nLine 3 uses the stored running mean and variance to normalize the input. Line 3 doesn't calculate new statistics \u2014 it uses the saved running mean and variance to normalize the input.\n\nThis distinction matters for reproducibility and inference. During training, BatchNorm helps stabilize training. During inference (evaluation), BatchNorm normalizes using the learned statistics.",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": true
+  },
+  {
+   "id": "followup_lr_warmup_001",
+   "mode": "followup",
+   "text": "I found **1 issue** in your code. Let's start with the one preventing the code from running.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn 1 + self.maxDepth(root.left) + self.maxDepth(root.right)\n```\nLine 5 adds the depths of the left and right subtrees together. But the problem asks for the MAXIMUM depth, not the combined total. If the left subtree has depth 3 and the right has depth 1, this returns 1+3+1=5 (sum) instead of 1+3=4 (max).\n\nThe test case with root [1,2,2,3,null,3] fails. The expected output is 3, but your code returns 6. Why does adding the depths give the wrong result? What does max() return when given two numbers?",
+   "bleed": true,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 0,
+    "required": 2,
+    "missing": [
+     "gradient",
+     "early"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_dropout_inference_001",
+   "mode": "followup",
+   "text": "I found 1 issue in your code. Let's tackle the first one:\n\n**Issue 1 \u2014 Line 2**\n```python\nmodel.eval()  # Turn on evaluation mode\n```\nLine 2 sets model.train() instead of model.eval(). During inference, you want dropout to be turned off so the model gives its best prediction. model.train() turns on training mode, which includes dropout.\n\nIn training mode (model.train()), dropout randomly drops units. In evaluation mode (model.eval()), dropout is turned off and the model uses all its weights.\n\nThe fix is to change model.train() to model.eval(). Which one should we change here?",
+   "bleed": true,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "scal"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_tokenizer_oov_001",
+   "mode": "followup",
+   "text": "I found **1 issue** in your code. Let's start with the one stopping it from running.\n\n**Issue 1 \u2014 Line 6**\n```python\nfor i in range(len(word)):\n```\nLine 6 starts the loop at 0. For a word like \"hello\", the loop runs from 0 to 4. But for a word like \"hi\", the loop runs from 0 to 1. The problem is, when the word length is 1 (like \"a\"), the loop doesn't run at all! That means `word[1]` (which doesn't exist) is accessed outside the loop.\n\nLine 6 uses `range(len(word))` \u2014 Python stops one position short. For a word of length 1, len(word) is 1, so range(1) gives [0], not [0, 1]. The second position (index 1) doesn't exist \u2014 that's where the IndexError comes from.\n\nTry fixing this and see if the test passes. Start with one of these:\n- Change the range to include the correct number of positions\n- Or, change the loop variable to start at 1 instead of 0",
+   "bleed": true,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 0,
+    "required": 2,
+    "missing": [
+     "subword",
+     "merge"
+    ]
+   },
+   "all_passed": false
+  }
+ ],
+ "pe_mode=True  (dedicated per-mode prompts)": [
+  {
+   "id": "teach_attention_softmax_scale_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe key insight is that dividing by \u221ad_k helps achieve a balance between signal strength and noise level. This is crucial for gradient descent to converge effectively.\n\n[TEMPLATE]\n```python\ndef scaled_dot_product_attention(q, k, v, mask=None):\n    d_k = ____                           # Line 1\n    scores = torch.matmul(q, k.T) / ____  # Line 2\n    if mask is not None:\n        scores += mask * -1000000\n    p_attn = torch.softmax(scores, dim=-1)  # Line 3\n    return torch.matmul(p_attn, v)         # Line 4\n```\n\n[GUIDE]\nLine 1: What is the dimensionality of the key vector (k)?\nLine 2: What factor scales down the raw scores to prevent gradients from exploding?\nLine 3: After applying the mask (if any), what activation function converts scores to probabilities?\nLine 4: What operation combines the attention weights with the value matrix (v)?\n```python\n    return torch.matmul(p_attn, v)  # Line 4\n```\nLine 4: What operation combines the attention weights with the value matrix (v)? (also handles batch dimension)",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "variance"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_layernorm_placement_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe core difference lies in when the normalization happens during the forward pass. Pre-Norm applies normalization before the feedforward layer, while Post-Norm applies it afterward. This affects the gradient flow and model capacity.\n\n[TEMPLATE]\n```python\nclass TransformerBlock:\n    def __init__(self, d_model, d_ff, dropout):\n        self.attention = MultiHeadAttention(d_model)\n        self.post_norm = ____  # Line 1\n        self.feedforward = FeedForward(d_ff)\n        self.dropout = nn.Dropout(dropout)\n        self.norm = nn.LayerNorm(d_model)  # Line 2\n        self.linear = nn.Linear(d_model, d_model)  # Line 3\n        self.output = nn.Linear(d_model, d_model)  # Line 4\n        self.activation = nn.ReLU()  # Line 5\n\n    def forward(self, x):\n        attn_output = self.attention(x)  # Line 6\n        x = self.post_norm(x + attn_output)  # Line 7\n        x = self.dropout(self.feedforward(x))  # Line 8\n        x = self.norm(x + self.linear(self.activation(self.output(x))))  # Line 9\n        return x\n```\n\n[GUIDE]\nLine 1: For Post-Norm, where do you apply the normalization after the attention block?\nLine 2: For Pre-Norm, where do you add the LayerNorm right after the input?\nLine 3: For Post-Norm, where do you apply the LayerNorm after the feedforward layer?\nLine 4: For Pre-Norm, where do you add the LayerNorm after the feedforward layer?\nLine 5: For Post-Norm, where do you apply the activation after the feedforward layer?\nLine 6: Where do you store the output of the attention block before adding the residual connection?\nLine 7: For Post-Norm, what goes first: adding the residual connection or applying LayerNorm?\nLine 8: For Pre-Norm, what goes first: applying LayerNorm or adding the residual connection?\nLine 9: For Post-Norm, what goes last: adding the residual connection or applying LayerNorm?",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": true
+  },
+  {
+   "id": "teach_kv_cache_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nThe LRU Cache is a fundamental data structure that stores recently used items. It's crucial for problems where you need to quickly look up values based on keys. For decoding, the cache stores mappings from encoded positions to decoded characters.\n\n[TEMPLATE]\n```python\nclass Node:\n    def __init__(self, key=____, value=____):\n        self.key = ____    # Line 1\n        self.value = ____  # Line 2\n        self.prev = ____   # Line 3\n        self.next = ____   # Line 4\n\nclass LRUCache:\n    def __init__(self, capacity):\n        self.capacity = ____    # Line 5\n        self.cache = ____        # Line 6\n        self.left = ____         # Line 7\n        self.right = ____        # Line 8\n\n    def get(self, key):\n        if key not in ____:    # Line 9\n            return ____        # Line 10\n        node = ____[key]       # Line 11\n        self.remove(node)      # Line 12\n        self.add_to_front(node)    # Line 13\n        return ____[key].value    # Line 14\n\n    def add_to_front(self, node):\n        node.prev = ____    # Line 15\n        node.next = ____    # Line 16\n        self.left.next = ____    # Line 17\n        self.left = ____    # Line 18\n\n    def remove(self, node):\n        node.prev.next = ____    # Line 19\n        node.next.prev = ____    # Line 20\n\n    def put(self, key, value):\n        if key in ____:    # Line 21\n            self.remove(____[key])    # Line 22\n        node = Node(key, value)    # Line 23\n        self.add_to_front(node)    # Line 24\n        if len(self.cache) > self.capacity:    # Line 25\n            lru = self.right.prev    # Line 26\n            del self.cache[____]    # Line 27\n            self.remove(lru)    # Line 28\n```\n\n[GUIDE]\nLine 1: What goes here to store the key-value pair? (key)\nLine 2: What goes here to store the value? (value)\nLine 3: Pointers for doubly linked list: prev -> this -> next. What goes here? (None)\nLine 4: Pointers for doubly linked list: prev -> this -> next. What goes here? (None)\nLine 5: What is the maximum number of items the cache can hold? (capacity)\nLine 6: Store key-value pairs. What goes here? (defaultdict)\nLine 7: Dummy node at the beginning of the list. What goes here? (None)\nLine 8: Dummy node at the end of the list. What goes here? (None)\nLine 9: Check if the key exists in the cache. What goes here? (self.cache)\nLine 10: Return None if the key doesn't exist. What goes here? (None)\nLine 11: Get the node from the cache using the key. What goes here? (self.cache)\nLine 12: Remove the node from its current position. What goes here? (node)\nLine 13: Add the node to the front of the list. What goes here? (self.left)\nLine 14: Return the value stored in the node. What goes here? (node)\nLine 15: New node goes before the left dummy. What goes here? (self.left)\nLine 16: New node goes after the left dummy. What goes here? (node)\nLine 17: The new node becomes the new head. What goes here? (self.left.next)\nLine 18: Move the left pointer to point to the new head. What goes here? (self.left)\nLine 19: The node to the right of the old node becomes the new left. What goes here? (node.next)\nLine 20: The old node becomes the new right. What goes here? (node)\nLine 21: Check if the key exists in the cache. What goes here? (self.cache)\nLine 22: Remove the old node from the linked list. What goes here? (key)\nLine 23: Create a new node with the given key and value. What goes here? (key, value)\nLine 24: Add the new node to the front of the list. What goes here? (self.add_to_front)\nLine 25: If adding a new node makes the size exceed capacity, remove the least recently used (LRU). What goes here? (len(self.cache) > self.capacity)\nLine 26: The LRU is the node to the right of the right dummy. What goes here? (self.right.prev)\nLine 27: Remove the LRU from the cache. What goes here? (key)\nLine 28: Remove the LRU from the linked list. What goes here? (self.remove)\n```",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "token"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_lora_rank_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nFor LoRA (Low-Rank Adaptation), choosing the rank r is crucial. The rank controls the model capacity added by LoRA. Key considerations:\n1. **Model Capacity**: Higher rank = more capacity = better performance but also more computational cost.\n2. **Overfitting**: Too high rank can lead to overfitting on the training data.\n3. **Fine-grained vs Coarse-grained**: Rank affects how finely the model can adapt. A higher rank means more fine-grained adaptation.\n\n[TEMPLATE]\n```python\ndef tune_lora_rank(model, train_loader, validation_loader):\n    # Try different ranks and evaluate performance\n    for rank in range(1, max_rank + 1):\n        lora_model = modify_model_with_lora(model, rank=____)  # Line 1\n        lora_model.train()\n        train_lora(lora_model, train_loader)  # Line 2\n        validate_loss = validate(lora_model, validation_loader)  # Line 3\n        print(f\"Rank {rank}: Validation Loss = {validate_loss}\")  # Line 4\n    # Return the best rank based on validation performance\n    return best_rank  # Line 5\n```\n\n[GUIDE]\nLine 1: What parameter controls the rank of the Low-Rank Adaptation?\n```python\n    lora_model = modify_model_with_lora(model, rank=____)  # Line 1\n```\n\nLine 2: After modifying the model with LoRA, what mode do you typically enter?\n```python\n    lora_model.train()  # Line 2\n```\n\nLine 3: What metric do you use to evaluate how well the model is performing on validation data?\n```python\n    validate_loss = validate(lora_model, validation_loader)  # Line 3\n```\n\nLine 4: Print the validation loss along with the current rank for logging.\n```python\n    print(f\"Rank {rank}: Validation Loss = {validate_loss}\")  # Line 4\n```\n\nLine 5: After trying multiple ranks, which one gives the best validation performance?\n```python\n    return best_rank  # Line 5\n```\n\n[GUIDE]\nLine 1: What parameter controls the rank of the Low-Rank Adaptation?\n```python\n    lora_model = modify_model_with_lora(model, rank=____)  # Line 1\n```\nThink: What number tells the model how many dimensions to use for approximation? Start with 1 and go up to 8 for exploration.",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": true
+  },
+  {
+   "id": "teach_grad_accum_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nGradient accumulation is a technique that allows us to simulate training on a larger batch size than our GPU can handle. The key is to accumulate gradients over multiple mini-batches before updating weights. This gives us the effect of a larger batch size without requiring more memory.\n\n[TEMPLATE]\n```python\nimport torch\n\ndef train(model, dataloader, optimizer, device='cpu', accumulation_steps=____):  # Line 1\n    model.____()  # Line 2\n    total_loss = 0\n    for batch_idx, (inputs, targets) in enumerate(dataloader):  # Line 3\n        inputs, targets = inputs.____(device), targets.____(device)  # Line 4\n        predictions = model(inputs)  # Line 5\n        loss = criterion(predictions, targets)  # Line 6\n        loss.backward()  # Line 7\n\n        total_loss += loss.item()\n        if (batch_idx + 1) % ____ == 0:  # Line 8\n            optimizer.____()  # Line 9\n            optimizer.____()  # Line 10\n            total_loss /= accumulation_steps  # Line 11\n            print(f'Batch {batch_idx+1}: Loss = {total_loss:.4f}')\n            total_loss = 0\n    return total_loss\n```\n\n[GUIDE]\nLine 1: For 16x batch size, set accumulation_steps to:\n```python\n    accumulation_steps = ____  # Line 1\n```\nLine 2: Put the model in training mode before each epoch:\n```python\n    model.____()  # Line 2\n```\nLine 3: Iterate through the dataloader using enumerate:\n```python\n    for batch_idx, (inputs, targets) in enumerate(dataloader):  # Line 3\n```\nLine 4: Move data to device (CPU/GPU) and cast to tensor:\n```python\n        inputs, targets = inputs.____(device), targets.____(device)  # Line 4\n```\nLine 5: Get predictions by passing inputs through the model:\n```python\n        predictions = model(inputs)  # Line 5\n```\nLine 6: Calculate the loss between predictions and actual targets:\n```python\n        loss = criterion(predictions, targets)  # Line 6\n```\nLine 7: Backpropagate the loss to compute gradients:\n```python\n        loss.backward()  # Line 7\n```\nLine 8: Update after accumulation_steps batches:\n```python\n        if (batch_idx + 1) % ____ == 0:  # Line 8\n```\nLine 9: Update the weights once per accumulation period:\n```python\n            optimizer.____()  # Line 9\n```\nLine 10: Clear accumulated gradients:\n```python\n            optimizer.____()  # Line 10\n```\nLine 11: Average the loss across all accumulation steps:\n```python\n            total_loss /= ____  # Line 11\n```\n\n[GUIDE]\nLine 1: For 16x batch size, set accumulation_steps to:\n```python\n    accumulation_steps = ____  # Line 1\n```\nLine 2: Put the model in training mode before each epoch:\n```python\n    model.____()  # Line 2\n```\nLine 3: Iterate through the dataloader using enumerate:\n```python\n    for batch_idx, (inputs, targets) in enumerate(dataloader):  # Line 3\n```\nLine 4: Move data to device (CPU/GPU) and cast to tensor:\n```python\n    inputs, targets = inputs.____(device), targets.____(device)  # Line 4\n```\nLine 5: Get predictions by passing inputs through the model:\n```python\n    predictions = model(inputs)  # Line 5\n```\nLine 6: Calculate the loss between predictions and actual targets:\n```python\n    loss = criterion(predictions, targets)  # Line 6\n```\nLine 7: Backpropagate the loss to compute gradients:\n```python\n    loss.backward()  # Line 7\n```\nLine 8: Update after accumulation_steps batches:\n```python\n    if (batch_idx + 1) % ____ == 0:  # Line 8\n```\nLine 9: Update the weights once per accumulation period:\n```python\n    optimizer.____()  # Line 9\n```\nLine 10: Clear accumulated gradients:\n```python\n    optimizer.____()  # Line 10\n```\nLine 11: Average the loss across all accumulation steps:\n```python\n    total_loss /= ____  # Line 11\n```",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": true,
+    "covered": 2,
+    "required": 2,
+    "missing": []
+   },
+   "all_passed": false
+  },
+  {
+   "id": "teach_mixed_precision_001",
+   "mode": "teaching",
+   "text": "[EXPLAIN]\nMixed precision training uses lower-precision floating-point types (like FP16) to accelerate training. However, this introduces numerical instability. Loss scaling helps mitigate this issue.\n\n[TEMPLATE]\n```python\ndef train_mixed_precision(model, optimizer, scaler, dataloader):\n    model.train()\n    for batch in dataloader:\n        optimizer.zero_grad()\n        forward_result = model(____)  # Line 1\n        loss = forward_result - ____  # Line 2\n        loss.backward()                # Line 3\n        scaler.scale(____).step()      # Line 4\n        scaler.update()                # Line 5\n    return loss.item()\n```\n\n[GUIDE]\nLine 1: What goes into the model first? The input tensor. What's the name of the input variable?\nLine 2: What's the target value for the loss? Use the ground truth label.\nLine 3: Which method performs backward pass for gradient computation? What does it return?\nLine 4: After backward(), what do we call to execute the update? What does .scale() do?\nLine 5: When should you call `scaler.update()`? What information does it collect?\n```python\n    scaler.scale(____).step()  # Line 4\n```\nWhat do we call after backward() to execute the update? What does .scale() do?",
+   "bleed": false,
+   "fenced_code": true,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "underflow"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_batchnorm_eval_001",
+   "mode": "followup",
+   "text": "Batch norm uses statistics calculated during training. At evaluation, we don't update these stats. What does that mean for the inputs?",
+   "bleed": false,
+   "fenced_code": false,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "running"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_lr_warmup_001",
+   "mode": "followup",
+   "text": "I noticed you're using `if num % 2 == 0` to check for even numbers. Does that always work for checking if a number is even? Try testing with -2. What result do you get?",
+   "bleed": false,
+   "fenced_code": false,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 0,
+    "required": 2,
+    "missing": [
+     "gradient",
+     "early"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_dropout_inference_001",
+   "mode": "followup",
+   "text": "Good question. During inference, do we want the model to remember which neurons were dropped?",
+   "bleed": false,
+   "fenced_code": false,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "scal"
+    ]
+   },
+   "all_passed": false
+  },
+  {
+   "id": "followup_tokenizer_oov_001",
+   "mode": "followup",
+   "text": "It uses subword units it already knows. What happens if the new word has no matching prefix?",
+   "bleed": false,
+   "fenced_code": false,
+   "mentions": {
+    "applicable": true,
+    "passed": false,
+    "covered": 1,
+    "required": 2,
+    "missing": [
+     "merge"
+    ]
+   },
+   "all_passed": false
+  }
+ ]
+}

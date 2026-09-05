@@ -1,0 +1,28 @@
+{
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "train_problems": 1060,
+  "dead_groups": 50,
+  "history": [
+    {
+      "step": 0,
+      "problems": 60,
+      "solved_any": 5,
+      "solve_rate": 0.0833,
+      "mean_case_fraction": 0.1119
+    },
+    {
+      "step": 50,
+      "problems": 60,
+      "solved_any": 3,
+      "solve_rate": 0.05,
+      "mean_case_fraction": 0.0825
+    },
+    {
+      "step": 150,
+      "problems": 60,
+      "solved_any": 3,
+      "solve_rate": 0.05,
+      "mean_case_fraction": 0.0722
+    }
+  ]
+}

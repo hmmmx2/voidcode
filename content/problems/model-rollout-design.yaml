@@ -1,0 +1,46 @@
+slug: model-rollout-design
+title: Roll out a new tutor model without a bad week
+difficulty: medium
+categories:
+- Systems
+concepts:
+- serving_latency
+- checkpointing_recovery
+grading: rubric
+description: 'You have a new model that scores better on your offline evaluation. Design the rollout.
+
+
+  Cover shadow traffic, canary sizing, what you monitor, and the rollback trigger. State the trigger as
+  a condition on a number, not as a judgement call.
+
+
+  Then address the part specific to a tutor: **your offline evaluation measures format compliance and
+  bug localisation, not learning.** What can a rollout detect that an offline evaluation structurally
+  cannot?'
+hints:
+- Shadow traffic gets you outputs without exposing learners to them.
+- A canary too small to detect a regression is theatre.
+- Which metrics move within a day, and which take weeks?
+hint_ladder:
+  level_0: Shadow traffic gets you outputs without exposing learners to them.
+  level_1: A canary too small to detect a regression is theatre.
+  level_2: Which metrics move within a day, and which take weeks?
+rubric:
+- criterion: 'Describes shadow traffic: serve both, compare outputs, expose nobody -- and notes it catches
+    crashes and latency but not learner response.'
+  weight: 0.25
+- criterion: Sizes the canary against a detectable effect rather than picking a percentage, and connects
+    it to the power calculation in experiments/registry.py.
+  weight: 0.25
+- criterion: Gives a numeric rollback trigger on a guardrail -- error rate, latency, abandonment -- rather
+    than 'if it looks bad'.
+  weight: 0.2
+- criterion: 'Identifies what only a live rollout shows: learner behaviour, retention, whether hints are
+    followed -- none of which an offline harness can measure.'
+  weight: 0.2
+- criterion: 'Acknowledges the lag: learning outcomes move on a slower timescale than the rollout, so
+    the decision uses proxies and should say so.'
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

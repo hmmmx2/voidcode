@@ -1,0 +1,49 @@
+slug: activation-memory-budget
+title: Size a mixed-precision training memory budget
+difficulty: hard
+categories:
+- DL
+- CUDA
+concepts:
+- mixed_precision
+- memory_accounting
+description: Write a function returning the six-line memory breakdown for training a model in bf16 with
+  an AdamW optimizer, in GB. The trap is that the weights are only 1/8 of the fixed cost, and that activations
+  scale with batch times sequence while nothing else does.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Anthropic
+prompt: Write a function returning the six-line memory breakdown for training a model in bf16 with an
+  AdamW optimizer, in GB. The trap is that the weights are only 1/8 of the fixed cost, and that activations
+  scale with batch times sequence while nothing else does.
+approach: 'Fixed costs are exact: bytes per parameter for the bf16 copy, the bf16 gradients, the fp32
+  master copy and the two fp32 moments. Activations are one d-wide tensor per stored value times the token
+  count times depth, with checkpointing changing the multiplier from n_layers*tensors_per_layer to n_layers
+  + tensors_per_layer.'
+model_answer: "FIXED COSTS (mixed precision, AdamW).\n    bf16 weights        7B * 2 = 14 GB\n    bf16\
+  \ gradients      7B * 2 = 14 GB\n    fp32 master weights 7B * 4 = 28 GB\n    Adam m, v (fp32)    7B\
+  \ * 8 = 56 GB\n    ------------------------------------\n    subtotal                  = 112 GB   >\
+  \ 80 GB already\n\nSo a single 80GB card cannot train this at all, before one activation is stored.\
+  \ That is the finding — sharding is not an optimisation here, it is a precondition.\n\nACTIVATIONS,\
+  \ per layer, tokens = 8 * 2048 = 16384:\n    one d-wide bf16 tensor = 16384 * 4096 * 2 = 134 MB\n  A\
+  \ layer keeps roughly 10-20 such tensors (attention in/out, Q K V,   the 4d FFN intermediate counts\
+  \ as 4), so ≈ 2 GB/layer without   recomputation, giving 32 * 2 = **~64 GB**.\n\nTotal ≈ 176 GB against\
+  \ 80 GB.\n\nWHAT MAKES IT FIT. ZeRO-3 shards weights, gradients and optimiser state across N GPUs: 112/8\
+  \ = 14 GB per card on a node. Gradient checkpointing stores only layer boundaries and recomputes the\
+  \ rest, cutting activations to roughly sqrt(L) worth — a few GB — for about 30% more compute. With both,\
+  \ it fits comfortably.\n\nNote activations scale with batch × seq while the fixed costs do not, so at\
+  \ seq 8192 activations alone dominate everything."
+follow_ups:
+- Why does gradient checkpointing give roughly sqrt(L)?
+- Which of the four fixed costs does ZeRO stage 2 shard, versus stage 3?
+- Recompute this at seq 8192. What dominates now?
+red_flags:
+- Counting only weights and concluding 14GB is the requirement.
+- Forgetting the fp32 master copy or the two Adam moments.
+- Not knowing activations scale with batch × sequence length.
+source_kind: interview_question

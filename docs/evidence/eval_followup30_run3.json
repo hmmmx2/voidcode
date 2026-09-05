@@ -1,0 +1,2478 @@
+{
+ "summary": {
+  "by_bucket": {
+   "('followup', 'ALL')": {
+    "passed": 18,
+    "n": 30,
+    "rate": 0.6,
+    "ci95": [
+     0.4232,
+     0.7541
+    ]
+   },
+   "('followup', 'easy')": {
+    "passed": 4,
+    "n": 7,
+    "rate": 0.5714,
+    "ci95": [
+     0.2505,
+     0.8418
+    ]
+   },
+   "('followup', 'hard')": {
+    "passed": 4,
+    "n": 8,
+    "rate": 0.5,
+    "ci95": [
+     0.2152,
+     0.7848
+    ]
+   },
+   "('followup', 'medium')": {
+    "passed": 10,
+    "n": 15,
+    "rate": 0.6667,
+    "ci95": [
+     0.4171,
+     0.8482
+    ]
+   }
+  },
+  "by_check": {
+   "mentions_required": {
+    "passed": 18,
+    "n": 30,
+    "rate": 0.6,
+    "ci95": [
+     0.4232,
+     0.7541
+    ]
+   },
+   "no_answer_leakage": {
+    "passed": 30,
+    "n": 30,
+    "rate": 1.0,
+    "ci95": [
+     0.8865,
+     1.0
+    ]
+   }
+  },
+  "total_scenarios": 30,
+  "provenance": {
+   "backend": "VoidCode FastAPI",
+   "base_url": "http://localhost:8020",
+   "served_model": "whatever /v1/chat/completions serves",
+   "prompt_layer": "the API's own",
+   "mode_source": "detect_mode()"
+  }
+ },
+ "results": [
+  {
+   "scenario": {
+    "id": "followup_batchnorm_eval_001",
+    "difficulty": "easy",
+    "user_message": "You said batch norm behaves differently at eval time. Why?",
+    "must_mention": [
+     "running"
+    ],
+    "notes": "Running statistics replace batch statistics.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Why does my model give different results in train mode versus eval mode?"
+     },
+     {
+      "role": "assistant",
+      "content": "A couple of layer types deliberately behave differently in the two modes \u2014 normalisation layers are the usual culprit, and dropout is the other. Which of those is in your model?"
+     },
+     {
+      "role": "user",
+      "content": "You said batch norm behaves differently at eval time. Why?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Batch Normalization calculates statistics (mean and variance) from the data it sees; in training mode, it uses these moving averages to normalize inputs while updating its internal stats, whereas in evaluation mode it relies on the fixed statistics accumulated during training. This ensures that inference produces consistent results regardless of the specific batch being processed. Does your model use BatchNorm layers?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 1,
+      "missing": [
+       "running"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_lr_warmup_001",
+    "difficulty": "medium",
+    "user_message": "Earlier you mentioned warmup. What actually goes wrong without it?",
+    "must_mention": [
+     "gradient",
+     [
+      "early",
+      "beginning",
+      "start of training",
+      "first few"
+     ]
+    ],
+    "notes": "Large early updates on poorly conditioned estimates.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "I'm setting up a training schedule for a transformer. Anything I should add?"
+     },
+     {
+      "role": "assistant",
+      "content": "Most transformer schedules start with a warmup phase before the main decay. Have you included one, and do you know what it is there to protect against?"
+     },
+     {
+      "role": "user",
+      "content": "Earlier you mentioned warmup. What actually goes wrong without it?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Without warmup, the learning rate is too high at the start when adaptive optimizers (like AdamW) have unreliable gradient estimates based on very few samples. This can cause the model to take massive steps that move weights into poor regions, requiring many extra steps to recover from. Would you like to see a simple code snippet showing how to implement a linear warmup in your scheduler?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "early|beginning|start of training|first few"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_dropout_inference_001",
+    "difficulty": "easy",
+    "user_message": "Follow up: is dropout active when I run inference?",
+    "must_mention": [
+     [
+      "scal",
+      "expect",
+      "compensat"
+     ]
+    ],
+    "notes": "Disabled at inference; activations scaled to keep expectations equal.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "I added dropout to my network and the training loss looks noisier than before."
+     },
+     {
+      "role": "assistant",
+      "content": "That is expected \u2014 dropout randomly removes units during training, so each step sees a slightly different network. What do you think should happen to that behaviour when you stop training and start predicting?"
+     },
+     {
+      "role": "user",
+      "content": "Follow up: is dropout active when I run inference?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "No, dropout is typically disabled during inference to ensure the model produces consistent outputs; you usually scale the remaining activations by the dropout probability instead. Does your current implementation apply this scaling when you remove the dropout masks?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 1,
+      "required": 1,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_tokenizer_oov_001",
+    "difficulty": "easy",
+    "user_message": "Following on from that \u2014 what does a BPE tokenizer do with a word it has never seen?",
+    "must_mention": [
+     "subword",
+     [
+      "merge",
+      "pair",
+      "combin"
+     ]
+    ],
+    "notes": "Falls back to subword units; there is no true OOV.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "How does the model turn my text into numbers?"
+     },
+     {
+      "role": "assistant",
+      "content": "Through a tokenizer \u2014 most modern LLMs use byte pair encoding rather than a fixed word list. What do you think that means for a word the tokenizer has never encountered?"
+     },
+     {
+      "role": "user",
+      "content": "Following on from that \u2014 what does a BPE tokenizer do with a word it has never seen?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "It breaks the unseen word down into a sequence of subword units it already knows, ensuring there is no \"out-of-vocabulary\" case. Since these subwords are just chunks of bytes or characters, how do you think that changes the total number of tokens compared to counting whole words?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "merge|pair|combin"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_grad_clipping_002",
+    "difficulty": "medium",
+    "user_message": "You mentioned a safeguard for huge updates. How does clipping actually work?",
+    "must_mention": [
+     [
+      "norm",
+      "magnitude",
+      "length"
+     ],
+     [
+      "threshold",
+      "maximum",
+      "limit",
+      "exceed"
+     ]
+    ],
+    "notes": "Rescales the gradient when its norm exceeds a threshold, preserving direction.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My loss suddenly jumps to NaN partway through training."
+     },
+     {
+      "role": "assistant",
+      "content": "That pattern usually points at a small number of very large updates rather than a steady problem. Most training loops add a safeguard for exactly this. Do you have one?"
+     },
+     {
+      "role": "user",
+      "content": "You mentioned a safeguard for huge updates. How does clipping actually work?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Clipping works by capping the gradient values so they don't exceed a specific threshold before you compute the loss or update weights. Do you have that threshold defined in your training loop, and what value are you currently using?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "norm|magnitude|length"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_weight_decay_003",
+    "difficulty": "medium",
+    "user_message": "You said they differ under Adam. Why exactly?",
+    "must_mention": [
+     [
+      "adaptive",
+      "per-parameter",
+      "second moment"
+     ],
+     [
+      "decoupl",
+      "separat",
+      "independent"
+     ]
+    ],
+    "notes": "Adam's adaptive scaling distorts an L2 penalty; AdamW decouples the decay.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Should I use weight decay or L2 regularisation in my optimizer?"
+     },
+     {
+      "role": "assistant",
+      "content": "People often treat them as the same thing, and with plain SGD they coincide. With Adam they do not. Do you know which optimizer you are using?"
+     },
+     {
+      "role": "user",
+      "content": "You said they differ under Adam. Why exactly?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Under Adam, the first moment estimate (mean) is biased toward zero at the start of training, which effectively scales the weight decay term differently than in standard L2 regularization. Since weight decay in optimizers like Adam is applied to the raw parameters rather than the gradient update itself, this bias causes it to behave distinctively from explicit L2 regularization added to the loss function. Are you currently applying regularization by adding a penalty term to your loss or by configuring a specific parameter within your optimizer?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 2,
+      "missing": [
+       "adaptive|per-parameter|second moment",
+       "decoupl|separat|independent"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_layernorm_004",
+    "difficulty": "medium",
+    "user_message": "Following on from that \u2014 what breaks if I use the batch version in a transformer?",
+    "must_mention": [
+     [
+      "depend",
+      "couple",
+      "other examples",
+      "across the batch"
+     ],
+     [
+      "inference",
+      "eval",
+      "test time",
+      "deployment"
+     ]
+    ],
+    "notes": "Batch statistics couple examples and break with variable sequence lengths and batch size 1.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Why do transformers use layer norm rather than the batch version?"
+     },
+     {
+      "role": "assistant",
+      "content": "It comes down to what each one normalises over, and that changes how the model behaves at different batch sizes. What follows from that?"
+     },
+     {
+      "role": "user",
+      "content": "Following on from that \u2014 what breaks if I use the batch version in a transformer?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "If you switch to batch normalization, the statistics (mean and variance) become dependent on your current batch size, which causes them to collapse or become unstable when inference batches are small. This breaks the model's ability to generalize because it was trained on large-batch statistics that no longer apply during deployment. Instead of fixing this by changing the code, how would you modify the normalization logic so it ignores the specific batch instance?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_attention_mask_005",
+    "difficulty": "hard",
+    "user_message": "You hinted at what attention can see. What am I missing?",
+    "must_mention": [
+     "causal",
+     [
+      "future",
+      "ahead",
+      "later token",
+      "subsequent"
+     ]
+    ],
+    "notes": "A causal mask is required so positions cannot attend to future tokens.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My decoder seems to be cheating during training \u2014 the loss is far too low."
+     },
+     {
+      "role": "assistant",
+      "content": "That is a classic symptom with a specific cause in how attention is set up for generation tasks. What is attention allowed to look at in your model?"
+     },
+     {
+      "role": "user",
+      "content": "You hinted at what attention can see. What am I missing?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "\n\nYou are right\u2014there is often only one primary reason for this specific symptom.\n\n### The Issue: Future Token Leakage\n\nIf your loss is \"far too low\" during training, you are almost certainly experiencing **data leakage**. In decoding tasks, this typically happens because your attention mask allows the model to peek at information it shouldn't know yet.\n\nThink of it like reading an entire page before being asked to fill in the blanks. If the model sees the answer while predicting the next token, it learns instantly, resulting in a deceptively perfect loss curve.\n\n### Diagnostic Questions\n\nTo confirm, ask yourself these three questions:\n\n1.  **Is your causal mask correct?**\n    *   Should the model be able to attend to the current position and *past* positions?\n    *   Or is it allowed to attend to *future* positions?\n    *   *Concept:* A causal mask (also known as a triangular mask) ensures $Attention(i, j) = 0$ if $j > i$.\n\n2.  **Are you using teacher forcing correctly?**\n    *   Are you feeding the true target sequence into the input, or just the predicted output from the previous step?\n    *   *Concept:* During training, you use the ground truth targets. If the architecture leaks information across the boundary between inputs and targets, the model gets \"free\" information.\n\n3.  **Is there a mismatch in dimensions?**\n    *   Sometimes padding or reshaping operations accidentally expose future tokens to the encoder/decoder interface.\n\n### What to Check Next\n\nCan you share a snippet of how you define your attention mask? For example:\n\n```python\n# Conceptual template (no code provided)\nmask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()\n```\n\nOr does your decoder use bidirectional attention by default?",
+   "thinking": "The user is asking about decoder training issues where loss seems too low, and I'm probing about what attention can see. They want to understand what they might be missing.\n\nThis is a legitimate ML/deep learning question - they're asking about potential data leakage in their model architecture, specifically around attention mechanisms during training. This is NOT a programming request for code - it's a conceptual understanding question about model behavior.\n\nLet me explain the concept clearly without providing actual code. The key issue they're likely experiencing is that their decoder is seeing future tokens (causal violation) which would make loss artificially low.\n\nI should:\n1. Explain what this means conceptually\n2. Ask clarifying questions to help them diagnose\n3. Keep it educational and use the Socratic method where appropriate",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "reasoning"
+   },
+   "score_including_thinking": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_positional_006",
+    "difficulty": "medium",
+    "user_message": "You said order has to be supplied. How?",
+    "must_mention": [
+     [
+      "encod",
+      "embed",
+      "signal"
+     ],
+     [
+      "position",
+      "order",
+      "index"
+     ]
+    ],
+    "notes": "Positional encodings are added to embeddings, learned or sinusoidal.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Does a transformer know what order my tokens are in?"
+     },
+     {
+      "role": "assistant",
+      "content": "Not on its own \u2014 self-attention is permutation invariant, so order has to be supplied some other way. How do you think that is usually done?"
+     },
+     {
+      "role": "user",
+      "content": "You said order has to be supplied. How?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "The order is usually supplied via **positional embeddings**, which are added to the token embeddings before they enter the model. Since transformers process tokens in parallel, how do you think these embeddings tell the model that \"cat\" came before \"sat\"?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_cosine_schedule_007",
+    "difficulty": "easy",
+    "user_message": "Earlier you mentioned decay shape. Why is cosine so common?",
+    "must_mention": [
+     [
+      "smooth",
+      "gradual",
+      "continuous"
+     ],
+     [
+      "anneal",
+      "decay",
+      "reduc",
+      "lower"
+     ]
+    ],
+    "notes": "Smooth annealing to near zero, no abrupt drops, no extra hyperparameters.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Is a constant learning rate fine for fine-tuning?"
+     },
+     {
+      "role": "assistant",
+      "content": "It works, but most recipes decay it over training, and the shape of that decay matters more than people expect. Have you looked at the schedules on offer?"
+     },
+     {
+      "role": "user",
+      "content": "Earlier you mentioned decay shape. Why is cosine so common?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Cosine decay is common because it smoothly reduces the learning rate to near zero, avoiding the sudden jumps of step decay that can destabilize fine-tuning. It also pairs well with a linear warmup at the start to let adaptive optimizers settle their gradient estimates. Do you think a smooth decline helps the model converge more gently than an abrupt stop?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_loss_scaling_008",
+    "difficulty": "hard",
+    "user_message": "You said small values fall off the bottom. How do people work around it?",
+    "must_mention": [
+     [
+      "scal",
+      "expect",
+      "compensat"
+     ],
+     [
+      "underflow",
+      "round to zero",
+      "too small",
+      "flush"
+     ]
+    ],
+    "notes": "Loss scaling multiplies the loss before backward so gradients avoid underflow.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "I switched to fp16 and now my gradients are all zero."
+     },
+     {
+      "role": "assistant",
+      "content": "That is expected rather than a bug \u2014 half precision has a much smaller representable range than fp32, and small values fall off the bottom of it. What do you think happens to a gradient of 1e-8?"
+     },
+     {
+      "role": "user",
+      "content": "You said small values fall off the bottom. How do people work around it?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "The standard workaround is **loss scaling**, where you multiply the loss by a large constant before the backward pass so gradients stay within representable range, then divide them back out. Do you think your training loop needs to implement this scaling step?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "underflow|round to zero|too small|flush"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_grad_checkpoint_009",
+    "difficulty": "hard",
+    "user_message": "Following on from that \u2014 what does checkpointing trade away?",
+    "must_mention": [
+     [
+      "recomput",
+      "recalculat",
+      "compute again",
+      "re-run"
+     ],
+     [
+      "forward",
+      "activation"
+     ]
+    ],
+    "notes": "Discards intermediate activations and recomputes them during backward.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "I am out of GPU memory but I cannot reduce the batch size any further."
+     },
+     {
+      "role": "assistant",
+      "content": "There is a trade you can make: spend extra compute to avoid storing something. Do you know what dominates activation memory in a deep network?"
+     },
+     {
+      "role": "user",
+      "content": "Following on from that \u2014 what does checkpointing trade away?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Checkpointing trades extra compute (roughly 33% more) for drastically reduced activation memory. Since you are already memory-bound, this trade is often worth it to fit your batch size. Would you like to see how to implement gradient checkpointing in your current code?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "recomput|recalculat|compute again|re-run"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_kv_cache_010",
+    "difficulty": "medium",
+    "user_message": "You said something is recomputed unnecessarily. What is stored instead?",
+    "must_mention": [
+     "key",
+     "value"
+    ],
+    "notes": "Past keys and values are cached so only the new token is processed.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Generation gets slower the longer my output becomes."
+     },
+     {
+      "role": "assistant",
+      "content": "It should not, if the implementation is doing the right thing. Think about what the model recomputes on every new token. What is unnecessary there?"
+     },
+     {
+      "role": "user",
+      "content": "You said something is recomputed unnecessarily. What is stored instead?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "The system stores the **keys and values** for previous tokens in a structure called the **KV cache**, so they don't need to be recalculated. Since this cache grows with every new token, does that explain why the memory usage (and potentially speed) increases as the output gets longer?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_beam_vs_sample_011",
+    "difficulty": "medium",
+    "user_message": "You mentioned decoding strategy. Why does beam search sound so flat?",
+    "must_mention": [
+     [
+      "likelihood",
+      "probabilit",
+      "score"
+     ],
+     [
+      "divers",
+      "generic",
+      "repetit",
+      "bland",
+      "safe"
+     ]
+    ],
+    "notes": "Beam search maximises likelihood, which favours generic high-probability phrasing.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My summaries are accurate but read like they were written by a committee."
+     },
+     {
+      "role": "assistant",
+      "content": "That is a known signature of one particular decoding strategy. How are you choosing the next token at generation time?"
+     },
+     {
+      "role": "user",
+      "content": "You mentioned decoding strategy. Why does beam search sound so flat?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Beam search tends to produce flat, repetitive text because it greedily maximizes likelihood by always selecting the most probable token from its top-k candidates at each step. This approach often fails to capture the \"moderate surprise\" found in natural human language, as noted in research on neural text degeneration (Holtzman et al., 2019). Have you considered how sampling with a nucleus or temperature parameter might introduce more variety?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_top_p_012",
+    "difficulty": "easy",
+    "user_message": "You said one truncates. How does top-p decide where to cut?",
+    "must_mention": [
+     [
+      "cumulative",
+      "running total",
+      "adding them up",
+      "accumulat"
+     ],
+     [
+      "mass",
+      "probabilit",
+      "total",
+      "sum"
+     ]
+    ],
+    "notes": "Keeps the smallest set of tokens whose cumulative probability mass exceeds p.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "What is the difference between temperature and top-p?"
+     },
+     {
+      "role": "assistant",
+      "content": "They both change how adventurous generation is, but they act at different points in the process \u2014 one reshapes the distribution, the other truncates it. Which are you tuning?"
+     },
+     {
+      "role": "user",
+      "content": "You said one truncates. How does top-p decide where to cut?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Top-p (nucleus sampling) doesn't cut by a fixed rank like top-k; instead, it keeps the smallest set of tokens whose cumulative probability reaches the threshold $p$. Can you imagine how that set might change if the model becomes more confident about its next word?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_early_stopping_013",
+    "difficulty": "easy",
+    "user_message": "Earlier you mentioned a held-out signal. What goes wrong if I use the test set for it?",
+    "must_mention": [
+     [
+      "leak",
+      "contaminat",
+      "overfit"
+     ],
+     [
+      "optimistic",
+      "bias",
+      "inflat",
+      "overestimat",
+      "unreliab"
+     ]
+    ],
+    "notes": "Selecting on the test set leaks it into the decision and biases the estimate.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "How do I know when to stop training?"
+     },
+     {
+      "role": "assistant",
+      "content": "The usual approach watches a held-out signal rather than the training loss, and stops when that signal stops improving. Which split are you monitoring?"
+     },
+     {
+      "role": "user",
+      "content": "Earlier you mentioned a held-out signal. What goes wrong if I use the test set for it?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Using the test set for monitoring causes **data leakage**, where the model indirectly \"sees\" the test data during training, leading to an overly optimistic evaluation that doesn't reflect real-world performance.\n\nInstead, you should use a separate **validation set** that remains untouched until the final evaluation. Does your dataset have enough samples to split into distinct train, validation, and test portions?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_class_imbalance_014",
+    "difficulty": "medium",
+    "user_message": "You said accuracy can hide that. What should I look at instead?",
+    "must_mention": [
+     [
+      "recall",
+      "false negative",
+      "missed positive"
+     ],
+     [
+      "precision",
+      "false positive"
+     ]
+    ],
+    "notes": "Precision and recall on the minority class, or a PR curve.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My classifier reports 97% accuracy but is useless in practice."
+     },
+     {
+      "role": "assistant",
+      "content": "With a rare positive class that number can be achieved by a model that never predicts it at all. What fraction of your data is the positive class?"
+     },
+     {
+      "role": "user",
+      "content": "You said accuracy can hide that. What should I look at instead?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "You should look at the **confusion matrix** and specifically the **recall** (or sensitivity) for your positive class, as accuracy ignores true negatives that dominate imbalanced datasets. Since you mentioned it's useless in practice, does your model actually find any of the rare positive cases, or are all those predictions false positives?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_data_leakage_015",
+    "difficulty": "hard",
+    "user_message": "You said the split may have seen something. What kind of thing?",
+    "must_mention": [
+     [
+      "future",
+      "ahead",
+      "later token",
+      "subsequent"
+     ],
+     [
+      "target",
+      "label",
+      "outcome"
+     ]
+    ],
+    "notes": "Features computed after the target, or rows sharing an entity across splits.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My validation score is excellent and production performance is terrible."
+     },
+     {
+      "role": "assistant",
+      "content": "That gap almost always means the validation set saw something it should not have. How did you build your splits?"
+     },
+     {
+      "role": "user",
+      "content": "You said the split may have seen something. What kind of thing?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "That \"something\" is usually data leakage, where information from the test set accidentally influences the training or validation process. Did you normalize your features using statistics calculated on the entire dataset before splitting it?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 2,
+      "missing": [
+       "future|ahead|later token|subsequent",
+       "target|label|outcome"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_cross_val_016",
+    "difficulty": "medium",
+    "user_message": "Following on from that \u2014 what does k-fold actually buy me?",
+    "must_mention": [
+     [
+      "varian",
+      "spread",
+      "confidence",
+      "stability"
+     ],
+     [
+      "estimate",
+      "measure",
+      "score"
+     ]
+    ],
+    "notes": "Multiple estimates give a variance, not just a point value.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Is a single train/test split enough to trust my numbers?"
+     },
+     {
+      "role": "assistant",
+      "content": "It gives you a single number with no sense of how much it would move on a different split. There is a standard way of getting that spread. Do you know it?"
+     },
+     {
+      "role": "user",
+      "content": "Following on from that \u2014 what does k-fold actually buy me?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "K-fold cross-validation buys you a much more stable estimate of your model's performance by averaging results over $k$ different train/test splits, which reduces the variance caused by any single specific split. It essentially tells you how consistently your model performs across different subsets of your data rather than just on one lucky or unlucky division. Does this distinction between a single snapshot and an averaged trend make sense to you?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_feature_scaling_017",
+    "difficulty": "easy",
+    "user_message": "You said it dominates for some models. Which ones, and why?",
+    "must_mention": [
+     [
+      "distance",
+      "dot product",
+      "magnitude",
+      "euclid"
+     ],
+     "gradient"
+    ],
+    "notes": "Distance-based and gradient-based methods are scale sensitive; trees are not.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Does it matter that my features are on wildly different scales?"
+     },
+     {
+      "role": "assistant",
+      "content": "For some models it is irrelevant and for others it dominates the result. Which model family are you using?"
+     },
+     {
+      "role": "user",
+      "content": "You said it dominates for some models. Which ones, and why?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Models that rely on comparing raw feature magnitudes, such as standard linear regression or simple neural networks without normalization layers, are heavily impacted by scale differences because the loss function will disproportionately weight larger features. In contrast, architectures with built-in normalization like LayerNorm or RMSNorm (which stabilize training by centering and scaling activations) are much more robust to input scale variations. Do you know if your current model architecture includes any of these normalization steps?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "gradient"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_embeddings_018",
+    "difficulty": "medium",
+    "user_message": "You said one-hot throws something away. What do embeddings keep?",
+    "must_mention": [
+     [
+      "similar",
+      "relat",
+      "close",
+      "nearby"
+     ],
+     [
+      "dens",
+      "continuous",
+      "low-dimension"
+     ]
+    ],
+    "notes": "A dense space where similar tokens sit near one another.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Why not just one-hot encode my vocabulary?"
+     },
+     {
+      "role": "assistant",
+      "content": "You can, but it gets impractical quickly and it throws away something a learned representation keeps. What does one-hot say about the relationship between two words?"
+     },
+     {
+      "role": "user",
+      "content": "You said one-hot throws something away. What do embeddings keep?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Embeddings keep semantic relationships, meaning that similar words end up close together in vector space while unrelated ones are far apart. One-hot encoding treats every word as completely isolated from the others, losing all of this context. Can you think of a scenario where knowing \"king\" is semantically related to \"queen\" would help your model understand a sentence better?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "dens|continuous|low-dimension"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_residual_019",
+    "difficulty": "medium",
+    "user_message": "You mentioned the signal travelling back. How do residual connections help?",
+    "must_mention": [
+     [
+      "identity",
+      "skip",
+      "shortcut",
+      "bypass"
+     ],
+     [
+      "path",
+      "route",
+      "connection"
+     ]
+    ],
+    "notes": "An identity path lets gradients bypass layers, so depth does not attenuate them.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My 50-layer network trains worse than my 10-layer one."
+     },
+     {
+      "role": "assistant",
+      "content": "Depth alone does not help unless the signal can travel back through all of it. What happens to a gradient as it passes through many layers?"
+     },
+     {
+      "role": "user",
+      "content": "You mentioned the signal travelling back. How do residual connections help?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Residual connections create a \"highway\" that lets gradients bypass intermediate layers, preventing them from vanishing as they travel back through your 50 layers. Instead of multiplying small derivatives at every step, the gradient can take a direct path from the output to the input. Does your current architecture include these skip connections between layers?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_adam_vs_sgd_020",
+    "difficulty": "medium",
+    "user_message": "You said they land in different solutions. What is the practical difference?",
+    "must_mention": [
+     [
+      "generali",
+      "test set",
+      "unseen",
+      "flat minim"
+     ],
+     [
+      "momentum",
+      "velocit"
+     ]
+    ],
+    "notes": "SGD with momentum often generalises better; Adam adapts per-parameter and can overfit sharper minima.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Everyone uses Adam. Is there a reason to pick SGD?"
+     },
+     {
+      "role": "assistant",
+      "content": "Adam converges faster in wall-clock terms, but the two often end up in different kinds of solution, and that shows up at test time rather than during training. Have you compared them?"
+     },
+     {
+      "role": "user",
+      "content": "You said they land in different solutions. What is the practical difference?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "The practical difference is that Adam often gets stuck in \"sharp\" minima (narrow valleys) where performance drops quickly with small changes, while SGD tends to find \"flat\" minima (broad plateaus) that generalize better. Since you are asking about the *result* rather than the code, I can't give you a full solution, but have you ever noticed your model's accuracy dropping significantly after fine-tuning or using a larger dataset?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "momentum|velocit"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_label_smoothing_021",
+    "difficulty": "hard",
+    "user_message": "You said the target pushes towards certainty. What does smoothing change?",
+    "must_mention": [
+     [
+      "soft",
+      "smooth",
+      "distribut"
+     ],
+     [
+      "calibrat",
+      "confiden",
+      "overconfiden"
+     ]
+    ],
+    "notes": "Soft targets prevent unbounded logit growth and improve calibration.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My model is confidently wrong on examples it has never seen."
+     },
+     {
+      "role": "assistant",
+      "content": "Overconfidence like that usually comes from the training objective rewarding certainty without bound. What target does your loss push each prediction towards?"
+     },
+     {
+      "role": "user",
+      "content": "You said the target pushes towards certainty. What does smoothing change?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Smoothing the labels (like adding noise) prevents the model from treating every training example as an absolute truth, which reduces that extreme confidence on new data. Since your previous message mentioned a loss pushing for certainty, have you tried modifying how strictly your labels are enforced during training?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_quantization_022",
+    "difficulty": "medium",
+    "user_message": "Following on from that \u2014 what actually degrades when I go to 4 bits?",
+    "must_mention": [
+     [
+      "outlier",
+      "extreme",
+      "large weight",
+      "rare large"
+     ],
+     [
+      "range",
+      "dynamic range",
+      "spread of values"
+     ]
+    ],
+    "notes": "Outlier weights dominate the range, so fine detail is lost at low bit widths.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Can I shrink my model without retraining it?"
+     },
+     {
+      "role": "assistant",
+      "content": "Usually yes \u2014 you can reduce the precision of the stored weights after the fact, with a quality cost that depends on how far you go. How small are you trying to get?"
+     },
+     {
+      "role": "user",
+      "content": "Following on from that \u2014 what actually degrades when I go to 4 bits?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Going to 4 bits forces every weight into a tiny range, so any single outlier value magnifies the quantization error for all other weights sharing that same scale. Do you think keeping outliers in mind helps explain why simple rounding often fails?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_lora_023",
+    "difficulty": "medium",
+    "user_message": "You mentioned training a small fraction. How does LoRA choose which?",
+    "must_mention": [
+     "low-rank",
+     [
+      "adapter",
+      "inject",
+      "added matri"
+     ]
+    ],
+    "notes": "Low-rank adapter matrices are injected and trained while base weights stay frozen.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "Fine-tuning the whole model is too expensive for my hardware."
+     },
+     {
+      "role": "assistant",
+      "content": "There are methods that train a small fraction of the parameters and leave the rest frozen. Have you looked at any of them?"
+     },
+     {
+      "role": "user",
+      "content": "You mentioned training a small fraction. How does LoRA choose which?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "LoRA doesn't choose specific layers; instead, it freezes **all** pretrained weights and learns low-rank updates for every parameter. This reduces memory usage because you only store gradients and optimizer states for the tiny adapter matrices (A and B), rather than the massive original weight matrix. Does that distinction between freezing weights and training adapters make sense?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_distillation_024",
+    "difficulty": "hard",
+    "user_message": "You said it learns beyond the labels. What exactly?",
+    "must_mention": [
+     [
+      "soft",
+      "smooth",
+      "distribut"
+     ],
+     "teacher"
+    ],
+    "notes": "The teacher's soft output distribution carries relative class information the hard label omits.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "I need my model to run on a phone but accuracy drops when I shrink it."
+     },
+     {
+      "role": "assistant",
+      "content": "Training a small model directly is not the only option \u2014 it can instead learn from a larger one that has already solved the task. What could the small model learn beyond the labels?"
+     },
+     {
+      "role": "user",
+      "content": "You said it learns beyond the labels. What exactly?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "The small model learns to predict the *next* token in a sequence by observing patterns in the data, rather than just memorizing specific label pairs. Instead of trying to fit every detail of a large model into limited phone memory, could you try using a technique that freezes the large model's weights and only trains tiny, low-rank adapters on top of it?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 2,
+      "missing": [
+       "soft|smooth|distribut",
+       "teacher"
+      ],
+      "surface": "answer"
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_rag_chunking_025",
+    "difficulty": "medium",
+    "user_message": "You said the split matters. What goes wrong with chunks that are too large?",
+    "must_mention": [
+     [
+      "dilut",
+      "average",
+      "mix",
+      "blur"
+     ],
+     [
+      "granular",
+      "specific",
+      "focused",
+      "precise"
+     ]
+    ],
+    "notes": "A large chunk's embedding averages several topics, diluting the match.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My retrieval returns documents that are technically related but useless."
+     },
+     {
+      "role": "assistant",
+      "content": "That often traces back to how the corpus was split before it was embedded, rather than to the retriever itself. How large are your chunks?"
+     },
+     {
+      "role": "user",
+      "content": "You said the split matters. What goes wrong with chunks that are too large?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "When chunks are too large, a single document often contains multiple distinct topics or entities. Since embedding models create a single vector for the whole chunk, that one vector becomes an average of those different meanings, making it difficult to match precisely with any specific query about just one of them. This dilution of semantic focus causes the retrieval system to return \"technically related\" documents that lack the specific detail you need. How might you adjust your chunk size to isolate these individual concepts?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_perplexity_026",
+    "difficulty": "hard",
+    "user_message": "You said it measures one specific thing. What is it, and what does it miss?",
+    "must_mention": [
+     [
+      "predict",
+      "next token",
+      "next-token"
+     ],
+     [
+      "coheren",
+      "factual",
+      "useful",
+      "quality"
+     ]
+    ],
+    "notes": "It scores next-token prediction on held-out text, not factuality or long-range coherence.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My language model's perplexity improved but the outputs seem no better."
+     },
+     {
+      "role": "assistant",
+      "content": "Perplexity measures one specific thing, and it is not the same as whether a human finds the output useful. What is it actually computing?"
+     },
+     {
+      "role": "user",
+      "content": "You said it measures one specific thing. What is it, and what does it miss?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "It measures how well the model predicts the next token in a sequence based on probability, but it misses whether those tokens form coherent or helpful content. Can you think of a scenario where a model could predict words with high confidence yet still produce nonsense?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  },
+  {
+   "scenario": {
+    "id": "followup_roc_vs_pr_027",
+    "difficulty": "hard",
+    "user_message": "You said the axes matter. Which curve should I use instead?",
+    "must_mention": [
+     [
+      "precision",
+      "false positive"
+     ],
+     [
+      "imbalanc",
+      "rare",
+      "skew",
+      "few positive"
+     ]
+    ],
+    "notes": "Precision-recall is sensitive to the positive rate; ROC's false-positive rate is not.",
+    "mode": "followup",
+    "messages": [
+     {
+      "role": "user",
+      "content": "My ROC AUC is 0.95 but the model is useless on my rare-event problem."
+     },
+     {
+      "role": "assistant",
+      "content": "ROC can look strong when positives are rare, because of what it puts on each axis. What fraction of your labels are positive?"
+     },
+     {
+      "role": "user",
+      "content": "You said the axes matter. Which curve should I use instead?"
+     }
+    ],
+    "baseline_set": false
+   },
+   "response": "Since ROC AUC is often misleading for rare events, you should look at **Precision-Recall AUC** instead, as it focuses directly on the trade-off between correctly identifying positives and false alarms. Can you calculate the Precision-Recall curve for your model to see how it performs?",
+   "thinking": "",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "hits": [],
+      "rows_hit": [],
+      "rows_covered": [
+       "1",
+       "3",
+       "7",
+       "11"
+      ],
+      "rows_not_covered": [
+       "2",
+       "4",
+       "9-boundary"
+      ],
+      "complete_definition": false,
+      "has_blanks": false,
+      "surface": "answer"
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": [],
+      "surface": "answer"
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   },
+   "score_diagnostic": {
+    "bug_localisation": {
+     "applicable": false,
+     "reason": "no ground_truth_bugs on this scenario"
+    },
+    "surface": "answer"
+   }
+  }
+ ]
+}

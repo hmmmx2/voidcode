@@ -1,0 +1,47 @@
+slug: vlm-evaluation-design
+title: Design an evaluation for a vision-language tutor
+difficulty: hard
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- image_preprocessing
+grading: rubric
+description: 'Your tutor now accepts screenshots. Design the evaluation.
+
+
+  Cover what you would put in a gold set, how you would score answers that depend on an image, and how
+  you would tell a vision failure apart from a reasoning failure — the model misreading the chart, versus
+  reading it correctly and reasoning badly about it.
+
+
+  Then the part that decides whether the evaluation is worth building: **a benchmark of clean, well-lit,
+  high-resolution images does not resemble what learners send.** Say what your gold set must contain to
+  be predictive, and what you would measure to know whether it is.'
+hints:
+- Give the same question with and without the image and compare.
+- A caption written by a human is a cheap intermediate label.
+- What do real uploads look like? Cropped, compressed, dark-mode, partially scrolled.
+hint_ladder:
+  level_0: Give the same question with and without the image and compare.
+  level_1: A caption written by a human is a cheap intermediate label.
+  level_2: What do real uploads look like? Cropped, compressed, dark-mode, partially scrolled.
+rubric:
+- criterion: Proposes separating vision from reasoning -- for example by supplying a text transcription
+    of the image and checking whether the answer improves.
+  weight: 0.3
+- criterion: 'Specifies gold-set content that resembles real uploads: compression artefacts, dark mode,
+    partial screenshots, mixed code and output.'
+  weight: 0.25
+- criterion: Gives a scoring approach for image-grounded answers, acknowledging that exact match fails
+    and naming a workable alternative.
+  weight: 0.2
+- criterion: Proposes a text-only control arm to measure how much the image contributes at all -- the
+    number that says whether vision is earning its VRAM.
+  weight: 0.15
+- criterion: Names a way to check the gold set is predictive, such as correlating it against live outcomes
+    on a sample.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

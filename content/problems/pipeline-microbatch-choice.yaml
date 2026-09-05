@@ -1,0 +1,83 @@
+slug: pipeline-microbatch-choice
+title: Choose the micro-batch count to hit a bubble target
+difficulty: medium
+categories:
+- Systems
+concepts:
+- pipeline_parallel
+description: 'Input: `stages target_bubble_pct`.
+
+
+  The GPipe bubble fraction is `(p - 1) / (m + p - 1)` for `p` stages and `m` micro-batches. Return the
+  smallest integer `m >= 1` whose bubble is at or below the target, and the bubble it achieves as a percentage
+  rounded to 1 decimal place, as `m bubble_pct`.
+
+
+  Return `-1 -1.0` when the target is 0 or negative — the bubble approaches zero but never reaches it,
+  so demanding exactly zero is unsatisfiable and should say so rather than looping forever.'
+order_index: 69
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def micro(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().micro(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def micro(self, tokens):\n        p = int(tokens[0]);\
+  \ t = float(tokens[1]) / 100.0\n        if t <= 0:\n            return '-1 -1.0'\n        m = 1\n  \
+  \      while m <= 100000:\n            b = (p - 1) / (m + p - 1) if (m + p - 1) else 0.0\n         \
+  \   if b <= t:\n                return str(m) + ' ' + str(round(b * 100, 1))\n            m += 1\n \
+  \       return '-1 -1.0'\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4 10
+  expected_output: 27 10.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4 25
+  expected_output: 9 25.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 10
+  expected_output: 1 0.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 8 5
+  expected_output: 133 5.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 4 0
+  expected_output: -1 -1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 50
+  expected_output: 1 50.0
+  is_hidden: true
+hints:
+- Solve (p-1)/(m+p-1) <= t for m, or just search upward.
+- With one stage the bubble is 0 for any m.
+- Larger m costs activation memory; that is the trade this hides.
+hint_ladder:
+  level_0: Solve (p-1)/(m+p-1) <= t for m, or just search upward.
+  level_1: With one stage the bubble is 0 for any m.
+  level_2: Larger m costs activation memory; that is the trade this hides.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

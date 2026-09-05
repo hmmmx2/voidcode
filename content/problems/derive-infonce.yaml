@@ -1,0 +1,49 @@
+slug: derive-infonce
+title: Symmetric contrastive loss for an image-text batch
+difficulty: medium
+categories:
+- VLM
+concepts:
+- loss_functions
+description: Given N image vectors and N matched text vectors, compute the temperature-scaled contrastive
+  loss that trains a dual-encoder retrieval model. The vectors arrive unnormalised and both directions
+  count -- scoring only the rows, or multiplying by tau instead of dividing, are the two ways this goes
+  wrong.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- OpenAI
+- Meta
+- Google DeepMind
+prompt: Given N image vectors and N matched text vectors, compute the temperature-scaled contrastive loss
+  that trains a dual-encoder retrieval model. The vectors arrive unnormalised and both directions count
+  -- scoring only the rows, or multiplying by tau instead of dividing, are the two ways this goes wrong.
+approach: Unit-normalise every vector so each pairwise score is a cosine, build the N x N score matrix
+  scaled by 1/tau, and take the negative log-probability of the diagonal entry once along each axis. Average
+  the two directions.
+model_answer: "L2-normalise both encoders' outputs, so similarity is cosine. With learned temperature\
+  \ tau:\n\n    S_ij = (I_i · T_j) / tau        # N×N logits\n\nThe N diagonal entries are the true pairs.\
+  \ Row i is a classification over which of N captions belongs to image i; column j is the same over images.\
+  \ So:\n\n    L_i2t = -(1/N) sum_i log( e^{S_ii} / sum_j e^{S_ij} )\n    L_t2i = -(1/N) sum_j log( e^{S_jj}\
+  \ / sum_i e^{S_ij} )\n    L = (L_i2t + L_t2i) / 2\n\nSYMMETRY. Retrieval is wanted in both directions\
+  \ — find the caption for an image, and the image for a caption. Optimising one direction only leaves\
+  \ the other unconstrained, because softmax normalises along one axis and says nothing about the other.\n\
+  \nSCALING WITH N. The batch *is* the negative set: each positive is discriminated against exactly N-1\
+  \ negatives. At chance, loss = log N, so the task gets strictly harder as N grows and the gradient carries\
+  \ more information per positive. At N = 256 beating 255 mostly-unrelated captions is easy and the gradient\
+  \ is weak; CLIP trained at 32k for this reason. That is also why the method is infrastructure-heavy\
+  \ — you need all embeddings simultaneously, which forces a sharded loss.\n\ntau is learned because the\
+  \ right sharpness changes during training, and clamped in practice because it otherwise runs away to\
+  \ a degenerate value.\n\nZero-shot classification is then not a separate capability: embed the class\
+  \ names as captions and take the nearest — the training task with the candidate set swapped."
+follow_ups:
+- Why is the loss at initialisation log N?
+- How do you compute this when the batch is sharded across GPUs?
+- Why is 'a photo of a {label}' better than the bare label?
+red_flags:
+- Not knowing the negatives come from within the batch.
+- Writing only one direction of the loss.
+- Treating tau as a fixed hyperparameter.
+source_kind: interview_question

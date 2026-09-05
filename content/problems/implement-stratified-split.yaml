@@ -1,0 +1,48 @@
+slug: implement-stratified-split
+title: Split without leaking a user across the boundary
+difficulty: medium
+categories:
+- ML
+concepts:
+- tensors_and_shapes
+description: Write a train/test split where no user_id appears on both sides, and the positive rate stays
+  as close to the target as grouping allows. The trap is that these two goals conflict, and only one of
+  them can be allowed to win.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Meta
+- Anthropic
+prompt: Write a train/test split where no user_id appears on both sides, and the positive rate stays as
+  close to the target as grouping allows. The trap is that these two goals conflict, and only one of them
+  can be allowed to win.
+approach: Groups are atomic, so the unit you place is a user, not a row. Place the largest groups first
+  and each one on whichever side is currently furthest below its quota -- greedy on the biggest items
+  is what stops one late group overshooting.
+model_answer: "    from collections import defaultdict\n\n    def grouped_split(rows, test_frac=0.2, seed=0):\n\
+  \        # rows: (user_id, label). Groups are atomic.\n        groups = defaultdict(list)\n        for\
+  \ uid, label in rows:\n            groups[uid].append(label)\n\n        # Largest groups first: placing\
+  \ a big group last is what\n        # overshoots the target and skews the ratio.\n        order = sorted(groups,\
+  \ key=lambda g: -len(groups[g]))\n        target_pos = sum(sum(v) for v in groups.values()) * test_frac\n\
+  \        target_n = len(rows) * test_frac\n\n        test, n, pos = set(), 0, 0\n        for g in order:\n\
+  \            gl = groups[g]\n            # Take the group if it moves us toward BOTH targets.\n    \
+  \        if n + len(gl) <= target_n and pos + sum(gl) <= target_pos:\n                test.add(g); n\
+  \ += len(gl); pos += sum(gl)\n        return [r for r in rows if r[0] not in test], \\\n           \
+  \    [r for r in rows if r[0] in test]\n\nWHY GROUPING WINS. Stratification protects the metric's variance;\
+  \ grouping protects its validity. If a user appears on both sides, the model can memorise that user\
+  \ and the test score measures memorisation, not generalisation — and the score is inflated, not noisy,\
+  \ so nothing downstream reveals the error. An imperfect class ratio makes the estimate noisier; leakage\
+  \ makes it wrong.\n\nThe two genuinely conflict when groups are large or label-homogeneous, and this\
+  \ greedy pass may not hit the exact ratio. That is the correct trade: accept ratio drift, never accept\
+  \ a shared group."
+follow_ups:
+- Groups are label-homogeneous, so exact stratification is impossible. Now what?
+- How does this interact with a time-based split?
+- How would you verify no group crossed the boundary?
+red_flags:
+- Splitting rows, so a user lands on both sides.
+- Treating stratification as more important than group integrity.
+- Not seeing that leakage inflates the score rather than adding noise.
+source_kind: interview_question

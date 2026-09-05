@@ -1,0 +1,46 @@
+slug: dataset-versioning-design
+title: A training run needs reproducing six months later. What did you version?
+difficulty: medium
+categories:
+- Systems
+- ML
+concepts:
+- checkpointing_recovery
+- memory_accounting
+grading: rubric
+description: 'A model in production behaves oddly and you need to reproduce the run that made it, six
+  months on.
+
+
+  List everything that must have been captured for that to be possible, and rank the items by how commonly
+  they are forgotten.
+
+
+  Then confront the uncomfortable one: **the dataset was assembled by a script that read a live table.**
+  Explain why the code and the commit hash are not sufficient, and what would have made it sufficient.'
+hints:
+- The same script over a changed table produces a different dataset.
+- A row count is a weak check; a content hash is a strong one.
+- Determinism includes the order examples were seen in.
+hint_ladder:
+  level_0: The same script over a changed table produces a different dataset.
+  level_1: A row count is a weak check; a content hash is a strong one.
+  level_2: Determinism includes the order examples were seen in.
+rubric:
+- criterion: 'Names the full set: data snapshot, code commit, config, environment and library versions,
+    random seeds, and the hardware where numerics differ.'
+  weight: 0.25
+- criterion: Explains that a script plus a commit reproduces the PROCESS, not the DATA, when the source
+    is mutable -- so the artifact must be the snapshot or its hash.
+  weight: 0.3
+- criterion: Proposes content-addressed data or an immutable snapshot with a recorded digest, rather than
+    a version label someone maintains by hand.
+  weight: 0.2
+- criterion: Mentions data ORDER and sharding as part of reproducibility, not just content.
+  weight: 0.15
+- criterion: Concedes bitwise reproducibility may be unattainable across hardware and says what tolerance
+    is acceptable instead.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

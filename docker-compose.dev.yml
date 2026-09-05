@@ -1,0 +1,45 @@
+###############################################################################
+# VoidCode AI — Development Overrides (Docker Compose override)
+#
+# Adds live source-code volume mounts on top of docker-compose.gpu.yml so that
+# code changes are reflected inside the container without rebuilding the image.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.gpu.yml \
+#     -f docker-compose.dev.yml \
+#     up -d
+#
+# Inner dev loop after this is running:
+#   1. Edit apps/api/src/*.py  or  llm/scripts/prompts.py on the host
+#   2. docker restart voidcode-vllm-api
+#   3. Wait ~40 s (warm start — CUDA graphs are cached after first boot)
+#   4. curl http://localhost:8000/health
+#
+# Why NOT --reload:
+#   uvicorn --reload restarts the whole Python process on every file change.
+#   vLLM's AsyncLLMEngine is loaded at startup inside lifespan(), so every
+#   reload triggers a full model reload (~60–90 s cold / ~40 s warm).
+#   It's faster and less disruptive to restart manually via `docker restart`.
+###############################################################################
+
+services:
+  vllm-api:
+    # ── Live source code mounts ───────────────────────────────────────────────
+    # Overrides the baked-in copies from the Dockerfile COPY instructions.
+    # Edits on the host are immediately visible inside the container; a
+    # `docker restart` picks them up without rebuilding the image.
+    volumes:
+      # Backend Python source
+      - ./apps/api/src:/app/apps/api/src
+      # Prompts / mode-detection logic (changes here affect all inference modes)
+      - ./llm/scripts/prompts.py:/app/llm/scripts/prompts.py
+      # AWQ model (inherited from docker-compose.gpu.yml — do not remove)
+      - ./llm/outputs/awq_model:/models/awq_model:ro
+      # Secrets
+      - ./apps/api/.env.docker:/app/.env:ro
+
+    # ── Debug-friendly logging ────────────────────────────────────────────────
+    environment:
+      - TRANSFORMERS_VERBOSITY=info    # more verbose tokenizer logs in dev

@@ -1,0 +1,52 @@
+slug: fp16-update-underflow
+title: Simulate a weight update in a low-precision format
+difficulty: hard
+categories:
+- DL
+- CUDA
+- PyTorch
+concepts:
+- mixed_precision
+description: Write a simulator that repeatedly applies an update to a weight, rounding to the nearest
+  representable value of a float format described by its mantissa width and smallest normal exponent.
+  The trap is that the spacing of representable values near the weight, not the size of the update, decides
+  whether anything happens at all.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Meta
+prompt: Write a simulator that repeatedly applies an update to a weight, rounding to the nearest representable
+  value of a float format described by its mantissa width and smallest normal exponent. The trap is that
+  the spacing of representable values near the weight, not the size of the update, decides whether anything
+  happens at all.
+approach: Recover the weight's binary exponent, clamp it at the format's minimum normal exponent so subnormals
+  get a fixed spacing, and derive the gap between neighbouring values from that. Quantizing is then dividing
+  by the gap, rounding to the nearest integer, and multiplying back; the loop applies that after each
+  addition.
+model_answer: "fp16 has a 10-bit mantissa. Near 1.0 the exponent is 0, so consecutive values are spaced\
+  \ by\n    ulp = 2^-10 = 9.77e-4\n\nThe update is 1e-6, about 1/1000 of one ulp. Round-to-nearest gives\n\
+  \    1.0 + 1e-6  ->  1.0\nThe update is discarded — and discarded every single step, so the parameter\
+  \ never moves however long you train. It fails silently: no NaN, no warning, just a weight that does\
+  \ not learn.\n\nTHE FIX IS THE FP32 MASTER COPY. Accumulate in fp32 (ulp ≈ 1.19e-7 near 1.0, so 1e-6\
+  \ is ~8 ulps and lands cleanly); use the fp16 copy only for the matmuls, which is where the speed is.\n\
+  \nLOSS SCALING SOLVES A DIFFERENT PROBLEM. fp16's smallest normal is 6.1e-5 and activation gradients\
+  \ routinely fall below it, flushing to zero. Multiplying the loss by S scales every gradient by S into\
+  \ representable range; the optimiser unscales before the update, so the maths is unchanged. Dynamic\
+  \ scaling raises S until an overflow produces inf/NaN, then halves it and skips the step — which is\
+  \ why a few skipped steps early in training are normal, not a bug.\n\nLoss scaling does **not** fix\
+  \ the ulp problem: rescaling the gradient does not change the spacing of values near w. Range and precision\
+  \ are separate failures needing separate fixes.\n\nbf16 has fp32's exponent range, so no loss scaler\
+  \ is needed — but only 8 mantissa bits, so the master copy is if anything more necessary."
+follow_ups:
+- Compute the fp16 ulp near 1024. What is the largest weight that still updates?
+- Why does bf16 need no loss scaler?
+- Which ops should stay fp32 under autocast, and why?
+red_flags:
+- Believing loss scaling fixes the vanishing update.
+- Confusing the precision problem with the range problem.
+- Thinking bf16 removes the need for fp32 master weights.
+source_kind: interview_question

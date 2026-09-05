@@ -1,0 +1,175 @@
+slug: iq-arithmetic-intensity-roofline
+title: Place a kernel on the roofline
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- roofline_analysis
+description: "Implement:\n\n```python\nclass Solution(object):\n    def roofline(self, flops, bytes_moved,\
+  \ peak_flops, peak_bw):\n        ...\n```\n\n`flops` is the arithmetic the kernel performs, `bytes_moved`\
+  \ is the traffic it moves to and from HBM, `peak_flops` is the device's peak arithmetic throughput in\
+  \ FLOP/s, and `peak_bw` is its peak memory bandwidth in bytes/s.\n\nReturn `[intensity, utilization,\
+  \ bound]`:\n\n- `intensity = flops / bytes_moved`, in FLOP per byte.\n- `ridge = peak_flops / peak_bw`\
+  \ -- the intensity at which the two roofs meet.\n- `attainable = min(peak_flops, peak_bw * intensity)`\
+  \ -- the sloped bandwidth roof below the ridge, the flat compute roof above it.\n- `utilization = attainable\
+  \ / peak_flops`, a value in `(0, 1]`.\n- `bound` is the string `\"memory\"` when `intensity < ridge`,\
+  \ and `\"compute\"` otherwise. **Exactly at the ridge point, return `\"compute\"`.**\n\nRound `intensity`\
+  \ and `utilization` to 6 decimal places. `bound` is a plain string.\n\n**The clamp is the question.**\
+  \ Drop the `min` and a kernel sitting far above the ridge reports a utilization above 1.0, because nothing\
+  \ stops `peak_bw * intensity` from exceeding the number of arithmetic units the chip has. Classification\
+  \ is the other half: it tells you whether shaving bytes or shaving instructions is the only lever worth\
+  \ pulling.\n\nStandard library only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 30
+examples:
+- input: flops = 137438953472, bytes_moved = 100663296, peak_flops = 312e12, peak_bw = 1.55e12
+  output: '[1365.333333, 1.0, "compute"]'
+  explanation: A 4096-cubed matmul in bf16 does 2N^3 FLOPs and moves 3N^2 * 2 bytes, so intensity is N/3
+    = 1365.33 FLOP/byte against a ridge of 312/1.55 = 201.29. Far above it, so the compute roof binds
+    and utilization clamps to 1.0.
+- input: flops = 1000000, bytes_moved = 12000000, peak_flops = 312e12, peak_bw = 1.55e12
+  output: '[0.083333, 0.000414, "memory"]'
+  explanation: 'An fp32 element-wise add reads two words and writes one for every single FLOP: 12 bytes
+    each. At 1/12 FLOP/byte the kernel reaches four ten-thousandths of peak arithmetic, so making the
+    arithmetic faster buys nothing and only moving fewer bytes helps.'
+constraints:
+- flops >= 1 and bytes_moved >= 1
+- peak_flops > 0 and peak_bw > 0
+- Inputs may arrive in scientific notation (e.g. 312e12).
+- Exactly at the ridge point the answer is "compute".
+- utilization is clamped at 1.0.
+- Round intensity and utilization to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: flops
+    value: '137438953472'
+  - name: bytes_moved
+    value: '100663296'
+  - name: peak_flops
+    value: 312e12
+  - name: peak_bw
+    value: 1.55e12
+  stdin: '137438953472
+
+    100663296
+
+    312e12
+
+    1.55e12'
+  expected_output: '[1365.333333, 1.0, "compute"]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: flops
+    value: '1000000'
+  - name: bytes_moved
+    value: '12000000'
+  - name: peak_flops
+    value: 312e12
+  - name: peak_bw
+    value: 1.55e12
+  stdin: '1000000
+
+    12000000
+
+    312e12
+
+    1.55e12'
+  expected_output: '[0.083333, 0.000414, "memory"]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: flops
+    value: '200'
+  - name: bytes_moved
+    value: '20'
+  - name: peak_flops
+    value: '1000'
+  - name: peak_bw
+    value: '100'
+  stdin: '200
+
+    20
+
+    1000
+
+    100'
+  expected_output: '[10.0, 1.0, "compute"]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: flops
+    value: '2000000000'
+  - name: bytes_moved
+    value: '1000000000'
+  - name: peak_flops
+    value: 100e12
+  - name: peak_bw
+    value: 2e12
+  stdin: '2000000000
+
+    1000000000
+
+    100e12
+
+    2e12'
+  expected_output: '[2.0, 0.04, "memory"]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: flops
+    value: '8000'
+  - name: bytes_moved
+    value: '10'
+  - name: peak_flops
+    value: '1000'
+  - name: peak_bw
+    value: '5'
+  stdin: '8000
+
+    10
+
+    1000
+
+    5'
+  expected_output: '[800.0, 1.0, "compute"]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def roofline(self, flops, bytes_moved, peak_flops, peak_bw):\n\
+    \        \"\"\"\n        :type flops: float\n        :type bytes_moved: float\n        :type peak_flops:\
+    \ float   -- peak arithmetic throughput, FLOP/s\n        :type peak_bw: float      -- peak memory\
+    \ bandwidth, bytes/s\n        :rtype: list  -- [intensity, utilization, bound]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    flops = json.loads(_in[0])
+
+    bytes_moved = json.loads(_in[1])
+
+    peak_flops = json.loads(_in[2])
+
+    peak_bw = json.loads(_in[3])
+
+    _r = Solution().roofline(flops, bytes_moved, peak_flops, peak_bw)
+
+    print(json.dumps([round(_r[0], 6), round(_r[1], 6), _r[2]]))
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def roofline(self, flops, bytes_moved, peak_flops, peak_bw):\n\
+  \        intensity = float(flops) / float(bytes_moved)\n        ridge = float(peak_flops) / float(peak_bw)\n\
+  \        attainable = min(float(peak_flops), float(peak_bw) * intensity)\n        utilization = attainable\
+  \ / float(peak_flops)\n        bound = \"memory\" if intensity < ridge else \"compute\"\n        return\
+  \ [intensity, utilization, bound]\n"

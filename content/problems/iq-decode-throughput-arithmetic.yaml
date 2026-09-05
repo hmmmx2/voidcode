@@ -1,0 +1,246 @@
+slug: iq-decode-throughput-arithmetic
+title: Bound decode throughput from memory bandwidth
+difficulty: hard
+categories:
+- LLM
+- CUDA
+concepts:
+- sampling_decoding
+description: 'During autoregressive decoding a step produces one token per sequence, and what limits it
+  is how fast bytes leave HBM, not arithmetic. Size that bound.
+
+
+  `decode_throughput(self, params, dtype_bytes, kv_bytes_per_seq, batch, bandwidth, efficiency) -> list`
+
+
+  | argument | meaning |
+
+  | --- | --- |
+
+  | `params` | parameter count, e.g. `7e9` |
+
+  | `dtype_bytes` | bytes per stored weight (2 for bf16, 1 for int8) |
+
+  | `kv_bytes_per_seq` | KV cache bytes for **one** sequence at its current length |
+
+  | `batch` | sequences decoded together in a single step |
+
+  | `bandwidth` | peak memory bandwidth in bytes/s, e.g. `2e12` |
+
+  | `efficiency` | achieved fraction of peak, in `(0, 1]` |
+
+
+  Return `[bytes_per_step, tokens_per_s, ms_per_token]`:
+
+
+  ```
+
+  bytes_per_step   = params * dtype_bytes + batch * kv_bytes_per_seq
+
+  seconds_per_step = bytes_per_step / (bandwidth * efficiency)
+
+  tokens_per_s     = batch / seconds_per_step     # aggregate, all sequences
+
+  ms_per_token     = 1000 * seconds_per_step      # what one user waits
+
+  ```
+
+
+  **What scales with batch.** Every weight is read once per step and reused across all `batch` sequences,
+  so the weight term carries no `batch` factor. A KV cache is private to its sequence and every byte is
+  re-read each step, so that term does. This is precisely why batching lifts aggregate throughput without
+  lifting per-user latency -- and why the gain flattens once `batch * kv_bytes_per_seq` approaches the
+  weight bytes, which is the arithmetic that makes grouped-query attention worth a small quality cost.
+
+
+  **Compute never appears.** A decode step does roughly `2 * params` FLOPs while moving at least `params
+  * dtype_bytes` bytes, so arithmetic intensity sits near 1 FLOP per byte against hardware that wants
+  hundreds. Answering this with a FLOP bound gives a number that is wrong by orders of magnitude.
+
+
+  `bytes_per_step` is printed as an integer; `tokens_per_s` and `ms_per_token` are rounded to 6 decimals.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 24
+examples:
+- input: params = 7e9, dtype_bytes = 2, kv_bytes_per_seq = 0, batch = 1, bandwidth = 2e12, efficiency
+    = 1.0
+  output: '[14000000000, 142.857143, 7.0]'
+  explanation: 14 GB of bf16 weights at 2 TB/s takes 7 ms, capping a single sequence at about 143 tokens/s.
+    Real kernels reach 60-70% of peak, so 90-100 tok/s in practice.
+- input: params = 7e9, dtype_bytes = 2, kv_bytes_per_seq = 4e9, batch = 4, bandwidth = 2e12, efficiency
+    = 1.0
+  output: '[30000000000, 266.666667, 15.0]'
+  explanation: Four sequences each dragging a 4 GB cache add 16 GB to the 14 GB of weights. Throughput
+    rises only 1.87x for a 4x batch because the cache now outweighs the model.
+constraints:
+- params > 0 and dtype_bytes > 0
+- kv_bytes_per_seq >= 0
+- 1 <= batch <= 10^4
+- bandwidth > 0 and 0 < efficiency <= 1
+- Weight bytes are read once per step, not once per sequence.
+- tokens_per_s and ms_per_token rounded to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: params
+    value: 7e9
+  - name: dtype_bytes
+    value: '2'
+  - name: kv_bytes_per_seq
+    value: '0'
+  - name: batch
+    value: '1'
+  - name: bandwidth
+    value: 2e12
+  - name: efficiency
+    value: '1.0'
+  stdin: '7e9
+
+    2
+
+    0
+
+    1
+
+    2e12
+
+    1.0'
+  expected_output: '[14000000000, 142.857143, 7.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: params
+    value: 7e9
+  - name: dtype_bytes
+    value: '2'
+  - name: kv_bytes_per_seq
+    value: 4e9
+  - name: batch
+    value: '4'
+  - name: bandwidth
+    value: 2e12
+  - name: efficiency
+    value: '1.0'
+  stdin: '7e9
+
+    2
+
+    4e9
+
+    4
+
+    2e12
+
+    1.0'
+  expected_output: '[30000000000, 266.666667, 15.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: batch
+    value: '64'
+  - name: kv_bytes_per_seq
+    value: '0'
+  stdin: '7e9
+
+    2
+
+    0
+
+    64
+
+    2e12
+
+    1.0'
+  expected_output: '[14000000000, 9142.857143, 7.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: efficiency
+    value: '0.65'
+  - name: batch
+    value: '1'
+  stdin: '7e9
+
+    2
+
+    0
+
+    1
+
+    2e12
+
+    0.65'
+  expected_output: '[14000000000, 92.857143, 10.769231]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: params
+    value: 70e9
+  - name: dtype_bytes
+    value: '1'
+  - name: kv_bytes_per_seq
+    value: 1e9
+  - name: batch
+    value: '32'
+  - name: bandwidth
+    value: 3.35e12
+  - name: efficiency
+    value: '0.7'
+  stdin: '70e9
+
+    1
+
+    1e9
+
+    32
+
+    3.35e12
+
+    0.7'
+  expected_output: '[102000000000, 735.686275, 43.496802]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def decode_throughput(self, params, dtype_bytes, kv_bytes_per_seq,\
+    \ batch, bandwidth, efficiency):\n        \"\"\"\n        :type params: float\n        :type dtype_bytes:\
+    \ float\n        :type kv_bytes_per_seq: float\n        :type batch: int\n        :type bandwidth:\
+    \ float\n        :type efficiency: float\n        :rtype: List[float]  -- [bytes_per_step, tokens_per_s,\
+    \ ms_per_token]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    params = float(_in[0])
+
+    dtype_bytes = float(_in[1])
+
+    kv_bytes_per_seq = float(_in[2])
+
+    batch = int(_in[3])
+
+    bandwidth = float(_in[4])
+
+    efficiency = float(_in[5])
+
+    _r = Solution().decode_throughput(params, dtype_bytes, kv_bytes_per_seq, batch, bandwidth, efficiency)
+
+    print([int(round(_r[0])), round(_r[1], 6), round(_r[2], 6)])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def decode_throughput(self, params, dtype_bytes, kv_bytes_per_seq,\
+  \ batch, bandwidth, efficiency):\n        weight_bytes = params * dtype_bytes\n        bytes_per_step\
+  \ = weight_bytes + batch * kv_bytes_per_seq\n        effective = bandwidth * efficiency\n        seconds_per_step\
+  \ = bytes_per_step / effective\n        return [bytes_per_step, batch / seconds_per_step, 1000.0 * seconds_per_step]\n"

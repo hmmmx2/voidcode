@@ -1,0 +1,237 @@
+slug: iq-derive-layernorm-backward
+title: Push a gradient back through LayerNorm
+difficulty: hard
+categories:
+- DL
+- CUDA
+concepts:
+- normalization_layers
+- backpropagation
+description: 'For one row `x` of length `H`, the layer computes
+
+
+  ```
+
+  mu    = mean(x)
+
+  var   = mean((x_i - mu)**2)      # population variance: divide by H
+
+  sigma = sqrt(var + eps)
+
+  xhat  = (x - mu) / sigma
+
+  y     = gamma * xhat + beta
+
+  ```
+
+
+  Given `x`, the incoming gradient `dy = dL/dy`, the gain `gamma` and `eps`, return `[dx, dgamma, dbeta]`,
+  each a list of length `H`.
+
+
+  `dgamma` and `dbeta` are the straightforward two. For `dx`, every `x_i` reaches the loss three ways
+  — directly, through `mu`, and through `var` — so with `g = dy * gamma`:
+
+
+  ```
+
+  dx_i = (1/sigma) * ( g_i - mean(g) - xhat_i * mean(g * xhat) )
+
+  ```
+
+
+  Deriving those two correction terms is the question. Treating `mu` and `sigma` as constants gives `dx
+  = g / sigma`, which is wrong but still trains, so a loss curve will never tell you.
+
+
+  Edge cases and rounding:
+
+
+  - Use the **biased** variance (divide by `H`, not `H - 1`).
+
+  - `eps` may be `0.0` when the row has spread; it is what keeps a constant row finite.
+
+  - Self-checks: `sum(dx)` is always 0, and with `eps = 0` the dot product of `dx` with `xhat` is 0 as
+  well. If `g` is constant across the row, `dx` is all zeros — the layer is invariant to a uniform shift,
+  so the loss cannot change along it.
+
+  - Round every value to 6 decimal places.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 20
+examples:
+- input: x = [2.0, -2.0, 2.0, -2.0], dy = [1.0, 0.0, 0.0, 0.0], gamma = [1.0, 1.0, 1.0, 1.0], eps = 0.0
+  output: '[[0.25, 0.0, -0.25, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]'
+  explanation: mu = 0, var = 4, sigma = 2, xhat = [1, -1, 1, -1]. mean(g) = 0.25 and mean(g*xhat) = 0.25,
+    so dx = ([1,0,0,0] - 0.25 - xhat*0.25)/2 = [0.25, 0, -0.25, 0]. It sums to zero and is orthogonal
+    to xhat. Treating the statistics as constants would give [0.5, 0, 0, 0] instead.
+- input: x = [2.0, -2.0, 2.0, -2.0], dy = [1.0, 1.0, 1.0, 1.0], gamma = [1.0, 1.0, 1.0, 1.0], eps = 0.0
+  output: '[[0.0, 0.0, 0.0, 0.0], [1.0, -1.0, 1.0, -1.0], [1.0, 1.0, 1.0, 1.0]]'
+  explanation: A constant incoming gradient points purely along the direction the layer is invariant to,
+    so dx is exactly zero. The wrong version returns 0.5 everywhere, which is the clearest way to see
+    that the correction terms are not optional.
+constraints:
+- 2 <= H <= 10^3
+- eps >= 0
+- Use the biased (divide by H) variance.
+- dx must sum to 0.
+- Round every value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: x
+    value: '[2.0, -2.0, 2.0, -2.0]'
+  - name: dy
+    value: '[1.0, 0.0, 0.0, 0.0]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0, 1.0]'
+  - name: eps
+    value: '0.0'
+  stdin: '[2.0, -2.0, 2.0, -2.0]
+
+    [1.0, 0.0, 0.0, 0.0]
+
+    [1.0, 1.0, 1.0, 1.0]
+
+    0.0'
+  expected_output: '[[0.25, 0.0, -0.25, 0.0], [1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: x
+    value: '[2.0, -2.0, 2.0, -2.0]'
+  - name: dy
+    value: '[1.0, 1.0, 1.0, 1.0]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0, 1.0]'
+  - name: eps
+    value: '0.0'
+  stdin: '[2.0, -2.0, 2.0, -2.0]
+
+    [1.0, 1.0, 1.0, 1.0]
+
+    [1.0, 1.0, 1.0, 1.0]
+
+    0.0'
+  expected_output: '[[0.0, 0.0, 0.0, 0.0], [1.0, -1.0, 1.0, -1.0], [1.0, 1.0, 1.0, 1.0]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: x
+    value: '[1.0, 2.0, 3.0]'
+  - name: dy
+    value: '[0.1, -0.2, 0.3]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0]'
+  - name: eps
+    value: 1e-05
+  stdin: '[1.0, 2.0, 3.0]
+
+    [0.1, -0.2, 0.3]
+
+    [1.0, 1.0, 1.0]
+
+    1e-05'
+  expected_output: '[[0.163296, -0.326596, 0.1633], [-0.122474, 0.0, 0.367421], [0.1, -0.2, 0.3]]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: x
+    value: '[1.0, 2.0, 3.0, 4.0]'
+  - name: dy
+    value: '[0.5, -0.5, 1.0, 0.0]'
+  - name: gamma
+    value: '[2.0, 0.5, -1.0, 3.0]'
+  - name: eps
+    value: 1e-05
+  stdin: '[1.0, 2.0, 3.0, 4.0]
+
+    [0.5, -0.5, 1.0, 0.0]
+
+    [2.0, 0.5, -1.0, 3.0]
+
+    1e-05'
+  expected_output: '[[0.447216, -0.335408, -0.670819, 0.559011], [-0.670818, 0.223606, 0.447212, 0.0],
+    [0.5, -0.5, 1.0, 0.0]]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: x
+    value: '[0.0, 0.0, 0.0]'
+  - name: dy
+    value: '[1.0, 2.0, 3.0]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0]'
+  - name: eps
+    value: '0.0001'
+  stdin: '[0.0, 0.0, 0.0]
+
+    [1.0, 2.0, 3.0]
+
+    [1.0, 1.0, 1.0]
+
+    0.0001'
+  expected_output: '[[-100.0, 0.0, 100.0], [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: x
+    value: '[5.0, 1.0]'
+  - name: dy
+    value: '[1.0, -1.0]'
+  - name: gamma
+    value: '[1.0, 1.0]'
+  - name: eps
+    value: '0.0'
+  stdin: '[5.0, 1.0]
+
+    [1.0, -1.0]
+
+    [1.0, 1.0]
+
+    0.0'
+  expected_output: '[[0.0, 0.0], [1.0, 1.0], [1.0, -1.0]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def layernorm_backward(self, x, dy, gamma,\
+    \ eps):\n        \"\"\"\n        :type x: List[float]\n        :type dy: List[float]\n        :type\
+    \ gamma: List[float]\n        :type eps: float\n        :rtype: List[List[float]]  -- [dx, dgamma,\
+    \ dbeta]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    x = json.loads(_in[0])
+
+    dy = json.loads(_in[1])
+
+    gamma = json.loads(_in[2])
+
+    eps = float(_in[3])
+
+    _r = Solution().layernorm_backward(x, dy, gamma, eps)
+
+    print([[round(float(v), 6) + 0.0 for v in row] for row in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def layernorm_backward(self, x, dy, gamma,\
+  \ eps):\n        H = len(x)\n        mu = sum(x) / float(H)\n        var = sum((xi - mu) ** 2 for xi\
+  \ in x) / float(H)\n        sigma = math.sqrt(var + eps)\n        xhat = [(xi - mu) / sigma for xi in\
+  \ x]\n        dgamma = [dy[i] * xhat[i] for i in range(H)]\n        dbeta = [float(v) for v in dy]\n\
+  \        g = [dy[i] * gamma[i] for i in range(H)]\n        mean_g = sum(g) / float(H)\n        mean_gx\
+  \ = sum(g[i] * xhat[i] for i in range(H)) / float(H)\n        dx = [(g[i] - mean_g - xhat[i] * mean_gx)\
+  \ / sigma for i in range(H)]\n        return [dx, dgamma, dbeta]\n"

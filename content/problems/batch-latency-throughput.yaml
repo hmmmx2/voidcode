@@ -1,0 +1,107 @@
+slug: batch-latency-throughput
+title: Which batch size meets the latency SLO?
+difficulty: medium
+categories:
+- LLM
+concepts:
+- serving_latency
+- continuous_batching
+description: 'Given a p99 latency budget and a linear latency model, return the largest batch size that
+  still
+
+  meets the SLO.
+
+
+  Write `best_batch(slo_ms, base_ms, per_item_ms, candidates)` where latency is modelled as
+
+  `base_ms + per_item_ms * batch`. Return the largest candidate meeting the budget, or 0 if none do.
+
+
+  **Why the largest rather than the fastest.** Throughput rises with batch size and latency rises
+
+  with it too, so there is no batch that optimises both — the question is always "the most
+
+  throughput I can buy without breaking the latency promise". Picking the smallest batch minimises
+
+  latency and wastes the accelerator; picking the largest maximises throughput and breaks the SLO.
+
+  The answer is the boundary, and finding it is the job.
+
+
+  **Where the linear model stops being true, which is worth knowing before you trust it.** Decode is
+
+  memory-bandwidth-bound, so small batches are nearly free — the weights are read once regardless,
+
+  and adding a sequence costs almost nothing until the batch is large enough to become
+
+  compute-bound. Real curves are therefore flat then steep, and a linear fit over-charges small
+
+  batches and under-charges large ones. Continuous batching complicates it further by letting
+
+  sequences join and leave mid-flight, so the "batch size" is not constant for any request''s
+
+  lifetime.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 26
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def best_batch(self, slo_ms, base_ms, per_item_ms, candidates):\n\
+    \        \"\"\"\n        :type candidates: List[int]\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().best_batch(float(_p[0]), float(_p[1]), float(_p[2]), [int(x) for x in _p[3:]]))
+
+    '
+reference_solution: "class Solution(object):\n    def best_batch(self, slo_ms, base_ms, per_item_ms, candidates):\n\
+  \        ok = [b for b in candidates if base_ms + per_item_ms * b <= slo_ms]\n        return max(ok)\
+  \ if ok else 0\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 200 50 5 1 2 4 8 16 32
+  expected_output: '16'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 200 50 20 1 2 4 8 16 32
+  expected_output: '4'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 100 120 1 1 2 4
+  expected_output: '0'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 500 50 5 64 32 8
+  expected_output: '64'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 55 50 5 1
+  expected_output: '1'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 1000 0 1 1000 999
+  expected_output: '1000'
+  is_hidden: true
+hints:
+- Filter candidates by base + per_item * b <= slo, then take the max.
+- Return 0, not None, when nothing fits.
+- Candidates are not necessarily sorted.
+hint_ladder:
+  level_0: Filter candidates by base + per_item * b <= slo, then take the max.
+  level_1: Return 0, not None, when nothing fits.
+  level_2: Candidates are not necessarily sorted.

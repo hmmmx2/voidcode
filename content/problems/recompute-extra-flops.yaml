@@ -1,0 +1,86 @@
+slug: recompute-extra-flops
+title: What does gradient checkpointing cost in compute?
+difficulty: medium
+categories:
+- Systems
+- DL
+concepts:
+- gradient_checkpointing
+description: 'Input: `forward_flops`.
+
+
+  A normal training step is one forward plus a backward worth roughly two forwards, so 3F. Full gradient
+  checkpointing recomputes the forward during the backward pass, adding one more F for 4F total.
+
+
+  Return `baseline checkpointed overhead_pct`, the first two as given and the percentage rounded to 1
+  decimal place.
+
+
+  The familiar figure is "about 33% more compute", and this is where it comes from: one extra F on a base
+  of 3F. It buys an activation-memory reduction that is usually far larger than 33%, which is why the
+  trade is normally worth taking.'
+order_index: 64
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def extra(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().extra(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def extra(self, tokens):\n        f = float(tokens[0])\n\
+  \        base = 3 * f; ckpt = 4 * f\n        pct = 0.0 if base == 0 else round((ckpt - base) / base\
+  \ * 100, 1)\n        return str(round(base, 2)) + ' ' + str(round(ckpt, 2)) + ' ' + str(pct)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: '1'
+  expected_output: 3.0 4.0 33.3
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: '100'
+  expected_output: 300.0 400.0 33.3
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: '0'
+  expected_output: 0.0 0.0 0.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: '2.5'
+  expected_output: 7.5 10.0 33.3
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: '1000000'
+  expected_output: 3000000.0 4000000.0 33.3
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: '0.5'
+  expected_output: 1.5 2.0 33.3
+  is_hidden: true
+hints:
+- Backward is roughly 2x forward, so baseline is 3F not 2F.
+- 'Checkpointed adds exactly one forward: 4F.'
+- (4F - 3F) / 3F = 1/3.
+hint_ladder:
+  level_0: Backward is roughly 2x forward, so baseline is 3F not 2F.
+  level_1: 'Checkpointed adds exactly one forward: 4F.'
+  level_2: (4F - 3F) / 3F = 1/3.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,46 @@
+slug: occupancy-is-not-the-goal-design
+title: Occupancy is 100% and the kernel is still slow. Explain.
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- occupancy
+- roofline_analysis
+- memory_hierarchy
+grading: rubric
+description: 'A kernel reaches 100% theoretical occupancy after being tuned for it, and is still far from
+  the memory-bandwidth roof. A colleague proposes raising occupancy further by cutting registers per thread.
+
+
+  Explain why that proposal cannot help, what occupancy actually buys, and what you would measure instead.
+
+
+  This question exists because occupancy is the most over-optimised number in GPU work. An answer that
+  treats high occupancy as the objective rather than as one means of hiding latency has missed the point.'
+hints:
+- Occupancy is resident warps divided by the maximum. What is that ratio *for*?
+- If memory latency is already hidden, more resident warps hide nothing further.
+- Cutting registers to raise occupancy has a cost of its own.
+hint_ladder:
+  level_0: Occupancy is resident warps divided by the maximum. What is that ratio *for*?
+  level_1: If memory latency is already hidden, more resident warps hide nothing further.
+  level_2: Cutting registers to raise occupancy has a cost of its own.
+rubric:
+- criterion: Explains occupancy as a means of hiding memory and instruction latency by having other warps
+    ready to issue — not as a performance metric in itself.
+  weight: 0.3
+- criterion: Argues that once latency is already hidden, additional occupancy yields nothing, so 100%
+    occupancy and poor throughput is a coherent, common state.
+  weight: 0.25
+- criterion: 'Names the real cost of forcing registers down: spilling to local memory, which is HBM-backed
+    and can make the kernel slower while the occupancy number improves.'
+  weight: 0.2
+- criterion: Proposes measuring achieved bandwidth against the roof, plus stall reasons from a profiler,
+    rather than tuning occupancy further.
+  weight: 0.15
+- criterion: Identifies a plausible real cause — uncoalesced access, bank conflicts, low arithmetic intensity,
+    or launch overhead.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

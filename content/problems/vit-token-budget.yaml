@@ -1,0 +1,49 @@
+slug: vit-token-budget
+title: Token count and attention cost across two ViT configurations
+difficulty: medium
+categories:
+- VLM
+- CUDA
+concepts:
+- attention_scaled_dot
+- tokenization
+- vision_transformer
+description: Write a function reporting how many patch tokens two ViT configurations produce and how much
+  more the second costs in self-attention. Tokens go as the square of the grid side and attention as the
+  square of the token count, so a linear change in resolution is a fourth-power change in cost.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- Meta
+- OpenAI
+- NVIDIA
+prompt: Write a function reporting how many patch tokens two ViT configurations produce and how much more
+  the second costs in self-attention. Tokens go as the square of the grid side and attention as the square
+  of the token count, so a linear change in resolution is a fourth-power change in cost.
+approach: Floor-divide each side by its patch size to get the grid, square it for the token count, add
+  the class token when asked, then square the ratio of token counts to get the attention cost ratio.
+model_answer: "TOKENS.\n    224/14 = 16   ->  16² = 256 tokens  (+1 CLS = 257)\n    1344/14 = 96  -> \
+  \ 96² = 9216 tokens\n  A 6× increase per side gives 36× the tokens.\n\nATTENTION COST. Quadratic in\
+  \ tokens:\n    (9216 / 256)² = 36² = **1296×**\n\nResolution up 6×, attention cost up ~1300×. Resolution\
+  \ is a fourth-power knob, which is why 'just feed it a bigger image' is never the answer.\n\nCONSEQUENCE\
+  \ FOR THE LLM. Under the projector approach those 9216 vision tokens are prepended to the text context\
+  \ — most of a 10k window consumed by one page, before any question is asked. That alone rules out naive\
+  \ upscaling for documents.\n\nThere is a second cost people forget: the encoder's position embeddings\
+  \ were learned on a 16×16 grid. Moving to 96×96 requires interpolating them, and the model needs fine-tuning\
+  \ to recover — the encoder has never seen those positions.\n\nWHAT IS ACTUALLY DONE. Tiling — cut the\
+  \ image into native-resolution crops, encode each with the unchanged encoder, and include a downscaled\
+  \ full view for global layout. Token count still grows with area but the pretrained encoder is reused\
+  \ as-is. Alternatively a Perceiver-style resampler compresses any number of patches to a fixed budget,\
+  \ at the cost of an information bottleneck that hurts exactly the dense-text case. For documents specifically,\
+  \ OCR plus a text model is often simply the better product decision."
+follow_ups:
+- How do you interpolate position embeddings to a new grid?
+- At what resolution do vision tokens exceed a 128k context?
+- What does a resampler lose that tiling keeps?
+red_flags:
+- Scaling tokens linearly with resolution instead of quadratically.
+- Forgetting attention is quadratic in tokens on top of that.
+- Not knowing position embeddings are tied to the training grid.
+source_kind: interview_question

@@ -1,0 +1,43 @@
+slug: implement-auc
+title: Compute ROC-AUC on a whiteboard
+difficulty: medium
+categories:
+- ML
+concepts:
+- loss_functions
+description: Write ROC-AUC given y_true and y_score, without sklearn and without sweeping thresholds.
+  Then state its probabilistic meaning.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Meta
+- Google DeepMind
+prompt: Write ROC-AUC given y_true and y_score, without sklearn and without sweeping thresholds. Then
+  state its probabilistic meaning.
+approach: Do not build the curve. AUC equals the probability a random positive outranks a random negative,
+  which is a rank statistic you can compute in one sort.
+model_answer: "AUC = P(score of a random positive > score of a random negative), ties counted as ½. That\
+  \ is the Mann-Whitney U statistic, so a sort is enough — no threshold sweep.\n\n    def auc(y_true,\
+  \ y_score):\n        pairs = sorted(zip(y_score, y_true))\n        n = len(pairs)\n        ranks = [0.0]\
+  \ * n\n        i = 0\n        while i < n:                      # average ranks within ties\n      \
+  \      j = i\n            while j + 1 < n and pairs[j + 1][0] == pairs[i][0]:\n                j +=\
+  \ 1\n            avg = (i + j) / 2 + 1         # ranks are 1-based\n            for k in range(i, j\
+  \ + 1):\n                ranks[k] = avg\n            i = j + 1\n        pos = sum(t for _, t in pairs)\n\
+  \        neg = n - pos\n        if pos == 0 or neg == 0:\n            return float('nan')          \
+  \ # undefined, not 0.5\n        rank_sum = sum(r for r, (_, t) in zip(ranks, pairs) if t == 1)\n   \
+  \     return (rank_sum - pos * (pos + 1) / 2) / (pos * neg)\n\nO(n log n), one pass after the sort.\n\
+  \nTHE TWO THINGS BEING TESTED. Tie handling: assigning ranks by position rather than averaging within\
+  \ ties gives a wrong answer on any model that outputs discrete scores, and a tree ensemble does exactly\
+  \ that. And the single-class case: returning 0.5 hides a broken evaluation split, so NaN is the honest\
+  \ answer since AUC is genuinely undefined with no positives or no negatives."
+follow_ups:
+- Show the rank-sum formula equals the area under the ROC curve.
+- Why is AUC invariant to any monotone transform of the scores?
+- How would you compute PR-AUC, and why is it not a rank statistic?
+red_flags:
+- Sweeping thresholds in O(n²) when one sort suffices.
+- Ignoring ties, which breaks on any discrete-scoring model.
+- Returning 0.5 when one class is absent instead of flagging it.
+source_kind: interview_question

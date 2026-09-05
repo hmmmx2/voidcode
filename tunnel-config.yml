@@ -1,0 +1,23 @@
+# Cloudflare Tunnel Configuration
+#
+# This file is used by `cloudflared tunnel run` when you set up a
+# NAMED tunnel (persistent subdomain). See TUNNEL_SETUP.md for instructions.
+#
+# Replace <TUNNEL_ID> with your actual tunnel ID after creation.
+
+tunnel: <TUNNEL_ID>
+credentials-file: ~/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Frontend (Next.js) — main domain
+  - hostname: voidcode-ai.your-domain.com
+    service: http://localhost:3000
+
+  # Backend API — api subdomain
+  - hostname: voidcode-api.your-domain.com
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: true
+
+  # Catch-all (required by cloudflared)
+  - service: http_status:404

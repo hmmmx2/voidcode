@@ -1,0 +1,142 @@
+slug: thread-index-mapping
+title: Thread Index Mapping
+difficulty: easy
+categories:
+- CUDA
+concepts:
+- gpu_execution_model
+description: 'Work out which element each GPU thread is responsible for.
+
+
+  Threads launch in a grid of blocks, and every thread computes its own global position:
+
+
+  `global_index = blockIdx * blockDim + threadIdx`
+
+
+  Launches are sized in whole blocks, so the grid almost always covers **more** threads than there are
+  elements. Threads past the end must do nothing -- a missing `if (i < n)` guard is the single most common
+  cause of a kernel corrupting memory.
+
+
+  Return one list per block, holding each thread''s global index, with `-1` wherever that index falls
+  outside the array.'
+inferred_concepts: true
+review_needed: true
+order_index: 10
+examples:
+- input: grid_dim = 2, block_dim = 4, n = 8
+  output: '[[0, 1, 2, 3], [4, 5, 6, 7]]'
+  explanation: 8 threads for 8 elements. The launch divides exactly, so nothing is masked.
+- input: grid_dim = 3, block_dim = 4, n = 10
+  output: '[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, -1, -1]]'
+  explanation: 12 threads for 10 elements. The last two have no work and must be guarded off.
+- input: grid_dim = 1, block_dim = 8, n = 3
+  output: '[[0, 1, 2, -1, -1, -1, -1, -1]]'
+  explanation: A block far larger than the data. Most of the block is masked.
+constraints:
+- 1 <= grid_dim <= 1024, 1 <= block_dim <= 1024
+- 0 <= n <= 10^6
+- Threads are numbered within a block, blocks within the grid, both from 0.
+- Return -1 for any thread whose global index is >= n.
+- The output shape is always grid_dim lists of block_dim entries.
+- Standard library only -- no numpy, no torch.
+hints:
+- 'Two nested loops: blocks outside, threads within a block inside. The result has exactly grid_dim lists
+  of block_dim entries, whatever n is.'
+- The global index of thread t in block b is b * block_dim + t. Compute it before deciding whether it
+  is in range.
+- Emit the index when it is < n, and -1 otherwise. Note n can be 0 -- then every thread is masked and
+  the output shape still must not change.
+hint_ladder:
+  level_0: 'Two nested loops: blocks outside, threads within a block inside. The result has exactly grid_dim
+    lists of block_dim entries, whatever n is.'
+  level_1: The global index of thread t in block b is b * block_dim + t. Compute it before deciding whether
+    it is in range.
+  level_2: Emit the index when it is < n, and -1 otherwise. Note n can be 0 -- then every thread is masked
+    and the output shape still must not change.
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: grid_dim
+    value: '2'
+  - name: block_dim
+    value: '4'
+  - name: n
+    value: '8'
+  stdin: '2
+
+    4
+
+    8'
+  expected_output: '[[0, 1, 2, 3], [4, 5, 6, 7]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: grid_dim
+    value: '3'
+  - name: block_dim
+    value: '4'
+  - name: n
+    value: '10'
+  stdin: '3
+
+    4
+
+    10'
+  expected_output: '[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, -1, -1]]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: grid_dim
+    value: '1'
+  - name: block_dim
+    value: '8'
+  - name: n
+    value: '3'
+  stdin: '1
+
+    8
+
+    3'
+  expected_output: '[[0, 1, 2, -1, -1, -1, -1, -1]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: grid_dim
+    value: '2'
+  - name: block_dim
+    value: '2'
+  - name: n
+    value: '0'
+  stdin: '2
+
+    2
+
+    0'
+  expected_output: '[[-1, -1], [-1, -1]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def mapThreads(self, grid_dim, block_dim, n):\n       \
+    \ \"\"\"\n        :type grid_dim: int\n        :type block_dim: int\n        :type n: int\n      \
+    \  :rtype: List[List[int]]  # one list per block\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    grid_dim = int(_in[0]); block_dim = int(_in[1]); n = int(_in[2])
+
+    print(Solution().mapThreads(grid_dim, block_dim, n))
+
+    '
+source_kind: problem
+reference_solution: "class Solution(object):\n    def mapThreads(self, grid_dim, block_dim, n):\n    \
+  \    out = []\n        for b in range(grid_dim):\n            block = []\n            for t in range(block_dim):\n\
+  \                gid = b * block_dim + t\n                block.append(gid if gid < n else -1)\n   \
+  \         out.append(block)\n        return out\n"

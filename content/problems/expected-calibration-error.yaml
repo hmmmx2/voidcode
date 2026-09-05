@@ -1,0 +1,90 @@
+slug: expected-calibration-error
+title: Compute expected calibration error
+difficulty: hard
+categories:
+- ML
+concepts:
+- classification_metrics
+- probability_expectation
+description: 'A model that says 70% should be right about 70% of the time. ECE measures how far it is
+  from that.
+
+
+  Input: `n`, then `n` pairs of `predicted outcome`, where predicted is in [0,1] and outcome is 0 or 1.
+
+
+  Bucket the predictions into 10 equal-width bins over [0,1] — a prediction of exactly 1.0 belongs in
+  the last bin. For each non-empty bin take `|mean(outcome) - mean(predicted)|`, weight it by the share
+  of samples in that bin, and sum. Round to 4 decimal places.
+
+
+  Equal-WIDTH bins, not equal-count. Equal-count bins hide the tails, and the tails are usually where
+  a model is worst.'
+order_index: 43
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def ece(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().ece(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def ece(self, tokens):\n        n = int(tokens[0])\n\
+  \        vals = [float(x) for x in tokens[1:1 + 2 * n]]\n        pairs = [(vals[2 * i], vals[2 * i +\
+  \ 1]) for i in range(n)]\n        if n == 0:\n            return 0.0\n        bins = {}\n        for\
+  \ p, y in pairs:\n            b = min(int(p * 10), 9)\n            bins.setdefault(b, []).append((p,\
+  \ y))\n        total = 0.0\n        for members in bins.values():\n            mp = sum(p for p, _ in\
+  \ members) / len(members)\n            my = sum(y for _, y in members) / len(members)\n            total\
+  \ += (len(members) / n) * abs(my - mp)\n        return round(total, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 0.9 1 0.1 0
+  expected_output: '0.1'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 0.9 0 0.1 1
+  expected_output: '0.9'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 1.0 1
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 4 0.25 0 0.25 1 0.75 1 0.75 0
+  expected_output: '0.25'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 0.5 0
+  expected_output: '0.5'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 3 0.0 0 0.5 1 1.0 1
+  expected_output: '0.1667'
+  is_hidden: true
+hints:
+- A prediction of 1.0 would fall outside bin index 9 if you floor without clamping.
+- Empty bins contribute nothing -- they are skipped, not counted as zero error.
+- The weight is the bin's share of ALL samples, so the weights sum to 1.
+hint_ladder:
+  level_0: A prediction of 1.0 would fall outside bin index 9 if you floor without clamping.
+  level_1: Empty bins contribute nothing -- they are skipped, not counted as zero error.
+  level_2: The weight is the bin's share of ALL samples, so the weights sum to 1.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

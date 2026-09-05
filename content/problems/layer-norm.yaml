@@ -1,0 +1,154 @@
+slug: layer-norm
+title: Layer Normalisation
+difficulty: medium
+categories:
+- DL
+- PyTorch
+concepts:
+- normalization_layers
+description: 'Implement LayerNorm for a single feature vector.
+
+
+  `y_i = (x_i - mean) / sqrt(var + eps) * gamma_i + beta_i`
+
+
+  The mean and variance are computed **across the features of this one vector** -- not across a batch.
+  That is the entire difference between LayerNorm and BatchNorm, and it is why LayerNorm works with a
+  batch size of 1 and needs no running statistics at inference.
+
+
+  Use the **biased** variance: divide by n, not n-1.
+
+
+  Note where `eps` sits -- inside the square root, added to the variance. Putting it outside changes the
+  result.'
+inferred_concepts: true
+review_needed: true
+order_index: 3
+examples:
+- input: x = [1.0, 2.0, 3.0, 4.0], gamma = [1,1,1,1], beta = [0,0,0,0], eps = 1e-5
+  output: '[-1.341635, -0.447212, 0.447212, 1.341635]'
+  explanation: mean = 2.5, biased var = 1.25. The output is symmetric and has ~zero mean.
+- input: x = [2.0, 2.0, 2.0], gamma = [1,1,1], beta = [0,0,0], eps = 1e-5
+  output: '[0.0, 0.0, 0.0]'
+  explanation: Zero variance. eps is what stops this being a division by zero.
+- input: x = [1.0, -1.0], gamma = [2.0, 2.0], beta = [0.5, -0.5], eps = 1e-5
+  output: '[2.49999, -2.49999]'
+  explanation: Not exactly 2.5 -- eps inside the sqrt shifts the result slightly, which is the correct
+    behaviour.
+constraints:
+- 1 <= len(x) <= 10^4
+- len(gamma) == len(beta) == len(x)
+- 0 < eps <= 1e-3
+- 'Use the biased variance: divide the squared deviations by n.'
+- Standard library only -- no numpy, no torch.
+hints:
+- Compute the mean and variance over x itself. There is no batch dimension here -- every statistic comes
+  from this one vector.
+- Biased variance means sum((v - mean) ** 2) / n. Using n - 1 gives a subtly different answer that only
+  shows up on short vectors.
+- 'The order is: normalise with (v - mean) / sqrt(var + eps), then scale by gamma and shift by beta. eps
+  goes inside the sqrt, with the variance.'
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: x
+    value: '[1.0, 2.0, 3.0, 4.0]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0, 1.0]'
+  - name: beta
+    value: '[0.0, 0.0, 0.0, 0.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[1.0, 2.0, 3.0, 4.0]
+
+    [1.0, 1.0, 1.0, 1.0]
+
+    [0.0, 0.0, 0.0, 0.0]
+
+    1e-5'
+  expected_output: '[-1.341635, -0.447212, 0.447212, 1.341635]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: x
+    value: '[2.0, 2.0, 2.0]'
+  - name: gamma
+    value: '[1.0, 1.0, 1.0]'
+  - name: beta
+    value: '[0.0, 0.0, 0.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[2.0, 2.0, 2.0]
+
+    [1.0, 1.0, 1.0]
+
+    [0.0, 0.0, 0.0]
+
+    1e-5'
+  expected_output: '[0.0, 0.0, 0.0]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: x
+    value: '[1.0, -1.0]'
+  - name: gamma
+    value: '[2.0, 2.0]'
+  - name: beta
+    value: '[0.5, -0.5]'
+  - name: eps
+    value: 1e-5
+  stdin: '[1.0, -1.0]
+
+    [2.0, 2.0]
+
+    [0.5, -0.5]
+
+    1e-5'
+  expected_output: '[2.49999, -2.49999]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: x
+    value: '[10.0, 20.0, 30.0]'
+  - name: gamma
+    value: '[0.5, 1.0, 1.5]'
+  - name: beta
+    value: '[1.0, 1.0, 1.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[10.0, 20.0, 30.0]
+
+    [0.5, 1.0, 1.5]
+
+    [1.0, 1.0, 1.0]
+
+    1e-5'
+  expected_output: '[0.387628, 1.0, 2.837117]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def layerNorm(self, x, gamma, beta, eps):\n\
+    \        \"\"\"\n        :type x: List[float]\n        :type gamma: List[float]\n        :type beta:\
+    \ List[float]\n        :type eps: float\n        :rtype: List[float]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    x = json.loads(_in[0]); gamma = json.loads(_in[1])
+
+    beta = json.loads(_in[2]); eps = float(_in[3])
+
+    print([round(v, 6) for v in Solution().layerNorm(x, gamma, beta, eps)])
+
+    '
+source_kind: problem
+reference_solution: "import math\nclass Solution(object):\n    def layerNorm(self, x, gamma, beta, eps):\n\
+  \        n = len(x)\n        mean = sum(x) / n\n        var = sum((v - mean) ** 2 for v in x) / n\n\
+  \        denom = math.sqrt(var + eps)\n        return [((v - mean) / denom) * g + b for v, g, b in zip(x,\
+  \ gamma, beta)]\n"

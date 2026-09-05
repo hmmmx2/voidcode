@@ -1,0 +1,48 @@
+slug: inference-autoscaling-signal-design
+title: What signal should autoscale an LLM inference service?
+difficulty: hard
+categories:
+- Systems
+concepts:
+- serving_latency
+- continuous_batching
+- gpu_execution_model
+grading: rubric
+description: 'Your inference service autoscales on GPU utilisation, the default. Under load it scales
+  up far too late, and the queue is already minutes deep by the time a new replica is serving.
+
+
+  Explain why GPU utilisation is a poor scaling signal for this workload, propose a better one, and account
+  for the part that makes LLM autoscaling genuinely hard: **a new replica is not useful the moment it
+  starts.**
+
+
+  Give the arithmetic. If loading weights takes 90 seconds and requests arrive at 20/s, how deep is the
+  queue by the time the replica serves its first token?'
+hints:
+- A continuously-batched server can sit at 95% GPU utilisation while perfectly healthy.
+- What does a request actually experience? Utilisation is not a latency.
+- Scaling up starts a timer you cannot shorten by adding more replicas.
+hint_ladder:
+  level_0: A continuously-batched server can sit at 95% GPU utilisation while perfectly healthy.
+  level_1: What does a request actually experience? Utilisation is not a latency.
+  level_2: Scaling up starts a timer you cannot shorten by adding more replicas.
+rubric:
+- criterion: Explains that a batching server saturates the GPU by design, so utilisation is high in both
+    the healthy and overloaded states and does not distinguish them.
+  weight: 0.25
+- criterion: Proposes a queue-based signal -- pending requests, queue wait time, or time-to-first-token
+    -- and says why it leads utilisation rather than lagging it.
+  weight: 0.25
+- criterion: 'Does the cold-start arithmetic: 90 s at 20 req/s is roughly 1,800 queued requests before
+    the replica helps at all.'
+  weight: 0.2
+- criterion: 'Draws the consequence: scaling must be predictive or pre-warmed, because a reactive policy
+    cannot beat the load time.'
+  weight: 0.2
+- criterion: Names a cost trade -- keeping warm capacity idle -- rather than treating over-provisioning
+    as free.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

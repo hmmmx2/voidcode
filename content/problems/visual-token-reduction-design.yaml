@@ -1,0 +1,49 @@
+slug: visual-token-reduction-design
+title: Cut 576 visual tokens to 64. What breaks?
+difficulty: medium
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- projection_layers
+- vision_transformer
+grading: rubric
+description: 'A 336x336 image at patch size 14 yields 576 visual tokens. You need to fit several images
+  into context, so you want roughly 64.
+
+
+  Compare three reductions — average pooling over the patch grid, strided patch selection, and a learned
+  resampler that cross-attends a fixed set of queries into the patch features — on what each preserves
+  and what each destroys.
+
+
+  Then answer the question that decides it in practice: **which task type degrades first?** Reason about
+  the difference between ''a photo of a dog'' and reading a stack trace in a screenshot, and say what
+  that implies for a tutor.'
+hints:
+- Average pooling is a low-pass filter. What kind of content is high-frequency?
+- Strided selection discards patches entirely. What if the answer is in a discarded one?
+- A learned resampler must be trained, and it can learn what to keep.
+hint_ladder:
+  level_0: Average pooling is a low-pass filter. What kind of content is high-frequency?
+  level_1: Strided selection discards patches entirely. What if the answer is in a discarded one?
+  level_2: A learned resampler must be trained, and it can learn what to keep.
+rubric:
+- criterion: Characterises average pooling as spatial smoothing that preserves coarse layout and destroys
+    fine detail such as small text.
+  weight: 0.25
+- criterion: Characterises strided selection as lossy and position-dependent — discarded patches are gone
+    entirely, so content in them is unrecoverable.
+  weight: 0.2
+- criterion: Describes the learned resampler as a fixed set of queries cross-attending into patch features,
+    able to learn what to retain, at the cost of extra parameters and training.
+  weight: 0.25
+- criterion: Identifies OCR-like and fine-detail tasks as degrading first, while coarse classification
+    survives aggressive reduction.
+  weight: 0.2
+- criterion: 'Draws the tutor-specific conclusion: screenshots of code and stack traces are exactly the
+    fine-detail case, so aggressive reduction is the wrong trade here.'
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

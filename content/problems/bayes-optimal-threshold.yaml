@@ -1,0 +1,44 @@
+slug: bayes-optimal-threshold
+title: Threshold a calibrated score by cost
+difficulty: medium
+categories:
+- ML
+concepts:
+- loss_functions
+description: Given calibrated probabilities and the cost of a false negative and a false positive, return
+  the decision threshold that minimises expected cost, the expected cost under it, and the expected cost
+  at 0.5. The answer depends only on the ratio of the two costs, and 0.5 is a special case rather than
+  a neutral default.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Meta
+- Anthropic
+prompt: Given calibrated probabilities and the cost of a false negative and a false positive, return the
+  decision threshold that minimises expected cost, the expected cost under it, and the expected cost at
+  0.5. The answer depends only on the ratio of the two costs, and 0.5 is a special case rather than a
+  neutral default.
+approach: Write the expected cost of each of the two actions for one row and find where they cross; the
+  crossing point is one line of algebra and contains no class prior. Then sum the cost of whichever action
+  the rule picks, once at that threshold and once at 0.5.
+model_answer: "For a single example with p = P(y=1|x):\n    E[cost | predict 1] = (1 - p) * C_FP     (wrong\
+  \ when y = 0)\n    E[cost | predict 0] = p * C_FN           (wrong when y = 1)\n\nPredict 1 when it\
+  \ is cheaper:\n    (1-p) C_FP < p C_FN\n    C_FP < p (C_FN + C_FP)\n    p > C_FP / (C_FN + C_FP)\n\n\
+  So   t* = C_FP / (C_FN + C_FP).\n\nFOR C_FN = 500, C_FP = 5:\n    t* = 5 / 505 = 0.0099 ≈ 1%\n\nFlag\
+  \ anything with a 1% chance of fraud. The default 0.5 is not a neutral choice — it is the special case\
+  \ C_FN = C_FP, which is almost never true for the problems where thresholds matter.\n\nTWO CAVEATS THAT\
+  \ MATTER. First, this requires *calibrated* probabilities. On an uncalibrated model p is a score, not\
+  \ a probability, and t* computed this way is meaningless — which is why resampling the training set\
+  \ without correcting the odds silently invalidates it. Second, t* depends only on the ratio, not the\
+  \ magnitudes: costs of (500, 5) and (100, 1) give the same threshold."
+follow_ups:
+- Where does the class prior enter, if at all?
+- C_FN varies per transaction. How does the rule change?
+- You resampled the training set. What must you do before applying t*?
+red_flags:
+- Defaulting to 0.5 without asking what the errors cost.
+- Applying the formula to uncalibrated scores.
+- Thinking absolute costs matter when only their ratio does.
+source_kind: interview_question

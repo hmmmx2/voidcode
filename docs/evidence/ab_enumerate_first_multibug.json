@@ -1,0 +1,2783 @@
+{
+ "production prompt": [
+  {
+   "id": "eval_two_sum_assignment_op_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     2,
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 2**\n```python\nn = len(nums)\n```\nLine 2 stores the length of `nums` in the variable `n`. This works fine, but there's a bug in Line 3 that prevents the code from working correctly. Look at Line 3: `for i in range(n):`. The problem is here \u2014 what value of `i` should start from when `n` is 0? When `n` is 1? When `n` is 2?\n\nStart with the simplest case: when `n` is 0. What value should `i` start from? What happens when you run the loop with `i` starting at this value?"
+  },
+  {
+   "id": "eval_two_sum_index_order_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     3,
+     4
+    ],
+    "quoted_lines": [
+     6
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nreturn [i, seen[complement]]\n```\nLine 4 returns the first index first, then the value from `seen`. The problem asks for the *indices* of the two numbers that add up to the target. If the complement of 4 is 2, the code returns [0, 2] instead of [1, 0]. What goes into the second position of the returned list?\n\n**Issue 2 \u2014 Line 3**\n```python\nfor i, num in enumerate(nums):\n```\nLine 3 iterates through the valid range of the list (0 to len(nums) - 1). If the complement of 10 is 9, the code looks for index 9, which doesn't exist. What is the maximum valid index for the complement of the current number?\n\nLet's fix Issue 1 first since it produces the wrong answer for many test cases. What goes into the second position of the returned list?"
+  },
+  {
+   "id": "eval_two_sum_multibug_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     6
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor j in range(i + 1, n):\n```\nLine 3 uses `range(i + 1, n)` \u2014 this gives us all valid values for `j` that come after `i`. For example, if `i` is 0, `j` can be 1, 2, 3, ..., n-1. If `i` is 1, `j` can be 2, 3, 4, ..., n-1. The key is that `j` must always be greater than `i`.\n\nGiven `nums = [2, 7, 11, 15]` and target = 9, if i = 0 (nums[0] = 2), what values can j take? What is the largest possible value for j? What happens if i = 3 (last element)?"
+  },
+  {
+   "id": "eval_valid_parens_masked_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     10
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    for char in s:\n```\nLine 3 iterates through each character in the string. The problem is with the stack \u2014 the NameError happens because the stack hasn't been created yet. This code:\n```python\n    for char in s:\n        if char in mapping:\n            top = stack.pop() if stack else '#'\n```\n...doesn't create the stack at all. What goes here to create an empty stack?\n\nLet's fix Issue 1 first since the NameError happens before the for loop runs. What goes here: `    stack = ?`"
+  },
+  {
+   "id": "eval_binary_search_wrong_not_found_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nreturn 0\n```\nLine 7 returns 0. The test case expects -1, indicating the target was not found. This return happens when the loop exits without finding the target \u2014 what condition causes the loop to exit early?\n\nLet me guide you through: When does the loop stop running? What value of `left` or `right` makes the loop terminate? What should the return value be in that case?"
+  },
+  {
+   "id": "eval_fibonacci_undefined_var_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     2
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 2**\n```python\nif num <= 1:\n```\nLine 2 uses `num` instead of `n` \u2014 the function parameter name. When the function is called, the local variable is named `n`, not `num`. This name mismatch causes NameError. The function signature is `def fib(self, n: int) -> int:` \u2014 what is the name of the parameter?\n\nLet's fix Issue 1 first since this name mismatch is preventing the function from running. Change `num` to what to make the function call work?"
+  },
+  {
+   "id": "eval_reverse_list_wrong_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     9
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nreturn curr\n```\nLine 7 returns `curr` instead of `prev`. After processing the entire list, `curr` is at tail (the original head). The new head is the node that was originally second-to-last (what is `prev` when `curr` reaches None?). What pointer gives us the new head of the reversed list?\n\nLet's fix Issue 1 first since this is the only thing preventing the code from working. When you reach the end of the loop, what is the value of `prev`?"
+  },
+  {
+   "id": "eval_binary_search_off_by_one_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     3
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     3
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nwhile left < right:\n```\nLine 5 continues the loop while `left < right`. For a single-element array like `[5]`, `left` is 0 and `right` is 0 (because `len(nums) - 1` is 0). The loop condition `left < right` is false, so the loop doesn't run. We never check if `nums[0] == 5`, and we exit without returning 0. This makes the function return -1 instead of the expected 0.\n\nFor a single-element array, how many times should the loop run? What is the value of `left` after the loop? What about `right`?\n\nLet me give you a hint: think about the midpoint calculation. If the array has 1 element, what is `mid`? What happens when you subtract 1 from `right`? What goes wrong with the loop condition? What is the value of `right` after the first iteration? What does the loop do next? What is the value of `left` after the second iteration? What does the loop do next? What is the value of `right` after the third iteration? What does the loop do next? What is the value of `left` after the fourth iteration? What does the loop do next? What is the value of `right` after the fifth iteration? What does the loop do next? What is the value of `left` after the sixth iteration? What does the loop do next? What is the value of `right` after the seventh iteration? What does the loop do next? What is the value of `left` after the eighth iteration? What does the loop do next? What is the value of `right` after the ninth iteration? What does the loop do next? What is the value of `left` after the tenth iteration? What does the loop do next? What is the value of `right` after the eleventh iteration? What does the loop do next? What is the value of `left` after the twelfth iteration? What does the loop do next? What is the value of `right` after the thirteenth iteration? What does the loop do next? What is the value of `left` after the fourteenth iteration? What does the loop do next? What is the value of `right` after the fifteenth iteration? What does the loop do next? What is the value of `left` after the sixteenth iteration? What does the loop do next? What is the value of `right` after the seventeenth iteration? What does the loop do next? What is the value of `left` after the eighteenth iteration? What does the loop do next? What is the value of `right` after the nineteenth iteration? What does the loop do next? What is the value of `left` after the twentieth iteration? What does the loop do next? What is the value of `right` after the twenty-first iteration? What does the loop do next? What is the value of `left` after the twenty-second iteration? What does the loop do next? What is the value of `right` after the twenty-third iteration? What does the loop do next? What is the value of `left` after the twenty-fourth iteration? What does the loop do next? What is the value of `right` after the twenty-fifth iteration? What does the loop do next? What is the value of `left` after the twenty-sixth iteration? What does the loop do next? What is the value of `right` after the twenty-seventh iteration? What does the loop do next? What is the value of `left` after the twenty-eighth iteration? What does the loop do next? What is the value of `right` after the twenty-ninth iteration? What does the loop do next? What is the value of `left` after the thirtieth iteration? What does the loop do next? What is the value of `right` after the thirty-first iteration? What does the loop do next? What is the value of `left` after the thirty-second iteration? What does the loop do next? What is the value of `right` after the thirty-third iteration? What does the loop do next? What is the value of `left` after the thirty-fourth iteration? What does the loop do next? What is the value of `right` after the thirty-fifth iteration? What does the loop do next? What is the value of `left` after the thirty-sixth iteration? What does the loop do next? What is the value of `right` after the thirty-seventh iteration? What does the loop do next? What is the value of `left` after the thirty-eighth iteration? What does the loop do next? What is the value of `right` after the thirty-ninth iteration? What does the loop do next? What is the value of `left` after the fortieth iteration? What does the loop do next? What is the value of `right` after the forty-first iteration? What does the loop do next? What is the value of `left` after the forty-second iteration? What does the loop do next? What is the value of `right` after the forty-third iteration? What does the loop do next? What is the value of `left` after the forty-fourth iteration? What does the loop do next? What is the value of `right` after the forty-fifth iteration? What does the loop do next? What is the value of `left` after the forty-sixth iteration? What does the loop do next? What is the value of `right` after the forty-seventh iteration? What does the loop do next? What is the value of `left` after the forty-eighth iteration? What does the loop do next? What is the value of `right` after the forty-ninth iteration? What does the loop do next? What is the value of `left` after the fiftieth iteration? What does the loop do next? What is the value of `right` after the fifty-first iteration? What does the loop do next? What is the value of `left` after the fifty-second iteration? What does the loop do next? What is the value of `right` after the fifty-third iteration? What does the loop do next? What is the value of `left` after the fifty-fourth iteration? What does the loop do next? What is the value of `right` after the fifty-fifth iteration? What does the loop do next? What is the value of `left` after the fifty-sixth iteration? What does the loop do next? What is the value of `right` after the fifty-seventh iteration? What does the loop do next? What is the value of `left` after the fifty-eighth iteration? What does the loop do next? What is the value of `right` after the fifty-ninth iteration? What does the loop do next? What is the value of `left` after the sixty-th iteration? What does the loop do next? What is the value of `right` after the sixty-first iteration? What does the loop do next? What is the value of `left` after the sixty-second iteration? What does the loop do next? What is the value of `right` after the sixty-third iteration? What does the loop do next? What is the value of `left` after the sixty-fourth iteration? What does the loop do next? What is the value of `right` after the sixty-fifth iteration? What does the loop do next? What is the value of `left` after the sixty-sixth iteration? What does the loop do next? What is the value of `right` after the sixty-seventh iteration? What does the loop do next? What is the value of `left` after the sixty-eighth iteration? What does the loop do next? What is the value of `right` after the sixty-ninth iteration? What does the loop do next? What is the value of `left` after the seventy-th iteration? What does the loop do next? What is the value of `right` after the seventy-first iteration? What does the loop do next? What is the value of `left` after the seventy-second iteration? What does the loop do next? What is the value of `right` after the seventy-third iteration? What does the loop do next? What is the value of `left` after the seventy-fourth iteration? What does the loop do next? What is the value of `right` after the seventy-fifth iteration? What does the loop do next? What is the value of `left` after the seventy-sixth iteration? What does the loop do next? What is the value of `right` after the seventy-seventh iteration? What does the loop do next? What is the value of `left` after the seventy-eighth iteration? What does the loop do next? What is the value of `right` after the seventy-ninth iteration? What does the loop do next? What is the value of `left` after the eightieth iteration? What does the loop do next? What is the value of `right` after the eighty-first iteration? What does the loop do next? What is the value of `left` after the eighty-second iteration? What does the loop do next? What is the value of `right` after the eighty-third iteration? What does the loop do next? What is the value of `left` after the eighty-fourth iteration? What does the loop do next? What is the value of `right` after the eighty-fifth iteration? What does the loop do next? What is the value of `left` after the eighty-sixth iteration? What does the loop do"
+  },
+  {
+   "id": "eval_max_subarray_negative_nums_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nreturn max_sum\n```\nLine 7 returns the maximum subarray sum. For [-3, -1, -2], your code finds 0 (the empty subarray) instead of -1 (the subarray [-1]). The issue is that `current_sum` is never allowed to go below 0 \u2014 if current_sum becomes negative, you discard it and start fresh. This works fine for all-positive arrays but fails for all-negative ones. With [-3, -1, -2], current_sum never goes below 0, so max_sum never picks up -1.\n\nWhat happens to current_sum when num is -1? Does current_sum become negative? What does your code do when current_sum becomes negative?"
+  },
+  {
+   "id": "eval_valid_parens_unclosed_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn True\n```\nLine 5 returns True. This happens when the string has odd length or contains unmatched opening brackets like '((('. The problem requires returning False for unbalanced strings, not True. When you encounter an unmatched bracket (like '(' without a matching ')'), what boolean value indicates failure?\n\nLet's fix Issue 1 first since this is the core logic that determines whether the string is valid. What boolean value should return when there's an unmatched opening bracket?"
+  },
+  {
+   "id": "eval_climbing_stairs_dp_init_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\ndp = [0] * (n + 1)\n```\nLine 4 creates a length-(n+1) array initialized to 0. This means dp[0] = 0, dp[1] = 0, dp[2] = 0, ..., dp[2] = 0. When i=2, dp[1] + dp[0] = 0 + 0 = 0, not 2. The recurrence relation works for i=2 if dp[1] = 1 instead of 0.\n\nThe core pattern is: how many ways can you reach stair 2? If you're at stair 1 (1 way), and you're at stair 0 (1 way), how many total ways are there to reach stair 2?"
+  },
+  {
+   "id": "eval_three_sum_missing_right_decrement_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     16
+    ],
+    "cited_lines": [
+     11
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 11**\n```python\nleft += 1\n```\nLine 11 moves left forward by 1. If there are duplicates like `[1, -1, -1, 2]` and we find a valid triplet at `left=1`, `right=2`, moving left to 2 skips the duplicate `-1`. This can cause us to miss another valid triplet. How many duplicate `-1`s are there, and how does the window move past them?\n\nLet's fix Issue 1 first since this is the core logic causing duplicate triplets. When we find a valid triplet, what range of values for `left` should we explore next?"
+  },
+  {
+   "id": "eval_contains_duplicate_inverted_bool_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn True\n```\nLine 6 returns `True` when the loop completes without finding duplicates. The problem statement says: \"Return true if there are duplicates, otherwise return false.\" Your code returns `True` when there are NO duplicates, which is the opposite of what the problem asks for. When should this function return `False` instead?\n\nWhat boolean value should the function return if it examines all numbers and finds no duplicates?"
+  },
+  {
+   "id": "eval_product_except_self_undefined_var_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     9
+    ],
+    "quoted_lines": [
+     11
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 9**\n```python\nsuffix *= num\n```\nLine 9 multiplies `suffix` by `num`, but there is no variable named `num` in this scope. The loop variable is named `i`, not `num`. This line is inside the backward loop, which iterates backward from `n-1` to `0`. The current element being processed is `nums[i]`.\n\nWhat variable represents the current element at position `i` in the backward iteration?\n\nLet's fix Issue 1 first since this stops the code from running. What goes here instead of `num`?"
+  },
+  {
+   "id": "eval_word_ladder_no_visited_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     15
+    ],
+    "cited_lines": [
+     10,
+     12
+    ],
+    "quoted_lines": [
+     15
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 10**\n```python\nif new_word == endWord:\n```\nLine 10 checks if the new word equals the end word. This check happens for every word generated, including ones that are yet to be reached. If the path to the end word is longer than the current shortest path, this condition doesn't trigger and the search continues, potentially forever. Once the program reaches the end word, it will return the length of the path taken, which is correct, but the search itself could get stuck in an endless loop.\n\nWhen you reach the end word, how many times should this code block execute? Only once, when the shortest path to the end word is found. What goes inside the if statement to ensure the search stops exactly there?\n\n**Issue 2 \u2014 Line 12**\n```python\nqueue.append((new_word, length + 1))\n```\nLine 12 adds the new word to the queue with its length increased by 1. This works fine for tracking the path length, but there's one critical detail missing that causes the program to get stuck: **not marking visited nodes**. By not marking which words have been explored, the program can fall into a cycle where it revisits the same node over and over again. Each time it revisits a node, it adds the node again to the queue, increasing the length unnecessarily and possibly getting stuck in a loop.\n\nWhat data structure can you use to track which words have already been seen? When you encounter a word you've seen before, how do you know whether to continue exploring from that point? Hint: think about how you would break out of a loop early when you've seen a value before."
+  },
+  {
+   "id": "eval_coin_change_missing_min_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": false,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nfor coin in coins:\n```\nLine 7 iterates over all coins for each position in the DP array. This means we're considering using the same coin multiple times, which can lead to using too many coins. For example, with coins [1, 5, 10] and amount 15, the greedy approach might try 10 + 5 + 1 + 1 + 1 instead of 10 + 5 + 5.\n\nThink about how many times each coin can be used. If a coin value is 5, how many times can you use it for an amount like 15 without going over? Is there a limit to how many times you can use a coin?\n\nLet me focus on the first bug. Line 7 iterates over all coins for each position in the DP array. This means we're considering using the same coin multiple times. For example, with coins [1, 5, 10] and amount 15, the greedy approach might try 10 + 5 + 1 + 1 + 1 instead of 10 + 5 + 5. What is the maximum number of times you can use a coin for an amount like 15?"
+  },
+  {
+   "id": "eval_longest_substring_window_start_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nstart = char_index[char] + 1\n```\nLine 7 updates `start` to the position after the previous occurrence of char. For string 'abba', char 'b' appears twice at indices 1 and 3. When processing index 3, char_index['b'] is 1. This sets start to 2, meaning the window includes b_1 (index 1) and b_3 (index 3), giving a window of length 3 (1 to 3 inclusive). The expected answer is 2 characters, not 3. What goes wrong when char appears again at a later position?\n\nLet's fix Issue 1 since this is causing the window to include too many characters. What should start be set to when char is found at char_index['b'] for the second time in 'abba'?"
+  },
+  {
+   "id": "eval_merge_two_lists_severs_tail_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     12
+    ],
+    "cited_lines": [
+     11
+    ],
+    "quoted_lines": [
+     12
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 11**\n```python\n    curr.next = None\n```\nLine 11 sets the tail node's next pointer to None. This breaks the linked list, making it look like the merge ended prematurely. For example, if list1 has [1, 2] and list2 has [3], your code makes the result [1, 3] instead of [1, 2, 3].\n\nWhat happens when you set `curr.next = None`? What's the consequence for the linked list structure?\n\nLet's fix Issue 1 first since this is the primary cause of extra nodes being lost. What should `curr.next` point to instead of None?"
+  },
+  {
+   "id": "eval_max_depth_sum_instead_of_max_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     6
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn 1 + left + right\n```\nLine 5 adds the depths of the left and right subtrees together. The problem asks for the *maximum* depth, not the combined total \u2014 if left depth is 3 and right is 1, this returns 5 (sum) instead of 4 (max).\n\nWhat mathematical operation gives the maximum of two numbers? How can you combine the current node level (1) with the maximum depths of its subtrees to get the maximum depth of the entire tree?\n\nLet's fix Issue 1 since this is the core misunderstanding causing incorrect results. What operation gives the maximum of two numbers?"
+  },
+  {
+   "id": "eval_invert_tree_both_children_same_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Your code passes for empty trees (root is None) and trees with a single node (left or right is None). Beyond that, your approach fails for trees with more than one node. This is the core challenge: if you have a tree like this:\n```\n     1\n    / \\\n   2   3\n```\n\nYour current implementation swaps the left and right children of the root (making 2 -> 3 and 3 -> 2), but then it also swaps the left and right children of 2 (making 2's left child 3 and its right child 2). This is too much swapping \u2014 each node should swap its left and right children, but not its grandchildren.\n\nTry to visualize the tree after the first recursive call. If the original tree looks like this:\n```\n     1\n    / \\\n   2   3\n```\n\nWhat should the tree look like after the first recursive call returns? What should the left and right pointers of node 1 be set to? Hint: think about the order in which you process nodes."
+  },
+  {
+   "id": "eval_climbing_stairs_missing_colon_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 10**\n```python\nfor i in range(3, n + 1)\n```\nLine 10 is missing the colon (:). In Python, all blocks of code need to end with a colon. This line is a loop header, and without the colon, the interpreter expects a single expression instead. The test runner stops at this line and reports a SyntaxError.\n\nThe test runner doesn't reach this line because the SyntaxError happens at line 10. Once you fix this, all tests will still fail \u2014 but now they'll tell you how many stairs there are instead of crashing. How many stairs does climbing 10 stairs have? (Hint: It's more than 10 stairs.)"
+  },
+  {
+   "id": "eval_is_anagram_syntax_logic_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nif len(s) != len(t)\n```\nLine 3 has a syntax error \u2014 Python expects a colon (`:`) after the if statement. The test runner catches this first because there's no code to execute after the broken line. Fix the missing colon and the rest of the code will be evaluated.\n\nWhat character should replace the blank to make this line valid?"
+  },
+  {
+   "id": "eval_reverse_list_missing_next_node_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\ncurr = curr.next\n```\nLine 5 moves curr to the next node. This works fine, but after the loop ends, curr will be None. When curr becomes None, the loop exits, but curr.next still tries to access the next node, which doesn't exist \u2014 causing the program to hang. This happens on the first iteration when curr is head (the original first node).\n\nAfter the loop, curr should be None. What does curr.next equal when the loop stops? Why does accessing it cause the program to hang?\n\nLet's fix Issue 1 since the program hangs because curr.next tries to access a non-existent node. What should the condition for continuing the loop be?"
+  },
+  {
+   "id": "eval_binary_search_mid_and_left_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4,
+     8
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nmid = left + right / 2\n```\nLine 5 calculates the midpoint using integer division (`//`) instead of floor division (`/`). In Python 3, `1 + 2 / 2` evaluates to 1.0, truncating to 1 instead of rounding down to 1. This can cause the loop to get stuck when the target is just below the middle.\n\nWhat operation gives the floor of (left + right) / 2? Hint: it rounds towards negative infinity.\n\nLet's fix Issue 1 first since this is the root cause of both the bug and the TypeError. What goes here: `mid = _`?"
+  },
+  {
+   "id": "eval_max_subarray_init_and_reset_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2,
+     7
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nmax_sum = 0\n```\nLine 3 sets `max_sum` to 0. For [-3], the expected answer is -3, not 0. Your code finds 0 because the first element is added to current_sum, which is initialized to 0. For [-3], current_sum becomes -3 and max_sum remains 0 because -3 < 0 triggers current_sum = 0. The same issue happens for [-3, -1]: current_sum becomes -4, then -1 (since -1 < -4), and max_sum stays 0. What should max_sum be initialized to for a sequence of negative numbers?\n\nLet's fix Issue 1 first since this is the root cause of all test failures. What value should max_sum start at for [-3, -1, -2]?"
+  },
+  {
+   "id": "eval_valid_parens_pop_invert_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6,
+     11
+    ],
+    "cited_lines": [
+     4,
+     9
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nfor ch in s:\n```\nLine 4 iterates through each character in `s`. This works for balanced strings like \"()[]{}\", but fails for unbalanced ones like \")\". When `s` contains unmatched parentheses, the loop continues past the invalid character, causing the crash.\n\nFor example, when `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on?\n\n**Issue 2 \u2014 Line 9**\n```python\nreturn True\n```\nLine 9 returns True instead of False. The function reaches Line 9 when the stack is empty (all parentheses matched) \u2014 this is correct for balanced strings like \"()[]{}\" but incorrect for unbalanced ones like \"(()\". An empty stack means the string ends with an unclosed bracket.\n\nFor \"(()\", the stack has ['('] after processing the first two characters. After the third character, the stack is empty. After the fourth character, what does the stack contain? What should the function return at this point?\n\nLet's fix **Issue 1** first. The stack is empty and the loop continues past the invalid character. What index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop sees the first `)`, pops nothing (empty stack), then encounters the opening parenthesis `(` \u2014 what index does popping raise the error on? Line 4 is iterating through each character in `s`. When `s = \")(\"`, the loop"
+  },
+  {
+   "id": "eval_max_profit_masked_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4,
+     8
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nfor price in prices\n```\nLine 7 uses a colon instead of parentheses \u2014 Python requires parentheses for list comprehensions and for generator expressions. This causes a SyntaxError before the code reaches any buggy behavior. The test runner stops at the first red flag it encounters.\n\nPython requires parentheses for list comprehensions and generator expressions. What goes here instead of just `for price in prices`?"
+  },
+  {
+   "id": "eval_contains_dup_missing_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn True\n```\nLine 5 returns True when the loop completes without finding a duplicate. The test case containsDuplicate([1,2,3,4]) has no duplicates, so the loop runs to completion. This returns True instead of False, making the test fail. The problem asks for a boolean indicating whether there was a duplicate, not whether one was found.\n\nWhat boolean value indicates that no duplicate was found, given that the loop completed without returning True?"
+  },
+  {
+   "id": "eval_merge_sorted_off_by_one_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     11
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\ni, j, k = m - 1, n - 1, m + n - 1\n```\nLine 3 sets `k` to `m + n - 1`. This means `k` starts at the end of `nums1`, not the end of `nums2`. When `j` reaches 0, `k` continues decrementing past the end of `nums1`, overwriting past the boundary. The first element of `nums2` (nums2[0]) goes into the wrong slot.\n\nWhat should `k` start at to ensure all elements from `nums2` fit within the bounds of `nums1`?"
+  },
+  {
+   "id": "eval_has_cycle_wrong_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     9
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nwhile fast and fast.next:\n```\nLine 5 continues the loop even when fast reaches the end. When fast reaches the end, fast.next is None. The loop continues one extra iteration, then fast becomes None and fast.next triggers a runtime error. This logic can detect cycles, but it also falsely reports a cycle when the list is empty or has just one node.\n\nFor an empty list or a list with one node, how many nodes are reachable by fast? How many by slow? What should the loop condition be to handle both empty and single-node lists correctly?"
+  },
+  {
+   "id": "eval_mt_confusion_binary_search_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Let's break down why `left == right` matters for handling single-element arrays:\n\n1. **Single Element Array**: For an array like `[5]`, `left` starts at 0 and `right` starts at 0. With `left < right`, the loop condition fails immediately because 0 is not less than 0. The loop doesn't run at all.\n\n2. **Two Elements Array**: For `[1, 2]`, `left` starts at 0 and `right` starts at 1. The loop runs once with `mid` = 0. After that, `left` becomes 1 (left = mid + 1) and `right` becomes 0 (right = mid - 1). Now `left` is 1 and `right` is 0, which satisfies `left <= right` but not `left < right`.\n\n3. **Three Elements Array**: For `[1, 2, 3]`, `left` starts at 0 and `right` starts at 2. The loop runs twice: first with `mid` = 1, then with `mid` = 0. After the second iteration, `left` becomes 1 and `right` becomes 0. Now `left` is 1 and `right` is 0, which satisfies `left <= right` but not `left < right`.\n\nIn each of these cases, using `left < right` means the loop will skip over the element at index 0 (or whatever index `right` is pointing to) when the array has 1 or more elements. This is not what we want \u2014 we need to find the target, even if there's only one element.\n\nThe fix is to use `<=` instead of `<`. This allows the loop to continue when `left` equals `right`, giving us the chance to check the element at that position.\n\nTry making this change and see how it affects the behavior for single-element arrays."
+  },
+  {
+   "id": "eval_mt_frustration_reverse_list_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "It's okay! Programming is challenging, and everyone struggles sometimes. Let's break down Issue 1 in simpler terms.\n\n**Issue 1 \u2014 Line 5**\n```python\ncurr.next = prev\n```\nLine 5 overwrites `curr.next` before saving where it was pointing. Once you reassign it, the original next node is lost forever.\n\nThink about it like this: If you have a toy car pointing to the next toy, and you turn its wheel around (change `curr.next`), the car falls off the track. You need to save where the car fell before turning its wheel.\n\nWhat do you call a temporary variable that holds the original next node before line 5 overwrites it?"
+  },
+  {
+   "id": "eval_mt_partial_answer_coin_change_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": false,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Exactly! Using `max()` ensures we keep the best (minimum) solution among all valid ways to reach amount `i`. This fixes the core logic flaw while preserving the dynamic programming structure you've built. What goes here to get the final answer for amount `i`?\n\n**Line 7 uses max instead of assigning directly. What goes here?**"
+  },
+  {
+   "id": "eval_ext_mutable_default_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     1
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nbucket.append(item)\n```\nLine 3 appends the current item to the bucket. This works fine \u2014 the bug lies in how the bucket is shared between calls. When I call `group_all([1, 2, 3])`, the output grows like this:\n1. First call: `collect(1)` -> bucket = [1], out = [bucket]\n2. Second call: `collect(2)` -> bucket = [1, 2], out = [bucket, [1]]\n3. Third call: `collect(3)` -> bucket = [1, 2, 3], out = [bucket, [1], [1, 2]]\n\nEach call sees the same bucket, appending new items. The result is `[1], [1], [1, 2], [1, 2], [1, 2, 3], [1, 2, 3], [1, 2, 3]`. Fixing this requires creating a new bucket for each call.\n\nWhat creates a new bucket each time? What data structure gives us a fresh empty list for each call?"
+  },
+  {
+   "id": "eval_ext_integer_division_002",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nmid = (lo + hi) / 2\n```\nLine 6 calculates the midpoint using integer division (`/`). When lo = 10 and hi = 13, (lo + hi) / 2 becomes (10 + 13) / 2 = 23 / 2 = 11.0. Python 3 performs floating-point division by default, but the slice operation expects an integer. The result is a float, which causes the TypeError: list indices must be integers or slices, not float.\n\nWhat data type should (lo + hi) / 2 produce to avoid the TypeError? Hint: think about how range works when start and stop are both inclusive."
+  },
+  {
+   "id": "eval_ext_mutate_while_iterating_003",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor n in nums:\n```\nLine 3 iterates through nums and removes evens in place. When you remove 2, the next even (4) skips over 3. This means 2 and 4 both stay, while 6 gets skipped. After removing 2, the list becomes [4, 6]. Now when you get to 4, there's no 6 to skip \u2014 it's already gone. What happens to the list when you remove 2?\n\nLet's fix Issue 1 since the bug causes 2 and 4 to both remain. What goes wrong when you remove 2 from [2, 4, 6]?"
+  },
+  {
+   "id": "eval_ext_shallow_grid_004",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\ngrid[r][c] = value\n```\nLine 7 assigns a new value to grid[r][c]. The problem statement says \"Setting one cell changes a value in every row\". This means changing grid[r][c] should affect all rows, not just the current row. After setting grid[1][2] = 5, grid[0][2], grid[2][2], grid[3][2], etc. should also be 5.\n\nThink about how modifying grid[r][c] affects other rows. If you change grid[1][2] = 5, what happens to grid[0][2], grid[2][2], grid[3][2], etc.?\n\nStart with whichever effect you feel most confident about \u2014 changing all rows at once is the key behavior that makes this work."
+  },
+  {
+   "id": "eval_ext_float_equality_005",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\n    if has_converged(loss, new_loss):\n```\nLine 4 uses `loss == new_loss` to check for convergence. The problem: floating-point precision! Even when loss and new_loss are extremely close, they might not be exactly equal due to rounding errors. This can cause the loop to continue unnecessarily. For example, if loss = 0.001 and new_loss = 0.000999, they look the same but are not technically equal.\n\nHow would you modify the condition to allow for small numerical differences? Hint: think about absolute tolerance.\n\nLet's fix Issue 1 first since this is causing the loop to run longer than necessary. What modification allows two floats to be considered equal within a small margin of error?"
+  },
+  {
+   "id": "eval_ext_skips_first_006",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn out\n```\nLine 5 returns the result list. The bug is that the loop stops before processing the final element. When the loop condition is `range(len(nums))`, it stops after the last index (len(nums) - 1). What index does range(len(nums)) stop at for a list of length 4?\n\nLet's fix Issue 1 first since this is the cause of the missing element. What index does range(len(nums)) stop at for a list of length 4?"
+  },
+  {
+   "id": "eval_ext_is_vs_equals_007",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nif v is target:\n```\nLine 4 uses `is` instead of `==` to compare values. For primitive types like int, use `==`. For objects, use `is` to check identity (same object in memory). Python 3.9+ can infer equivalence for you, but you should always use `==` for value equality. This is the first bug we need to fix.\n\nWhat operator checks if two values have the same value? Use `==` for numbers. Use `is` to check if two variables refer to the exact same object in memory. What goes here: `if v == target:` or `if v is target:`?"
+  },
+  {
+   "id": "eval_ext_early_return_008",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    if n > 0:\n```\nLine 3 returns `True` when it reaches the first positive number. This means the function will return immediately after checking the first element, even if there are negative numbers later in the list. For example, `all_positive([1, -5, 3])` finds `-5` and returns `True`, missing the -5 entirely. The function should continue evaluating all elements.\n\nWhy does the function stop after finding the first positive number? What would make the function check all elements instead?"
+  },
+  {
+   "id": "eval_ext_dict_mutation_009",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor key in counts:\n```\nLine 3 iterates over a copy of `counts`' keys. When you delete a key inside the loop, the dictionary shrinks while you're still iterating over its keys. This can lead to skipping keys or accessing deleted keys, causing the error. The Python interpreter catches this at runtime.\n\nIterating while deleting can go wrong in many ways. What happens if you delete key 'a' while iterating through keys ['a', 'b', 'c']? What sequence of dictionaries would you see if you printed `print(counts)` each iteration?\n\nLet's fix Issue 1 first since the exception fires immediately and the method returns nothing. What collection gives you a view of keys that updates in real-time as items are added or removed?"
+  },
+  {
+   "id": "eval_ext_swapped_bounds_010",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2,
+     4
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nreturn value\n```\nLine 4 returns the original value. This happens when both conditions fail: `value < high` is False AND `value > low` is False. In Python, `False` evaluates to `0`, so the condition becomes `if 0`: which is True. The second condition is ignored. If `value` is 7, `high` is 10, and `low` is 0, the function returns 7 instead of 10.\n\nTry this: When `value` is 7, what should the function return? What goes wrong with your current logic?\n\nLet's fix Issue 1 first since this is the core logic causing the bug. What should the function return when value is 7, high is 10, and low is 0?"
+  },
+  {
+   "id": "eval_ext_infinite_binary_search_011",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     8
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nif nums[mid] < target:\n```\nLine 5 moves the left boundary to `mid` when `nums[mid] < target`. If `target` is greater than `nums[mid]`, this moves the left boundary to the left half, which is too far. The right half contains the target if `target > nums[mid]`.\n\nFor `left = mid` vs `left = mid + 1`, which one keeps the target in the left half if the target is greater than the middle element?\n\nLet's fix Issue 1 first since this is the core misunderstanding causing the hang. When target > nums[mid], should left move to mid or mid + 1?"
+  },
+  {
+   "id": "eval_ext_visited_after_recursion_012",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     8
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nfor neighbour in graph[node]:\n```\nLine 6 iterates over all neighbours of node. This is the problem: for graphs with cycles, DFS can visit the same node multiple times. Each time you call `walk` recursively, you process the same node again and again. In a cycle, you can get stuck in an infinite recursion.\n\nIn DFS, how do you prevent visiting the same node twice while still exploring its entire subtree? Hint: what data structure stores values you've seen?"
+  },
+  {
+   "id": "eval_ext_sliding_window_013",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     8,
+     9
+    ],
+    "cited_lines": [
+     3,
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issues** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn best if best <= len(nums) else 0\n```\nLine 5 returns 0 if the window doesn't meet the requirement. The window can't meet the requirement if its length (right - left) is less than 1, not if its value is less than or equal to len(nums). If right - left is 0, the window has zero elements and can't sum to any target. What is the minimum window size that guarantees the sum is at least target?\n\n**Issue 2 \u2014 Line 3**\n```python\nbest = len(nums) + 1\n```\nLine 3 initializes `best` to len(nums) + 1. This is too large. If the array is empty (len(nums) == 0), len(nums) + 1 gives 1, meaning the window must have at least 1 element. But an empty array trivially satisfies the condition (the sum is 0, which is >= 0). What is the smallest window size that works for an empty array?"
+  },
+  {
+   "id": "eval_ext_closure_capture_014",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     9
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 9**\n```python\nreturn [fn(value) for fn in fns]\n```\nLine 9 uses list comprehension to apply all functions to the value. The problem is that all functions use the same factor! After the first iteration, `fns` contains the same lambda function repeated \u2014 it always uses the last factor. For example, if factors = [2, 3], apply_all returns [6*value, 6*value] instead of [2*value, 3*value].\n\nWhat goes wrong here: `lambda x: x * f` vs `lambda x: x * f[-1]`?\n\nLet's fix Issue 1 first since this is the core bug causing incorrect results. What goes wrong here: `lambda x: x * f` vs `lambda x: x * f[-1]?`"
+  },
+  {
+   "id": "eval_ext_dp_init_and_order_015",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2,
+     7
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\ndp = [0] * (amount + 1)\n```\nLine 4 initializes the DP array with `amount + 1` elements. The range goes from `0` to `amount`, inclusive. When `amount` is 0, the range is `0` to `0`, which gives us 1 element. This means `dp[0]` is set to 0, but there's no `dp[1]` to handle the case where 1 coin is needed. This causes the function to always return 0 for amounts greater than 0.\n\nTry this: If the amount is 5 and the coins are [1, 2, 3], what value should `dp[1]` be initialized to? What about `dp[2]`? What about `dp[3]`? What about `dp[4]`? What about `dp[5]`? What about `dp[6]`? What about `dp[7]`? What about `dp[8]`? What about `dp[9]`? What about `dp[10]`? What about `dp[11]`? What about `dp[12]`? What about `dp[13]`? What about `dp[14]`? What about `dp[15]`? What about `dp[16]`? What about `dp[17]`? What about `dp[18]`? What about `dp[19]`? What about `dp[20]`? What about `dp[21]`? What about `dp[22]`? What about `dp[23]`? What about `dp[24]`? What about `dp[25]`? What about `dp[26]`? What about `dp[27]`? What about `dp[28]`? What about `dp[29]`? What about `dp[30]`? What about `dp[31]`? What about `dp[32]`? What about `dp[33]`? What about `dp[34]`? What about `dp[35]`? What about `dp[36]`? What about `dp[37]`? What about `dp[38]`? What about `dp[39]`? What about `dp[40]`? What about `dp[41]`? What about `dp[42]`? What about `dp[43]`? What about `dp[44]`? What about `dp[45]`? What about `dp[46]`? What about `dp[47]`? What about `dp[48]`? What about `dp[49]`? What about `dp[50]`? What about `dp[51]`? What about `dp[52]`? What about `dp[53]`? What about `dp[54]`? What about `dp[55]`? What about `dp[56]`? What about `dp[57]`? What about `dp[58]`? What about `dp[59]`? What about `dp[60]`? What about `dp[61]`? What about `dp[62]`? What about `dp[63]`? What about `dp[64]`? What about `dp[65]`? What about `dp[66]`? What about `dp[67]`? What about `dp[68]`? What about `dp[69]`? What about `dp[70]`? What about `dp[71]`? What about `dp[72]`? What about `dp[73]`? What about `dp[74]`? What about `dp[75]`? What about `dp[76]`? What about `dp[77]`? What about `dp[78]`? What about `dp[79]`? What about `dp[80]`? What about `dp[81]`? What about `dp[82]`? What about `dp[83]`? What about `dp[84]`? What about `dp[85]`? What about `dp[86]`? What about `dp[87]`? What about `dp[88]`? What about `dp[89]`? What about `dp[90]`? What about `dp[91]`? What about `dp[92]`? What about `dp[93]`? What about `dp[94]`? What about `dp[95]`? What about `dp[96]`? What about `dp[97]`? What about `dp[98]`? What about `dp[99]`? What about `dp[100]`? What about `dp[101]`? What about `dp[102]`? What about `dp[103]`? What about `dp[104]`? What about `dp[105]`? What about `dp[106]`? What about `dp[107]`? What about `dp[108]`? What about `dp[109]`? What about `dp[110]`? What about `dp[111]`? What about `dp[112]`? What about `dp[113]`? What about `dp[114]`? What about `dp[115]`? What about `dp[116]`? What about `dp[117]`? What about `dp[118]`? What about `dp[119]`? What about `dp[120]`? What about `dp[121]`? What about `dp[122]`? What about `dp[123]`? What about `dp[124]`? What about `dp[125]`? What about `dp[126]`? What about `dp[127]`? What about `dp[128]`? What about `dp[129]`? What about `dp[130]`? What about `dp[131]`? What about `dp[132]`? What about `dp[133]`? What about `dp[134]`? What about `dp[135]`? What about `dp[136]`? What about `dp[137]`? What about `dp[138]`? What about `dp[139]`? What about `dp[140]`? What about `dp[141]`? What about `dp[142]`? What about `dp[143]`? What about `dp[144]`? What about `dp[145]`? What about `dp[146]`? What about `dp[147]`? What about `dp[148]`? What about `dp[149]`? What about `dp[150]`? What about `dp[151]`? What about `dp[152]`? What about `dp[153]`? What about `dp[154]`? What about `dp[155]`? What about `dp[156]`? What about `dp[157]`? What about `dp[158]`? What about `dp[159]`? What about `dp[160]`? What about `dp[161]`? What about `dp[162]`? What about `dp[163]`? What about `dp[164]`? What about `dp[165]`? What about `dp[166]`? What about `dp[167]`? What about `dp[168]`? What about `dp[169]`? What about `dp[170]`? What about `dp[171]`? What about `dp[172]`? What about `dp[173]`? What about `dp[174]`? What about `dp[175]`? What about `dp[176]`? What about `dp[177]`? What about `dp[178]`? What about `dp[179]`? What about `dp[180]`? What about `dp[181]"
+  },
+  {
+   "id": "eval_ext_sort_key_and_reverse_016",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     5
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn ordered[:k]\n```\nLine 6 slices the sorted list to get the first k items. This is correct \u2014 slicing works fine. The problem is that the sorting logic gets the wrong results. The sorted list has the right order, but the wrong items are in that order. Check how you're ranking the records \u2014 is name really the most important factor?\n\nLet me give you a hint: When you sort by name, what happens to records with the same name? How many such groups exist in the input? What does Python do when two records have the same name?"
+  },
+  {
+   "id": "eval_ext_empty_input_only_017",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.2,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Your code looks correct for the problem \u2014 it handles empty lists and floating-point division as required. There should be no bug preventing all test cases from passing. Let me show you how to debug this systematically:\n\n1. **Understand the problem:** For a list of numbers, return the average as a float. Handles empty lists by returning 0.0. Works for both integer and floating-point values.\n   - **Input:** [1, 2, 3]\n   - **Output:** 2.0\n   - **Edge Case:** Empty list -> 0.0\n   - **Float Test:** [1.5, 2.5, 3.5] -> 2.5\n   - **Negative Test:** [-1, -2, -3] -> -2.0\n\n2. **Line by Line Identification:**\n   - Line 1: Correct \u2014 `def average(nums):` defines a function named `average` that takes one parameter.\n   - Line 2: Correct \u2014 `total = 0` initializes the accumulator to 0.\n   - Line 3: Correct \u2014 `for n in nums:` iterates over each element in the list.\n   - Line 4: Correct \u2014 `total += n` adds the current number to the total.\n   - Line 5: **Problem:** `return total / len(nums)` divides by the length of the list, which is fine for non-empty lists. But if `nums` is empty, this gives a ZeroDivisionError.\n     - **Line 5:** Divides by length: `len(nums) = 0` -> `total / 0` -> ZeroDivisionError\n   - Line 6: **Problem:** No return statement means the function returns None by default. Even if there was no error, returning None would be incorrect for empty input.\n     - **Line 6:** Function returns: `None`\n\n3. **Trace the failing test:**\n   - **Test:** [1, 2, 3]\n   - **Expected:** 2.0\n   - **Actual:** 2.0\n   - **Line:** Line 5\n   - **Variable Values:**\n     - `total = 6` (1 + 2 + 3)\n     - `len(nums) = 3`\n   - **Line:** Line 5\n   - **Debug:** Line 5 calculates `total / len(nums)` -> 6 / 3 -> 2.0. This works for non-empty lists.\n   - **Line:** Line 6\n   - **Variable Values:**\n     - No new variables are assigned\n   - **Line:** Line 6\n   - **Debug:** Line 6 returns None because there is no return statement after Line 5.\n\n4. **Line by Line Identification (cont'd):**\n   - Line 7: **Problem:** No code \u2014 blank line\n     - **Line 7:** Blank line \u2014 no effect on program behavior\n   - Line 8: **Problem:** Triggers on empty input\n     - **Line 8:** Triggers: `len([]) = 0` -> `total / 0` -> ZeroDivisionError\n\n5. **Line by Line Identification (cont'd):**\n   - Line 9: **Problem:** Returns None instead of 0.0 for empty input\n     - **Line 9:** Returns: None\n     - **Line 9:** Function returns: None\n\n6. **Line by Line Identification (cont'd):**\n   - Line 10: **Problem:** Does not handle floating-point input\n     - **Line 10:** Line 5: `total = 0` -> `total = 0.0` for floats\n     - **Line 10:** Line 5: `total += n` -> `total += float(n)` for floats\n     - **Line 10:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for floats\n     - **Line 10:** Line 5: `return total / len(nums)` -> `return total // len(nums)` for integer division\n     - **Line 10:** Line 5: `return total / len(nums)` -> `return round(total / len(nums), 2)` for rounding to 2 decimal places\n\n7. **Line by Line Identification (cont'd):**\n   - Line 11: **Problem:** Does not handle negative numbers\n     - **Line 11:** Line 5: `total += n` -> `total += abs(n)` for absolute value\n     - **Line 11:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n     - **Line 11:** Line 5: `return total / len(nums)` -> `return -total / len(nums)` for negation\n     - **Line 11:** Line 5: `return total / len(nums)` -> `return -total / len(nums)` for negation\n     - **Line 11:** Line 5: `return total / len(nums)` -> `return -total / len(nums)` for negation\n\n8. **Line by Line Identification (cont'd):**\n   - Line 12: **Problem:** Does not handle duplicate values\n     - **Line 12:** Line 5: `total += n` -> `total += n // 2` for half the value\n     - **Line 12:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n     - **Line 12:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n     - **Line 12:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n     - **Line 12:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n\n9. **Line by Line Identification (cont'd):**\n    - Line 13: **Problem:** Does not handle large numbers\n      - **Line 13:** Line 5: `total += n` -> `total += int(n % 10)` for the last digit\n      - **Line 13:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 13:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 13:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 13:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n\n10. **Line by Line Identification (cont'd):**\n    - Line 14: **Problem:** Does not handle strings\n      - **Line 14:** Line 5: `total += n` -> `total += ord(n)` for character code\n      - **Line 14:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 14:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 14:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 14:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n\n11. **Line by Line Identification (cont'd):**\n    - Line 15: **Problem:** Does not handle boolean values\n      - **Line 15:** Line 5: `total += n` -> `total += bool(n)` for truthiness\n      - **Line 15:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 15:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 15:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 15:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n\n12. **Line by Line Identification (cont'd):**\n    - Line 16: **Problem:** Does not handle None\n      - **Line 16:** Line 5: `total += n` -> `total += n is not None` for presence\n      - **Line 16:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 16:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 16:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n      - **Line 16:** Line 5: `return total / len(nums)` -> `return total / len(nums)` for original value\n\n13. **Line by Line Identification (cont'd):**\n    - Line 17: **Problem:** Does not handle mixed types\n      - **Line 17:** Line 5: `total += n` ->"
+  },
+  {
+   "id": "eval_ext_accumulator_reset_018",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6,
+     8
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\ncurrent.append(item)\n```\nLine 5 appends the new item to `current`. This works fine for adding a new item to the current run. However, there's a bug: **The code does not handle empty input correctly.** When the input is empty, `current` remains an empty list and is never added to `runs`. That's why the last group is missing \u2014 the loop doesn't add the final run.\n\nWhat goes here to ensure an empty input produces the correct result?\n```python\n# Line 5: What goes here?\n```"
+  }
+ ],
+ "+ enumerate-first": [
+  {
+   "id": "eval_two_sum_assignment_op_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     2,
+     4
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\n    return []\n```\nLine 4 returns an empty list. The test runner never reaches this line \u2014 Line 2 already causes a SyntaxError. Line 2: `if nums[i] + nums[j] = target:` has a missing operator. The problem is Line 2. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target` instead of `== target`. Line 2 has `= target"
+  },
+  {
+   "id": "eval_two_sum_index_order_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": [
+     6
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn [i, seen[complement]]\n```\nLine 6 returns the first index first, then the value from the hash map. This means if the target is met with num at index 3 and complement at index 1, the answer would be [3, 1] instead of [1, 3]. The problem asks for the indices of the two numbers that add to the target, not their values.\n\nWhere is the complement stored in the hash map? If the complement comes before the current number in the list, which index should come first in the returned list?"
+  },
+  {
+   "id": "eval_two_sum_multibug_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     6
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    return []\n```\nLine 3 returns an empty list. The test runner reaches this line after the previous bug prevents the code from running. Once you fix the comparison bug, this test will still fail because the function signature requires returning *indices*, not values. What two variables store the positions of the matching numbers?\n\nLet's fix Issue 1 first since it prevents the code from running at all. What goes on the right side of `==` to stop the loop when the complement is found?"
+  },
+  {
+   "id": "eval_valid_parens_masked_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     10
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": false,
+    "n_invented": 1,
+    "examples": [
+     "stack = []  # Add this to define the stack before using it"
+    ]
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    stack = []  # Add this to define the stack before using it\n    mapping = {')': '(', '}': '{', ']': '['}\n    for char in s:\n```\nLine 3 uses `stack` without defining it first. Python raises a NameError because Python doesn't hoist variable declarations like JavaScript does. When you run this code, Python sees `stack.pop()` first, then hits `stack = []` second. By the time the function reaches the for loop, stack hasn't been declared yet. Where should you put the line to create an empty stack?"
+  },
+  {
+   "id": "eval_binary_search_wrong_not_found_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn 0\n```\nLine 6 returns 0. The test expected -1 (not found), but your code returns 0. After exhausting the search range (left > right), the target was never found. What value should the function return when the target is not present in the sorted array?\n\nLet's fix Issue 1 first since returning 0 breaks the contract for missing targets. What should the function return when the target is not found?"
+  },
+  {
+   "id": "eval_fibonacci_undefined_var_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 10**\n```python\n    return b\n```\nLine 10 returns the second Fibonacci number. The problem asks for the nth number, so for n=3, your code returns 1 instead of 2. When n=0, your code returns 0 instead of 1. What index position in the Fibonacci sequence does the variable `n` represent?\n\nLet's fix Issue 1 since this is the core logic flaw causing all test failures. What value should b equal when n=0?"
+  },
+  {
+   "id": "eval_reverse_list_wrong_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     9
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nreturn curr\n```\nLine 7 returns the current node instead of the new head of the reversed list. The current tail becomes the new head after processing all nodes. When you reach the end of the list, current is the original tail, not the new head. After the loop, current points to the original tail, not the new head of the reversed list.\n\nWhat does current point to after processing all nodes in the list? What should the function return to represent the new beginning of the reversed list?"
+  },
+  {
+   "id": "eval_binary_search_off_by_one_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     3
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": [
+     3
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nwhile left < right:\n```\nLine 3 uses a strict less-than condition (`<`). When `left` and `right` both equal 0 (the only index), `left < right` becomes `0 < 0`, which is false. The loop never runs for a single-element array. The problem lies here: `left = mid + 1` vs `right = mid - 1`. What happens when the target is the first element?\n\nLet me guide you: Try changing the loop condition to what? This will ensure the loop always executes for a single element."
+  },
+  {
+   "id": "eval_max_subarray_negative_nums_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nmax_sum = 0\n```\nLine 3 initializes `max_sum` to 0. The problem is that 0 is greater than all negative numbers. When you encounter -3, -1, -2, the algorithm decides 0 is better than -3. This fails for [-3], [-1], and [-2], returning 0 instead of -1. What value should `max_sum` start at to capture the minimum possible sum?\n\nLet's fix Issue 1 first since setting max_sum to 0 causes the algorithm to miss negative answers. What value should `max_sum` start at to handle all negative input correctly?"
+  },
+  {
+   "id": "eval_valid_parens_unclosed_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn True\n```\nLine 6 returns True. This handles the empty string case correctly (which is valid), but it also returns True for unbalanced strings like '('. The test for '((' expects False \u2014 the stack would be empty after processing the first '(' and there would be nothing to pop for the second one. What boolean value indicates that the stack is empty and we've processed all characters?\n\nLet's fix Issue 1 first since returning True breaks the contract for unbalanced input. What should the return value be when the stack is empty and we have leftover unclosed brackets?"
+  },
+  {
+   "id": "eval_climbing_stairs_dp_init_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\ndp[1] = 1\n```\nLine 5 sets `dp[1]` to 1. When n=2, your DP table looks like `[0, 1, 1]`. The second stair can be reached from either the ground (1 way) or the first stair (1 way). There are 2 ways to reach the second stair, not 1. What is the number of ways to reach the current position from all previous positions?\n\nLet me focus on Line 5 first. When n=2, how many ways are there to reach the second stair? Think about both the ground and the first stair \u2014 how many paths lead to each?"
+  },
+  {
+   "id": "eval_three_sum_missing_right_decrement_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     16
+    ],
+    "cited_lines": [
+     11
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 11**\n```python\nleft += 1\n```\nLine 11 moves the left pointer forward. After finding a valid triplet, the next iteration of the loop will check the same position again, causing duplicates. For example, if nums = [-1, 0, 1, 2, -1, -4], the first -1 at index 3 forms a valid triplet with 0 and 1, but the second -1 at index 4 also forms a valid triplet with 0 and 1. The current logic doesn't prevent the second -1 from being used because left was already incremented.\n\nWhere is the duplicate handling for the left pointer? If moving left past index 3 would skip over index 4, how can we ensure index 4 is not processed again?"
+  },
+  {
+   "id": "eval_contains_duplicate_inverted_bool_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     1
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 1**\n```python\ndef containsDuplicate(self, nums):\n```\nLine 1 defines the function signature. The problem title is \"Contains Duplicate\". What boolean value indicates there IS a duplicate?\n\nLine 1 uses `return False` instead of `return True`. The function should return True when a duplicate is found, not when no duplicates are found yet. What boolean value indicates there ARE NO duplicates?\n\nLet's fix Issue 1 first since it's the core logic that determines whether the function works. Change `return False` to what?"
+  },
+  {
+   "id": "eval_product_except_self_undefined_var_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     11
+    ],
+    "cited_lines": [
+     9,
+     10
+    ],
+    "quoted_lines": [
+     11
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 10**\n```python\nsuffix *= num\n```\nLine 10 multiplies `suffix` by `num`, but there is no variable named `num` in scope. The loop variable for the forward pass is `i`, not `num`. This bug prevents the code from running at all \u2014 the test runner never reaches line 10 because line 9 fails with a NameError.\n\nWhat is the loop variable name for the forward pass loop (the one that goes from left to right)?"
+  },
+  {
+   "id": "eval_word_ladder_no_visited_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     15
+    ],
+    "cited_lines": [
+     9
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 9**\n```python\nif new_word == endWord:\n```\nLine 9 checks if the new word equals the end word. This is a red flag \u2014 the problem requires a path, not just finding the end word. If the current word matches the end word, the loop continues instead of stopping. After finding the end word, the search should terminate.\n\nWhy does continuing the loop cause an infinite loop? What condition makes the loop keep going even after reaching the end word?"
+  },
+  {
+   "id": "eval_coin_change_missing_min_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\ndp[i] = dp[i - coin] + 1\n```\nLine 7 updates dp[i] with the value of dp[i - coin] + 1. The problem is that dp[i - coin] already contains the minimum number of coins needed to make amount i - coin. Adding 1 gives you the minimum number of coins for amount i, but it doesn't guarantee that dp[i - coin] is the optimal subproblem solution. This can lead to suboptimal solutions like choosing 10 twice instead of one 5 and one 10.\n\nThink about how to ensure dp[i - coin] is always the optimal solution before you add 1. What should you update dp[i] to if there's no way to make amount i using any coin?"
+  },
+  {
+   "id": "eval_longest_substring_window_start_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nstart = char_index[char] + 1\n```\nLine 6 updates `start` to the position AFTER the duplicate character. For the string 'abba', the first window is 'abb'. When 'b' repeats at index 3, start becomes 4 (char_index['b'] + 1). The window 'b' at index 3 is too short \u2014 it should include both 'a's to make the window 'abba'.\n\nWhat is the maximum length of the window when 'b' repeats at index 3?\n\nLet's fix Issue 1 first since this is the core logic that determines the window size. What should start be set to when char repeats?"
+  },
+  {
+   "id": "eval_merge_two_lists_severs_tail_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     12
+    ],
+    "cited_lines": [
+     7,
+     11
+    ],
+    "quoted_lines": [
+     12
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\n    curr.next = None\n```\nLine 7 sets the tail node's next pointer to None. This breaks the linked list at that point \u2014 the rest of list1 or list2 remains unlinked. For example, if list1 has 1->2->3 and list2 has 4->5, your code would return 1->4 instead of 1->2->3->4->5. How can you preserve both lists' remaining nodes without breaking the link?\n\n**Issue 2 \u2014 Line 11**\n```python\n    return dummy.next\n```\nLine 11 returns dummy.next. The dummy node acts as a sentinel \u2014 it helps handle the empty list edge case. However, returning dummy.next means your function returns None for an empty list. If list1 is empty, your function should return list2 directly. What happens when list1 is empty? How does your current implementation handle it?\n\nLet's fix Issue 1 first since the code cannot handle remaining nodes correctly. Line 7 sets the tail node's next pointer to None. This breaks the linked list at that point \u2014 the rest of list1 or list2 remains unlinked. How can you preserve both lists' remaining nodes without breaking the link?"
+  },
+  {
+   "id": "eval_max_depth_sum_instead_of_max_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     6
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn 1 + left + right\n```\nLine 5 adds the left and right subtree depths together. The problem asks for the maximum depth, not the total depth. For a balanced tree with depth 3, left=3 and right=3. This returns 1 + 3 + 3 = 7 instead of 3. What operation should combine left and right to get the maximum depth?\n\nLet's fix Issue 1 first since this is the core misunderstanding causing incorrect results. What operation gets the maximum of two values?"
+  },
+  {
+   "id": "eval_invert_tree_both_children_same_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": false,
+    "n_invented": 1,
+    "examples": [
+     "root.left = right  # Problem: Overwrites left child without fixing right"
+    ]
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nroot.left = right\n```\nLine 5 swaps the left child with the right child. After the first recursive call, `left` gets the inverted subtree. This line overwrites `root.left` with whatever `right` was set to, which is still the original right child. The left child remains untouched. After one level, the whole left side becomes a mirror image of the right.\n\nWhat goes wrong if we overwrite `root.left` with whatever `right` was set to?\n```python\nroot.left = right  # Problem: Overwrites left child without fixing right\n```\n\nLet's fix Issue 1 first since this is the immediate problem preventing correct inversion. What goes wrong if we overwrite `root.left` with whatever `right` was set to?"
+  },
+  {
+   "id": "eval_climbing_stairs_missing_colon_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [],
+    "quoted_lines": [
+     7
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 12**\n```python\n    for i in range(3, n + 1)\n```\nLine 12 is missing a colon (`:`) at the end. Python requires a colon at the end of the header for a for loop. This is causing a SyntaxError. The test runner stops at this error and doesn't reach the return statement.\n\nWhat goes at the end of a for loop header in Python? A colon (:) or # (for a comment)?"
+  },
+  {
+   "id": "eval_is_anagram_syntax_logic_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3,
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\n    for ch in t:\n```\nLine 4 iterates through characters of `t`. The bug is that the previous bug on line 3 caused a SyntaxError. Once you fix that, this loop works fine. Here's what happens when Python reaches line 4:\n- It sees `for ch in t:` \u2014 Python expects a colon (:) at the end of the line\n- There is no colon, so Python raises a SyntaxError\n- The test runner stops executing and reports the error WITHOUT reaching line 4\n\nWhat character should come after the colon (:) to make this a valid for loop? Hint: it's a single character.\n\nLet's fix Issue 1 first since the code cannot run at all until line 4 is fixed. What character goes after the colon (:) to make this a valid for loop?"
+  },
+  {
+   "id": "eval_reverse_list_missing_next_node_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nwhile curr:\n```\nLine 3 continues looping while `curr` is not None. After the first iteration, `prev` becomes the new head, and `curr` becomes `head`. The original `head` becomes `None` (the old tail). This means on the next iteration, `curr` becomes `None`, but the loop condition still evaluates to True. The loop gets stuck in a tight loop without advancing. The list is empty after the first iteration \u2014 the loop runs forever.\n\nWhat happens to `curr` when you reach the end of the list? Does the loop continue?"
+  },
+  {
+   "id": "eval_binary_search_mid_and_left_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4,
+     8
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code. Let me guide you through the first one:\n\n**Issue 1 \u2014 Line 5**\n```python\nmid = left + right / 2\n```\nLine 5 calculates the midpoint using integer division (`/`), which truncates towards zero. For example, if `left` is 1 and `right` is 3, `left + right` is 4, and `4 / 2` is 2 (not 2.0). This can lead to missing the middle element when `left` and `right` are consecutive. What operator should you use to get a floating-point result for midpoint calculation?\n\nLet's fix Issue 1 first since this is the most common mistake in binary search. What operator should you use for midpoint calculation?"
+  },
+  {
+   "id": "eval_max_subarray_init_and_reset_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2,
+     7
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nmax_sum = 0\n```\nLine 3 initializes `max_sum` to 0. This is the bug: when all numbers are negative, 0 is greater than all possible sums. The result for [-3, -1, -2] should be -1 (the maximum of all negatives), but your code returns 0. What value should `max_sum` start at when handling all negative numbers?\n\nLet's fix Issue 1 since this is the core logic flaw causing all tests to fail. Change `max_sum` to start at..."
+  },
+  {
+   "id": "eval_valid_parens_pop_invert_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6,
+     11
+    ],
+    "cited_lines": [
+     3,
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    stack = []\n```\nLine 3 creates an empty stack. When you encounter \")\", you pop from the stack and compare to pairs[\")\"] = \"(\". If the stack is empty, stack.pop() raises IndexError. This is what crashes for Test 1: `isValid(\")\")`.\n\nWhat data structure stores items in LIFO (last-in-first-out) order?\n\n**Issue 2 \u2014 Line 5**\n```python\n    for ch in s:\n```\nLine 5 iterates over every character in the string. For Test 2: `isValid(\"((\")` \u2014 what gets added to the stack? After processing the first '(' and second '(', what is the stack state? What happens when you try to pop from an empty stack?\n\nLet's fix Issue 1 first. An empty stack can't handle the empty string. What should stack be initialized to handle \"\", \"()\", \"((()))\", etc. without raising an error?"
+  },
+  {
+   "id": "eval_max_profit_masked_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     4,
+     8
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": [
+     4,
+     8
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\nfor price in prices\n```\nLine 7 has `for price in prices`: Python requires a colon (`:`) at the end of each loop header. This line is missing the colon, causing a SyntaxError. The test runner stops at the first error it encounters \u2014 even if you fix this, there will still be another issue preventing the code from working.\n\nWhat goes at the end of a for loop header in Python? A colon (`:`) or a semicolon (`;`)?\n\n**Issue 2 \u2014 Line 10**\n```python\nmax_profit = profit\n```\nLine 10 overwrites `max_profit` with the current profit on every iteration. This means that after the loop, `max_profit` contains the profit of the last iteration, not the maximum profit across all iterations. After fixing Issue 1, try to solve this without looking \u2014 what should `max_profit` store at the end of the loop? Hint: think about the goal \u2014 we want the maximum profit, not just the current profit."
+  },
+  {
+   "id": "eval_contains_dup_missing_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn True\n```\nLine 5 returns True when a duplicate is found. The problem asks to return False for a list with no duplicates. This works for lists with duplicates (returns True), but for lists without duplicates (returns False), the function returns None instead. What boolean value should the function return when no duplicate is found?\n\nLet's fix Issue 1 first since returning None makes the function silent about whether the list was duplicate-free. What should the function return when no duplicate is found?"
+  },
+  {
+   "id": "eval_merge_sorted_off_by_one_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     11
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": [
+     3
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nwhile i >= 0 and j > 0:\n```\nLine 4 continues the while loop when `j > 0`. This means the loop will skip over the first element of `nums2` if `j` becomes 0. When `j` reaches 0, the loop stops entirely. What happens to `nums1` when `j` reaches 0?\n\nLet me give you three options for fixing this:\n1. Stop the loop when `j` reaches 0: `while j >= 0:` (fixes the bug)\n2. Include `i >= 0` in the condition: `while i >= 0 and j > 0:` (fixes the bug)\n3. Use `i >= 0` instead of `j > 0`: `while i >= 0 and j > 0:` (fixes the bug)\n\nTry one of these and let me know how it goes!"
+  },
+  {
+   "id": "eval_has_cycle_wrong_return_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     9
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nwhile fast and fast.next:\n```\nLine 5 continues the loop even when fast reaches the end. When fast reaches the end, fast.next becomes None. This triggers the loop condition (fast and fast.next) and makes slow move again, causing slow to become None. Then fast becomes None too, and the loop continues. After the loop, you return True because slow == fast. There is no cycle \u2014 you just checked the entire list and found no cycle. Why does the code return True instead of False?\n\nLet me give you a hint: What happens to fast.next when fast reaches the end of the list?"
+  },
+  {
+   "id": "eval_mt_confusion_binary_search_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Let me break down why `left == right` matters:\n\n1. **Single Element Array:** If the array has just one element (e.g., `[5]`), `left` and `right` start at 0. With `left < right`, the loop condition is false and the loop doesn't run at all. The function returns -1 instead of returning 0, which is the correct index for the single element.\n\n2. **Two Elements Array:** For an array like `[1, 5]`, if the target is 5, `left` starts at 0, `right` starts at 1. After one iteration, `left` becomes 1 (the midpoint), `right` becomes 0. Now `left < right` is true again, and the loop continues. This is correct behavior \u2014 the target is at index 1.\n\n3. **Empty Array:** An empty array should return -1. With `left < right`, the loop never runs. With `left <= right`, the loop would run once (left=0, right=0) and exit, returning -1 as expected.\n\nThe key insight is that for a sorted array of any length, including 1, 2, or 3 elements, the loop should always check the middle element. By changing `left < right` to `left <= right`, you ensure the loop checks the middle element even when there's only one element left. This fixes the bug for single-element arrays and maintains correctness for all other cases.\n\nTry making this change and let me know how it goes. What do you think \u2014 should we change `left < right` to `left <= right`?"
+  },
+  {
+   "id": "eval_mt_frustration_reverse_list_001",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     5,
+     7
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "It's okay! Everyone struggles sometimes. Let's break down Issue 1 in simpler terms:\n\n**Issue 1 \u2014 Line 5**\n```python\ncurr.next = prev\n```\nLine 5 overwrites `curr.next` before saving where it was pointing. Once you reassign it, the original next node is lost forever.\n\nThink about it: After line 5 runs, `curr.next` now points to `prev`. But `prev` was the original next node! By setting `curr.next` to `prev`, you're cutting the link between `prev` and the rest of the list.\n\nWhat do you need to save the original next node before line 5 overwrites it?"
+  },
+  {
+   "id": "eval_mt_partial_answer_coin_change_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     7
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "Exactly! Use `max()` to keep the minimum number of coins found so far for each amount. This ensures we always choose the best (minimum) solution among all possibilities.\n\nTry that and let us know how it goes!"
+  },
+  {
+   "id": "eval_ext_mutable_default_001",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     1
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nbucket.append(item)\n```\nLine 4 appends the current item to the bucket. This is correct. However, the bucket is shared across all calls to `collect()`, causing the bug. Each call sees the accumulated results from previous calls. For example, if you call `collect(1)` twice, the bucket ends up with `[1], [1, 1]` instead of just `[1]`.\n\nWhy does the bucket grow instead of reset for each call? What does Python do with default arguments like `bucket=[]` when a function is defined versus when it's called? Hint: think about how many times `collect` is defined vs how many times it gets called."
+  },
+  {
+   "id": "eval_ext_integer_division_002",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nmid = (lo + hi) / 2\n```\nLine 5 uses `/` for division. In Python 3, dividing two integers gives a float. Binary search requires integer indices. When `lo` is 2 and `hi` is 5, `(2 + 5) / 2` evaluates to 3.5, which can't be used as an array index. The test runner catches this as a `TypeError` before reaching the actual bug. What operator makes 2 + 5 equal to 3, not 3.5?\n\nLet's fix Issue 1 since the TypeError happens before the actual bug. What operator makes 2 + 5 equal to 3, not 3.5?"
+  },
+  {
+   "id": "eval_ext_mutate_while_iterating_003",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nfor n in nums:\n```\nLine 4 iterates through a copy of `nums` \u2014 the list changes while iterating. When `remove()` is called, it removes the next element, not the current one. By the time the loop ends, all evens have been removed and the list is empty.\n\nWhen you remove an item from a list while iterating, what happens to the current index position's value? Does it stay the same, become the next value, or become the previous value?"
+  },
+  {
+   "id": "eval_ext_shallow_grid_004",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 9**\n```python\nreturn grid\n```\nLine 9 returns the entire grid \u2014 the problem asks to return the value of the cell. This means you need to return a single integer, not the whole grid. After setting the cell, what is stored at grid[r][c]? What type is returned?\n\nLet's fix Issue 1 first since returning the grid gives the wrong result. What should you return instead?"
+  },
+  {
+   "id": "eval_ext_float_equality_005",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 4**\n```python\nif has_converged(loss, new_loss):\n```\nLine 4 checks if `loss == new_loss`, but the loss decreases by 10% each iteration. This means the loss will never equal the new loss \u2014 they get closer over time but never become exactly equal. The loop runs for all iterations instead of breaking early. What threshold could you compare the difference to instead of equality?\n\nLet's fix Issue 1 first since it makes the loop run unnecessarily. What threshold should replace `==` to stop the loop when the change is small enough?"
+  },
+  {
+   "id": "eval_ext_skips_first_006",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nreturn out\n```\nLine 6 returns the list without the first element. The loop begins at index 1 (`range(1, len(nums))`), so the first element is skipped. With an input like `[3, 2, 1]`, the output is `[3]` instead of the expected `[3, 2]`. How many elements does the loop include for an input of length `n`?\n\nLet me focus you on Line 6 first. The loop begins at index 1. How many elements does it process for an input of length `n`?"
+  },
+  {
+   "id": "eval_ext_is_vs_equals_007",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor v in values:\n```\nLine 3 iterates through each item in `values`, but the bug is in the comparison: `v is target`. The `is` operator checks for identity, not equality. For integers, `is` and `==` behave the same way, but for larger numbers, they can differ. Try `1000000000 is 1000000000` \u2014 does it return True or False? What does Python return for `1000000000 == 1000000000`?\n\nLet's fix Issue 1 since this is causing the function to miss matches for larger numbers. Change `is` to what?"
+  },
+  {
+   "id": "eval_ext_early_return_008",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     3
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\n    if n > 0:\n```\nLine 3 uses `return True` inside the if block. This means the function returns True as soon as it finds the first positive number. If the list contains -5, the function returns True without checking the rest. For [1, -5, 3], the function sees -5 and returns True, missing the 3 that makes the list not all positive.\n\nReturn True only if you find a negative number. What determines whether the entire list is all positive?"
+  },
+  {
+   "id": "eval_ext_dict_mutation_009",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2
+    ],
+    "cited_lines": [
+     3,
+     5
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor key in counts:\n```\nLine 3 iterates through a copy of `counts`' keys. This works, but doesn't prevent changes. The actual problem is here:\n```python\n    del counts[key]\n```\nLine 5 deletes a key from `counts`, changing the dictionary while iterating. This is unsafe \u2014 Python raises an error if the dictionary changes size during iteration. Even if you delete one key at a time, the underlying data structure can still change.\n\nWhy does deleting one key still cause a problem?\nTry this: After deleting one key, how many items are left in `counts`? How many iterations does the for loop perform next?"
+  },
+  {
+   "id": "eval_ext_swapped_bounds_010",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 0.5,
+    "by_line_number": false,
+    "by_quoted_code": true,
+    "expected_lines": [
+     2,
+     4
+    ],
+    "cited_lines": [
+     2,
+     3
+    ],
+    "quoted_lines": [
+     2,
+     4
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 2**\n```python\n    if value < high:\n```\nLine 2 uses `< high` instead of `<= high`. If `value` is exactly equal to `high`, the condition evaluates to False. For `clamp(5, 0, 10)` where `value` is 5 and `high` is 10, the code does not enter the if block. The return statement below is not reached, so the function returns the original value instead of clamping it to 10.\n\nWhat condition should allow values equal to `high` to be clamped?\n\n**Issue 2 \u2014 Line 3**\n```python\n    if value > low:\n```\nLine 3 uses `> low` instead of `>= low`. If `value` is exactly equal to `low`, the condition evaluates to False. For `clamp(-3, 0, 10)` where `value` is -3 and `low` is 0, the code does not enter the if block. The return statement below is not reached, so the function returns the original value instead of clamping it to 0.\n\nWhat condition should allow values equal to `low` to be clamped?\n\nLet's fix Issue 1 first since this is the first bug we identified. Line 2 uses `< high` instead of `<= high`. If `value` is exactly equal to `high`, the condition evaluates to False. For `clamp(5, 0, 10)` where `value` is 5 and `high` is 10, the code does not enter the if block. The return statement below is not reached, so the function returns the original value instead of clamping it to 10. What condition should allow values equal to `high` to be clamped?"
+  },
+  {
+   "id": "eval_ext_infinite_binary_search_011",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     8
+    ],
+    "cited_lines": [
+     6
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 6**\n```python\nif nums[mid] < target:\n```\nLine 6 uses `<` instead of `<=`. When `nums[mid] == target`, this misses the match. For example, if `target = 3` and the middle element is also 3, the loop continues instead of stopping. The loop continues until lo == hi, which can lead to lo == hi == mid. What operator should you use to include the midpoint in the search range?\n\nLet's fix Issue 1 first since this is the bug causing the missing matches. Change `<` to what?"
+  },
+  {
+   "id": "eval_ext_visited_after_recursion_012",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     8
+    ],
+    "cited_lines": [
+     7
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 7**\n```python\n    return len(visited)\n```\nLine 7 returns the size of visited, which is the total number of unique nodes seen during the traversal. The problem asks for the number of connected components. If there are 2 cycles in the graph, each cycle will count as 1 component \u2014 the total count would be 2, not 1. How many connected components does this graph have: 1 -> 2 -> 3 -> 1?\n\nLet's fix Issue 1 first since this is the core logic flaw causing the RecursionError. What does the graph look like if you start at node 1? How many connected components should the answer be?"
+  },
+  {
+   "id": "eval_ext_sliding_window_013",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     8,
+     9
+    ],
+    "cited_lines": [
+     10
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **3 issue(s)** in your code. Let me lead with the first one:\n\n**Issue 1 \u2014 Line 10**\n```python\nreturn best if best <= len(nums) else 0\n```\nLine 10 returns 0 when the window is invalid (best > length). The problem asks for the minimum window size, so returning 0 means the window never existed. The window could exist and be valid \u2014 return 1 when best > length to handle this case.\n\nWhat value should the function return if the window is invalid (best > len(nums))? Return 1 when the window is valid (best <= length). What goes here: `return 1` or `return best`?"
+  },
+  {
+   "id": "eval_ext_closure_capture_014",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     4
+    ],
+    "cited_lines": [
+     3,
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\nfor f in factors:\n```\nLine 3 iterates through the factors list. This will work for all factor values, not just the last one. The problem is that all generated functions use the same f, which gets updated on each iteration. After the loop, f becomes the last factor value, and all functions use that.\n\nTry this: How would the behavior change if factors was [2, 3, 5]? What would the last function do differently from the others? What goes wrong when you append lambda x: x * f for each factor?\n\n**Issue 2 \u2014 Line 5**\n```python\nreturn [fn(value) for fn in fns]\n```\nLine 5 returns the results of applying all functions to value. This works fine \u2014 the issue is with how the functions are created, not how they are used. With the current implementation, all functions use the last value of f. Fixing that also fixes this.\n\nFocus on Issue 1 first. What happens to f when you append lambda x: x * f for each factor? What value does each function use for f? What does that mean for the results when you apply them to value?"
+  },
+  {
+   "id": "eval_ext_dp_init_and_order_015",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     2,
+     7
+    ],
+    "cited_lines": [
+     3,
+     5
+    ],
+    "quoted_lines": [
+     2
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\ndp = [0] * (amount + 1)\n```\nLine 3 creates a DP array with length `amount + 1`. The problem requires returning 0 when there's no way to make the amount \u2014 if the amount is 10 and no coin sums to 10, dp[10] should stay 0. However, your code sets dp[10] to 10, which is incorrect. What value should dp[10] be if there's no combination of coins that makes 10?\n\n**Issue 2 \u2014 Line 5**\n```python\nfor coin in coins:\n```\nLine 5 iterates through all coins for each value. This means for amount=10, you check 1, 2, 5, 10, 1, 2, 5, 10, ... This duplicates work and can lead to incorrect answers. For example, if coin=10 and amount=10, your code will set dp[10] to 1, but the optimal solution is 0 coins. What does the inner loop iterate over if you want to build the DP table correctly?"
+  },
+  {
+   "id": "eval_ext_sort_key_and_reverse_016",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.5,
+    "precision": 1.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     3,
+     5
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code.\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn ordered[:k]\n```\nLine 5 slices the sorted list to get the first k items. The problem asks for the top k records based on score, not name. Sorting by name means the highest-scoring records might not appear first. For example, if k=2 and the scores are [90, 85, 75], returning [75, 85] is incorrect \u2014 you need [90, 85].\n\nWhat is the tie-breaking rule for sorting when multiple records have the same score? How does Python decide which record comes first when they have the same score?\n\nLet's fix Issue 1 first since this is the core misunderstanding causing the wrong results. What happens if two records have the same score? Does Python sort them alphabetically or numerically?"
+  },
+  {
+   "id": "eval_ext_empty_input_only_017",
+   "n_bugs": 1,
+   "loc": {
+    "applicable": true,
+    "passed": true,
+    "recall": 1.0,
+    "precision": 1.0,
+    "by_line_number": true,
+    "by_quoted_code": true,
+    "expected_lines": [
+     5
+    ],
+    "cited_lines": [
+     5
+    ],
+    "quoted_lines": [
+     5
+    ]
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **1 issue** in your code. This is the first place to look:\n\n**Issue 1 \u2014 Line 5**\n```python\nreturn total / len(nums)\n```\nLine 5 divides total by len(nums). The test expects 3.0, but your code returns 3.0000000000000004 \u2014 floating-point precision error. Python 3.8+ uses arbitrary-precision rationals for division, but Python 3.7 and earlier use binary floating-point, which can't represent 1/3 exactly. The test framework rounds to 15 decimal places for you, but your code produces a slightly longer string.\n\nWhat is the expected result for [1, 2, 3]? Hint: How many ways can you get 6 from 1+2+3?"
+  },
+  {
+   "id": "eval_ext_accumulator_reset_018",
+   "n_bugs": 2,
+   "loc": {
+    "applicable": true,
+    "passed": false,
+    "recall": 0.0,
+    "precision": 0.0,
+    "by_line_number": false,
+    "by_quoted_code": false,
+    "expected_lines": [
+     6,
+     8
+    ],
+    "cited_lines": [
+     3,
+     4
+    ],
+    "quoted_lines": []
+   },
+   "invented": {
+    "applicable": true,
+    "passed": true,
+    "n_invented": 0,
+    "examples": []
+   },
+   "text": "I found **2 issue(s)** in your code.\n\n**Issue 1 \u2014 Line 3**\n```python\ncurrent = []\n```\nLine 3 creates a new empty list for each item. This means there's no accumulation happening \u2014 each call to `append` goes into its own separate list. With `items = [1, 2, 1, 2, 1]`, the first `1` gets its own list, the second `1` gets its own list, and so on. By the time we get to the third `1`, the first list is already empty. What data structure should accumulate all occurrences of the same value?\n\n**Issue 2 \u2014 Line 4**\n```python\nfor item in items:\n```\nLine 4 iterates over the original list. This means each item gets processed individually. If `items = [1, 2, 1, 2, 1]`, the first `1` gets added to the first run, then the second `1` gets added to the second run, and so on. By the time we get to the second `1`, the first run is already complete. Iterate over what instead to process each group exactly once?\n\nLet's fix Issue 1 first since this is the most severe problem \u2014 it causes the code to build empty runs. What data structure should accumulate all occurrences of the same value?"
+  }
+ ]
+}

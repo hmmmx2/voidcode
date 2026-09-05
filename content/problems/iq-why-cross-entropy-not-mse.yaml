@@ -1,0 +1,197 @@
+slug: iq-why-cross-entropy-not-mse
+title: Return dL/dz for softmax under two losses
+difficulty: medium
+categories:
+- ML
+- DL
+concepts:
+- numerical_stability
+- loss_functions
+description: 'Given `logits` (a list of real numbers), an integer `label` (the index of the correct class)
+  and `loss` (either `"ce"` or `"mse"`), return `dL/dz` — the gradient of the loss with respect to the
+  **logits** — as a list of the same length.
+
+
+  Let `p = softmax(z)` and let `y` be the one-hot vector with `y[label] = 1`. The Jacobian of the softmax
+  is
+
+
+  ```
+
+  dp_i/dz_j = p_i * (delta_ij - p_j)
+
+  ```
+
+
+  **`loss == "ce"`** — `L = -log p[label]`, so `dL/dp_i = -y_i / p_i`.
+
+
+  **`loss == "mse"`** — `L = sum_i (p_i - y_i)**2`, so `dL/dp_i = 2 * (p_i - y_i)`.
+
+
+  Push each of those through the Jacobian yourself. In one case the `1/p_i` from the log cancels the `p_i`
+  in the Jacobian and almost everything disappears. In the other nothing cancels, and the surviving expression
+  is what makes the gradient vanish exactly where the model is confidently wrong.
+
+
+  Edge cases and rounding:
+
+
+  - Both gradients sum to zero across the coordinates — every row of the Jacobian does. Use that as a
+  self-check.
+
+  - `logits` are unnormalised and may be negative.
+
+  - Round every returned value to 6 decimal places.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 14
+examples:
+- input: logits = [0.0, 0.0, 0.0], label = 0, loss = "ce"
+  output: '[-0.666667, 0.333333, 0.333333]'
+  explanation: 'p is uniform at 1/3 and y = [1, 0, 0]. Cross-entropy leaves nothing but the difference:
+    [1/3 - 1, 1/3, 1/3].'
+- input: logits = [0.0, 0.0, 0.0], label = 0, loss = "mse"
+  output: '[-0.444444, 0.222222, 0.222222]'
+  explanation: 'Same p, but every coordinate keeps a factor of p_j: 2*p_j*((p_j - y_j) - sum_i p_i*(p_i
+    - y_i)). Here the weighted sum is 0, leaving 2*(1/3)*(-2/3) = -4/9 and 2*(1/3)*(1/3) = 2/9.'
+- input: logits = [6.0, 0.0], label = 1, loss = "mse"
+  output: '[0.009842, -0.009842]'
+  explanation: The model is confidently wrong (p ~ [0.9975, 0.0025] with the answer being class 1) and
+    squared error still produces a gradient of magnitude 0.0098. Cross-entropy on the same input gives
+    0.9975 — a hundred times larger.
+constraints:
+- 2 <= len(logits) <= 10^3
+- 0 <= label < len(logits)
+- loss is either "ce" or "mse"
+- The returned gradient sums to 0.
+- Round each value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: logits
+    value: '[0.0, 0.0, 0.0]'
+  - name: label
+    value: '0'
+  - name: loss
+    value: ce
+  stdin: '[0.0, 0.0, 0.0]
+
+    0
+
+    ce'
+  expected_output: '[-0.666667, 0.333333, 0.333333]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: logits
+    value: '[0.0, 0.0, 0.0]'
+  - name: label
+    value: '0'
+  - name: loss
+    value: mse
+  stdin: '[0.0, 0.0, 0.0]
+
+    0
+
+    mse'
+  expected_output: '[-0.444444, 0.222222, 0.222222]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: logits
+    value: '[6.0, 0.0]'
+  - name: label
+    value: '1'
+  - name: loss
+    value: ce
+  stdin: '[6.0, 0.0]
+
+    1
+
+    ce'
+  expected_output: '[0.997527, -0.997527]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: logits
+    value: '[6.0, 0.0]'
+  - name: label
+    value: '1'
+  - name: loss
+    value: mse
+  stdin: '[6.0, 0.0]
+
+    1
+
+    mse'
+  expected_output: '[0.009842, -0.009842]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: logits
+    value: '[1.0, 2.0, 0.5, -1.0]'
+  - name: label
+    value: '2'
+  - name: loss
+    value: mse
+  stdin: '[1.0, 2.0, 0.5, -1.0]
+
+    2
+
+    mse'
+  expected_output: '[-0.036289, 0.370947, -0.317982, -0.016676]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: logits
+    value: '[2.0, -1.0, 0.5]'
+  - name: label
+    value: '1'
+  - name: loss
+    value: ce
+  stdin: '[2.0, -1.0, 0.5]
+
+    1
+
+    ce'
+  expected_output: '[0.785597, -0.960887, 0.17529]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def logit_grad(self, logits, label, loss):\n\
+    \        \"\"\"\n        :type logits: List[float]\n        :type label: int\n        :type loss:\
+    \ str  -- \"ce\" or \"mse\"\n        :rtype: List[float]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    logits = json.loads(_in[0])
+
+    label = int(_in[1])
+
+    loss = _in[2].strip()
+
+    _r = Solution().logit_grad(logits, label, loss)
+
+    print([round(float(x), 6) + 0.0 for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def logit_grad(self, logits, label, loss):\n\
+  \        m = max(logits)\n        exps = [math.exp(z - m) for z in logits]\n        s = sum(exps)\n\
+  \        p = [e / s for e in exps]\n        d = [p[i] - (1.0 if i == label else 0.0) for i in range(len(p))]\n\
+  \        if loss == \"ce\":\n            return d\n        dot = sum(d[i] * p[i] for i in range(len(p)))\n\
+  \        return [2.0 * p[j] * (d[j] - dot) for j in range(len(p))]\n"

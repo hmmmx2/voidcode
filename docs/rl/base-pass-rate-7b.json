@@ -1,0 +1,557 @@
+{
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "group": 8,
+  "temperature": 0.8,
+  "problems": 60,
+  "band": [
+    0.1,
+    0.9
+  ],
+  "usable": 6,
+  "always_solved": 2,
+  "never_solved": 52,
+  "mean_pass_rate": 0.0729,
+  "dead_group_fraction": 0.9,
+  "results": [
+    {
+      "id": "stable-softmax",
+      "title": "Numerically Stable Softmax",
+      "passed": 8,
+      "group": 8,
+      "pass_rate": 1.0,
+      "mean_case_fraction": 1.0,
+      "timeouts": 0
+    },
+    {
+      "id": "cross-entropy-loss",
+      "title": "Cross-Entropy Loss",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.775,
+      "timeouts": 0
+    },
+    {
+      "id": "layer-norm",
+      "title": "Layer Normalisation",
+      "passed": 3,
+      "group": 8,
+      "pass_rate": 0.375,
+      "mean_case_fraction": 0.475,
+      "timeouts": 0
+    },
+    {
+      "id": "sgd-momentum-step",
+      "title": "SGD Step with Momentum",
+      "passed": 5,
+      "group": 8,
+      "pass_rate": 0.625,
+      "mean_case_fraction": 0.625,
+      "timeouts": 0
+    },
+    {
+      "id": "scaled-dot-product-attention",
+      "title": "Scaled Dot-Product Attention",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "top-p-sampling",
+      "title": "Top-p (Nucleus) Sampling",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "bpe-merge",
+      "title": "BPE Merge Step",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iou-nms",
+      "title": "IoU and Non-Max Suppression",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.025,
+      "timeouts": 0
+    },
+    {
+      "id": "broadcast-shapes",
+      "title": "Broadcast Shapes",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.6,
+      "timeouts": 0
+    },
+    {
+      "id": "batchnorm-inference",
+      "title": "BatchNorm at Inference",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "parallel-reduction",
+      "title": "Parallel Reduction",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.275,
+      "timeouts": 1
+    },
+    {
+      "id": "thread-index-mapping",
+      "title": "Thread Index Mapping",
+      "passed": 2,
+      "group": 8,
+      "pass_rate": 0.25,
+      "mean_case_fraction": 0.325,
+      "timeouts": 0
+    },
+    {
+      "id": "sigmoid",
+      "title": "Sigmoid activation",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.25,
+      "timeouts": 0
+    },
+    {
+      "id": "min-max-scale",
+      "title": "Min-max scaling",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.5,
+      "timeouts": 0
+    },
+    {
+      "id": "layer-norm-backward",
+      "title": "Layer Normalisation Backward",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "online-softmax",
+      "title": "Online Softmax",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-auc",
+      "title": "Compute ROC-AUC on a whiteboard",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-adam-update",
+      "title": "One Adam step, from memory",
+      "passed": 1,
+      "group": 8,
+      "pass_rate": 0.125,
+      "mean_case_fraction": 0.2812,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-grad-clip",
+      "title": "Clip gradients by global norm",
+      "passed": 6,
+      "group": 8,
+      "pass_rate": 0.75,
+      "mean_case_fraction": 0.85,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-derive-logistic-gradient",
+      "title": "Gradient of the logistic log-loss",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.4,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-compute-metrics-from-confusion",
+      "title": "Score a classifier from four raw counts",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.025,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-bayes-optimal-threshold",
+      "title": "Threshold a calibrated score by cost",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-resampling-odds-correction",
+      "title": "Undo resampling with an odds correction",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.2,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-bias-variance-decomposition",
+      "title": "Split test error into bias, variance and noise",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.075,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-count-transformer-params",
+      "title": "Count the parameters of a transformer config",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-activation-memory-budget",
+      "title": "Size a mixed-precision training memory budget",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-residual-jacobian",
+      "title": "Decompose a residual stack's gradient by path length",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-fp16-update-underflow",
+      "title": "Simulate a weight update in a low-precision format",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-warmup-adam-variance",
+      "title": "Compute the effective sample count behind Adam's second moment",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-why-cross-entropy-not-mse",
+      "title": "Return dL/dz for softmax under two losses",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-eigenvalues-of-the-hessian",
+      "title": "Score a learning rate against the curvature spectrum",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-kl-divergence-asymmetry",
+      "title": "Compute both directions of KL with the zero cases right",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.375,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-why-scale-by-sqrt-dk",
+      "title": "Size the attention score divisor from head width",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0208,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-matrix-calculus-backprop",
+      "title": "Backprop a linear layer by hand",
+      "passed": 2,
+      "group": 8,
+      "pass_rate": 0.25,
+      "mean_case_fraction": 0.375,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-expectation-of-dropout",
+      "title": "Compute the moments inverted dropout leaves behind",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-derive-layernorm-backward",
+      "title": "Push a gradient back through LayerNorm",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-derive-rope-relative",
+      "title": "Rotate q and k by position, then dot them",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-attention-vs-ffn-crossover",
+      "title": "Find the length where attention FLOPs overtake everything else",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 1
+    },
+    {
+      "id": "iq-logsumexp-stability",
+      "title": "Merge log-sum-exp across tiles seen one at a time",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-decode-throughput-arithmetic",
+      "title": "Bound decode throughput from memory bandwidth",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.05,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-perplexity-and-loss",
+      "title": "Turn log-likelihoods into perplexity and bits-per-byte",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-derive-infonce",
+      "title": "Symmetric contrastive loss for an image-text batch",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-vit-token-budget",
+      "title": "Token count and attention cost across two ViT configurations",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-modality-gap-invariance",
+      "title": "Measure the offset between two encoders' embedding clouds",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-patch-embedding-cost",
+      "title": "Share of a ViT spent in the patch stem",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-arithmetic-intensity-roofline",
+      "title": "Place a kernel on the roofline",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-coalescing-transaction-count",
+      "title": "Count the sectors a warp actually fetches",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0417,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-kv-cache-memory",
+      "title": "Size the KV cache and count concurrent requests",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-occupancy-from-resources",
+      "title": "Compute occupancy from the binding resource",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0833,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-pipeline-bubble-fraction",
+      "title": "Compute the pipeline bubble and the micro-batch count it demands",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0208,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-stratified-split",
+      "title": "Split without leaking a user across the boundary",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-causal-mask",
+      "title": "Softmax over a row that is entirely masked",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.35,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-interpolate-pos-embed",
+      "title": "Resize a ViT's position embeddings",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.125,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-implement-warp-reduction",
+      "title": "Simulate a warp shuffle reduction",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.075,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-weighted-distribution-moments",
+      "title": "Normalise weights and take the first two moments",
+      "passed": 8,
+      "group": 8,
+      "pass_rate": 1.0,
+      "mean_case_fraction": 1.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-ulp-and-absorption",
+      "title": "Find the spacing at a value and the update it swallows",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-matmul-chain-order",
+      "title": "Choose the multiplication order for a three-matrix product",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.1458,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-reverse-mode-fan-out",
+      "title": "Accumulate a gradient through a value used twice",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-int8-scale-and-zero-point",
+      "title": "Quantize a tensor two ways and compare the error",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0208,
+      "timeouts": 0
+    },
+    {
+      "id": "iq-fusion-memory-traffic",
+      "title": "Count the traffic an elementwise chain pays unfused",
+      "passed": 0,
+      "group": 8,
+      "pass_rate": 0.0,
+      "mean_case_fraction": 0.0,
+      "timeouts": 0
+    }
+  ]
+}

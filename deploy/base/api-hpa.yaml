@@ -1,0 +1,51 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: voidcode-api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: voidcode-api }
+  minReplicas: 2
+  # CEILING SET BY POSTGRES, NOT BY AMBITION.
+  #
+  # This was 10, and 10 would have exhausted the database. Measured, not assumed:
+  #
+  #   max_connections                    100
+  #   pool per pod (pool_size 5 +
+  #     max_overflow 10)                  15
+  #   baseline connections in use        ~11  (migrations, admin, other clients)
+  #
+  # 10 replicas x 15 = 150 > 100. The API would start refusing connections at
+  # roughly 6 replicas, and the HPA would keep scaling up because CPU is still
+  # high — adding pods that cannot connect.
+  #
+  # A rolling update makes it worse than the steady-state figure: old and new pods
+  # overlap, so peak is above `replicas`. At 4 with the default 25% surge that is
+  # 5 pods = 75 connections, plus baseline = ~86. Fits, with headroom for the
+  # `superuser_reserved_connections` Postgres keeps back.
+  #
+  # TO GO HIGHER, pick one deliberately: put pgbouncer in front (the right answer
+  # for many small pods), raise max_connections and the database's memory with it,
+  # or shrink the per-pod pool. Do not raise this number on its own.
+  maxReplicas: 4
+  metrics:
+    # CPU, because the API's expensive paths are CPU-bound: argon2id hashing on every
+    # login and the recommendation join. Memory would be the wrong signal — a Python
+    # process's RSS does not fall when load does, so a memory-driven HPA scales up and
+    # then never scales back down.
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      # Five minutes of sustained lower load before removing a pod. The default 300s
+      # window with no policy lets a brief dip start a scale-down that a returning
+      # spike immediately reverses — flapping, and every removed pod cuts the chat
+      # streams it was serving.
+      stabilizationWindowSeconds: 300
+      policies:
+        - { type: Pods, value: 1, periodSeconds: 60 }
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 30 }

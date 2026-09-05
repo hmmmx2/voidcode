@@ -1,0 +1,45 @@
+slug: implement-adam-update
+title: Write the Adam update
+difficulty: medium
+categories:
+- DL
+- PyTorch
+concepts:
+- optimizers_adaptive
+description: Write one Adam step from memory, including bias correction. Then say what AdamW changes and
+  why it mattered.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- Meta
+- OpenAI
+- NVIDIA
+prompt: Write one Adam step from memory, including bias correction. Then say what AdamW changes and why
+  it mattered.
+approach: Two moments, bias-correct both, divide. The correction terms are what people drop, so derive
+  rather than recall them.
+model_answer: "    def adam_step(w, g, m, v, t, lr=1e-3,\n                  b1=0.9, b2=0.999, eps=1e-8,\
+  \ wd=0.0):\n        m = b1 * m + (1 - b1) * g          # 1st moment\n        v = b2 * v + (1 - b2) *\
+  \ g * g      # 2nd moment\n        m_hat = m / (1 - b1 ** t)          # bias correction\n        v_hat\
+  \ = v / (1 - b2 ** t)\n        # AdamW: decay applied to w directly, NOT added to g\n        w = w -\
+  \ lr * (m_hat / (v_hat ** 0.5 + eps) + wd * w)\n        return w, m, v\n\nWHY THE CORRECTION. m starts\
+  \ at 0, so E[m_1] = (1-b1) E[g] = 0.1 E[g] — a tenfold underestimate on step 1. Since m_t is a geometric\
+  \ sum, E[m_t] ≈ (1 - b1^t) E[g], so dividing by (1 - b1^t) makes it unbiased. Without it the first steps\
+  \ are far too small, and with b2 = 0.999 the second moment is off for roughly a thousand steps.\n\n\
+  ADAMW. Classic Adam implements L2 by adding wd*w to the gradient — so the decay then passes through\
+  \ the 1/sqrt(v_hat) rescaling. Parameters with large gradients get *less* decay, which is backwards:\
+  \ the regularisation strength ends up coupled to gradient magnitude. AdamW applies it directly to w,\
+  \ decoupled from the adaptive term. Not cosmetic — it changes which parameters are regularised, and\
+  \ it is why AdamW is the default for transformers.\n\nOne detail: eps sits outside the square root here.\
+  \ Inside, it no longer bounds the step size the way it is meant to."
+follow_ups:
+- Derive E[m_t] ≈ (1 - b1^t) E[g].
+- How much optimiser state does this cost for a 7B model in fp32?
+- What does Adafactor drop to shrink that, and what does it cost?
+red_flags:
+- Omitting bias correction, or unable to explain what it fixes.
+- Implementing L2 by adding to the gradient and calling it AdamW.
+- Putting eps inside the square root.
+source_kind: interview_question

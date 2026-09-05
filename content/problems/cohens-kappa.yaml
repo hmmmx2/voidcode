@@ -1,0 +1,79 @@
+slug: cohens-kappa
+title: Agreement above chance, for rubric graders
+difficulty: hard
+categories:
+- ML
+concepts:
+- classification_metrics
+- probability_expectation
+description: "Input: `a b c d`, the four cells of a 2x2 agreement table between two graders: both yes,\
+  \ A-yes-B-no, A-no-B-yes, both no.\n\nReturn Cohen's kappa rounded to 4 decimal places.\n\n    p_o =\
+  \ (a + d) / n\n    p_e = ((a+b)(a+c) + (c+d)(b+d)) / n^2\n    kappa = (p_o - p_e) / (1 - p_e)\n\nRaw\
+  \ agreement is misleading when one label dominates: two graders who both say \"pass\" 95% of the time\
+  \ agree 90% of the time by chance alone. Return `1.0` when `p_e` is exactly 1, which happens when both\
+  \ graders used only one label and agreed completely — there is no disagreement possible to measure."
+order_index: 73
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def kappa(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().kappa(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def kappa(self, tokens):\n        a, b, c, d = (int(x)\
+  \ for x in tokens[:4])\n        n = a + b + c + d\n        if n == 0:\n            return 0.0\n    \
+  \    po = (a + d) / n\n        pe = ((a + b) * (a + c) + (c + d) * (b + d)) / (n * n)\n        if pe\
+  \ == 1:\n            return 1.0\n        return round((po - pe) / (1 - pe), 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 25 0 0 25
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 45 5 5 45
+  expected_output: '0.8'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 10 0 0 0
+  expected_output: '1.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0 25 25 0
+  expected_output: '-1.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 0 0 0
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 90 5 5 0
+  expected_output: '-0.0526'
+  is_hidden: true
+hints:
+- p_e is the agreement expected if both graders labelled independently at their own rates.
+- 'kappa can be negative: worse than chance.'
+- n = a + b + c + d; return 0.0 when n is 0.
+hint_ladder:
+  level_0: p_e is the agreement expected if both graders labelled independently at their own rates.
+  level_1: 'kappa can be negative: worse than chance.'
+  level_2: n = a + b + c + d; return 0.0 when n is 0.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

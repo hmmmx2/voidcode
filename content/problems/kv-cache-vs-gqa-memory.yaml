@@ -1,0 +1,82 @@
+slug: kv-cache-vs-gqa-memory
+title: How much KV cache does GQA actually save?
+difficulty: medium
+categories:
+- LLM
+concepts:
+- attention_variants
+- kv_cache
+description: "Return the KV cache size in bytes for one sequence.\n\nWrite `kv_bytes(layers, seq_len,\
+  \ n_heads, n_kv_heads, head_dim, dtype_bytes)`.\n\nThe cache holds K and V per layer, for every position\
+  \ so far. Its size is\n\n    2 * layers * seq_len * n_kv_heads * head_dim * dtype_bytes\n\n**Note what\
+  \ is absent: `n_heads`.** It is given, and it is a distractor. The cache scales with\nthe number of\
+  \ *key/value* heads, not query heads — which is the entire point of grouped-query\nattention. Qwen2.5-7B\
+  \ has 28 query heads and 4 KV heads, so its cache is **7x smaller** than\nmulti-head attention would\
+  \ give, at the same quality for most tasks.\n\n**Why this is the number that decides your serving batch\
+  \ size.** At 32k context the cache dwarfs\nthe weights: a 7B in bf16 is ~15 GB of parameters, and one\
+  \ 32k sequence at 28 layers, 4 KV heads\nand head_dim 128 is another ~1.8 GB — so forty concurrent sequences\
+  \ cost more than the model does.\nThat is why PagedAttention exists, and why \"how many users fit on\
+  \ this card\" is a KV-cache question\nrather than a parameter-count one."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 21
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def kv_bytes(self, layers, seq_len, n_heads, n_kv_heads,\
+    \ head_dim, dtype_bytes):\n        \"\"\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().kv_bytes(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def kv_bytes(self, layers, seq_len, n_heads, n_kv_heads,\
+  \ head_dim, dtype_bytes):\n        return 2 * layers * seq_len * n_kv_heads * head_dim * dtype_bytes\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 28 2048 28 4 128 2
+  expected_output: '117440512'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 28 2048 28 28 128 2
+  expected_output: '822083584'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 28 32768 28 4 128 2
+  expected_output: '1879048192'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 28 2048 28 1 128 2
+  expected_output: '29360128'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 1 1 1 1 1 1
+  expected_output: '2'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 32 4096 32 8 128 2
+  expected_output: '536870912'
+  is_hidden: true
+hints:
+- The formula does not use n_heads. Passing it is deliberate.
+- Factor of 2 for K and V.
+- Multi-head is the case n_kv_heads == n_heads; MQA is n_kv_heads == 1.
+hint_ladder:
+  level_0: The formula does not use n_heads. Passing it is deliberate.
+  level_1: Factor of 2 for K and V.
+  level_2: Multi-head is the case n_kv_heads == n_heads; MQA is n_kv_heads == 1.

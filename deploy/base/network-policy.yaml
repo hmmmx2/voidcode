@@ -1,0 +1,62 @@
+# Default-deny egress for the API tier.
+#
+# The sandbox already blocks network from inside submissions — `sandbox/adversarial.py`
+# measured DNS and raw-IP egress both failing. This is the layer above: it bounds what
+# the API ITSELF can reach, so a compromised dependency or an SSRF in a handler cannot
+# call out to arbitrary hosts.
+#
+# Egress policy is the one people skip because ingress feels like the security
+# boundary. Ingress stops people getting in; egress stops data getting out, and
+# exfiltration is the half that matters after a compromise.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: voidcode-api-egress
+spec:
+  podSelector:
+    matchLabels: { app: voidcode-api }
+  policyTypes: [Egress]
+  egress:
+    # DNS. Without this rule every other rule fails, because nothing resolves — the
+    # classic first mistake with a default-deny egress policy.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { "k8s-app": kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # In-cluster dependencies, by label rather than by CIDR.
+    - to:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [postgres, redis] }
+    - to:
+        - namespaceSelector:
+            matchLabels: { "kubernetes.io/metadata.name": voidcode-sandbox }
+      ports:
+        - { protocol: TCP, port: 2358 }
+    # Resend's API, over TLS only. Named as a rule rather than left to a blanket
+    # allow-all, so adding an outbound integration is a deliberate edit here.
+    - ports:
+        - { protocol: TCP, port: 443 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: voidcode-api-ingress
+spec:
+  podSelector:
+    matchLabels: { app: voidcode-api }
+  policyTypes: [Ingress]
+  ingress:
+    # Only the web tier and the metrics scraper. Nothing else in the cluster has a
+    # reason to reach the API, and /metrics is unauthenticated — this is the control
+    # that keeps it unreachable rather than merely unadvertised.
+    - from:
+        - podSelector:
+            matchLabels: { app: voidcode-web }
+        - namespaceSelector:
+            matchLabels: { "kubernetes.io/metadata.name": monitoring }
+      ports:
+        - { protocol: TCP, port: 8000 }

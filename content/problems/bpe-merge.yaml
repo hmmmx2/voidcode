@@ -1,0 +1,116 @@
+slug: bpe-merge
+title: Byte-Pair Encoding Merge
+difficulty: medium
+categories:
+- LLM
+concepts:
+- tokenization
+description: 'Perform one merge step of Byte-Pair Encoding, the tokenisation algorithm behind GPT, Llama
+  and most modern LLMs.
+
+
+  Given a sequence of tokens:
+
+
+  1. Count every **adjacent pair**.
+
+  2. Pick the most frequent pair. On a tie, choose the one whose first occurrence is earliest.
+
+  3. Replace every **non-overlapping** occurrence of that pair, scanning left to right, with the two tokens
+  concatenated.
+
+
+  Non-overlapping is the subtle part: in `[a, a, a]` the pair `(a, a)` appears twice by count, but merging
+  left to right consumes the first two and leaves the third alone.
+
+
+  Return the token sequence after this single merge.'
+inferred_concepts: true
+review_needed: true
+order_index: 7
+examples:
+- input: tokens = ["l", "o", "w", "l", "o", "w"]
+  output: '[''lo'', ''w'', ''lo'', ''w'']'
+  explanation: (l,o) and (o,w) both appear twice; (l,o) occurs first, so it wins the tie.
+- input: tokens = ["a", "b", "a", "b", "a", "b"]
+  output: '[''ab'', ''ab'', ''ab'']'
+  explanation: (a,b) appears three times and all three are disjoint, so all are merged.
+- input: tokens = ["x", "y", "z"]
+  output: '[''xy'', ''z'']'
+  explanation: Every pair occurs once, so the earliest one is merged.
+constraints:
+- 1 <= len(tokens) <= 10^4
+- Tokens are non-empty strings.
+- If the sequence has fewer than 2 tokens, return it unchanged.
+- Merge non-overlapping occurrences, scanning left to right.
+- Standard library only -- no numpy, no torch.
+hints:
+- Two passes. The first counts adjacent pairs and picks a winner; the second rebuilds the sequence. Trying
+  to do both at once is where the overlapping-merge bug comes from.
+- For the tie-break you need the first index at which each pair appears, so record it as you count rather
+  than searching for it afterwards.
+- 'Rebuild with a while loop, not a for loop: when you merge at position i you must advance by 2, and
+  a for loop cannot skip the token you just consumed.'
+hint_ladder:
+  level_0: Two passes. The first counts adjacent pairs and picks a winner; the second rebuilds the sequence.
+    Trying to do both at once is where the overlapping-merge bug comes from.
+  level_1: For the tie-break you need the first index at which each pair appears, so record it as you
+    count rather than searching for it afterwards.
+  level_2: 'Rebuild with a while loop, not a for loop: when you merge at position i you must advance by
+    2, and a for loop cannot skip the token you just consumed.'
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: tokens
+    value: '["l", "o", "w", "l", "o", "w"]'
+  stdin: '["l", "o", "w", "l", "o", "w"]'
+  expected_output: '[''lo'', ''w'', ''lo'', ''w'']'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: tokens
+    value: '["a", "b", "a", "b", "a", "b"]'
+  stdin: '["a", "b", "a", "b", "a", "b"]'
+  expected_output: '[''ab'', ''ab'', ''ab'']'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: tokens
+    value: '["x", "y", "z"]'
+  stdin: '["x", "y", "z"]'
+  expected_output: '[''xy'', ''z'']'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: tokens
+    value: '["t", "h", "e", "t", "h", "e", "r", "e"]'
+  stdin: '["t", "h", "e", "t", "h", "e", "r", "e"]'
+  expected_output: '[''th'', ''e'', ''th'', ''e'', ''r'', ''e'']'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def bpeMerge(self, tokens):\n        \"\"\"\n        :type\
+    \ tokens: List[str]\n        :rtype: List[str]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    tokens = json.loads(_in[0])
+
+    print(Solution().bpeMerge(tokens))
+
+    '
+source_kind: problem
+reference_solution: "class Solution(object):\n    def bpeMerge(self, tokens):\n        if len(tokens)\
+  \ < 2:\n            return list(tokens)\n        counts, first = {}, {}\n        for i in range(len(tokens)\
+  \ - 1):\n            pair = (tokens[i], tokens[i + 1])\n            counts[pair] = counts.get(pair,\
+  \ 0) + 1\n            if pair not in first:\n                first[pair] = i\n        best = min(counts,\
+  \ key=lambda pr: (-counts[pr], first[pr]))\n        out, i = [], 0\n        while i < len(tokens):\n\
+  \            if i < len(tokens) - 1 and (tokens[i], tokens[i + 1]) == best:\n                out.append(tokens[i]\
+  \ + tokens[i + 1])\n                i += 2\n            else:\n                out.append(tokens[i])\n\
+  \                i += 1\n        return out\n"

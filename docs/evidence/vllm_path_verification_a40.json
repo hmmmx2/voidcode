@@ -1,0 +1,30 @@
+{
+  "model": "/workspace/vc/llm/outputs/awq_model",
+  "results": [
+    {
+      "label": "arithmetic",
+      "prompt": "What is 17 + 25? Reply with just the number.",
+      "text": "42",
+      "n_tokens": 3,
+      "unique_ratio": 1.0,
+      "longest_repeat_run": 1
+    },
+    {
+      "label": "factual",
+      "prompt": "Name the capital city of Japan. Reply with just the city name.",
+      "text": "Tokyo",
+      "n_tokens": 3,
+      "unique_ratio": 1.0,
+      "longest_repeat_run": 1
+    },
+    {
+      "label": "tutoring",
+      "prompt": "A student's Python loop is `for i in range(len(a)): print(a[i+1])` and it crashes on the last element. In one sentence, what should they check?",
+      "text": "Check the length of `a` \u2014 when `len(a)` is 1 or 0, this loop can still fail silently.",
+      "n_tokens": 28,
+      "unique_ratio": 0.929,
+      "longest_repeat_run": 1
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,81 @@
+slug: few-shot-prompt-budget
+title: How many examples fit before the answer does not?
+difficulty: easy
+categories:
+- LLM
+concepts:
+- tokenization
+- kv_cache
+description: 'Input: `context_limit system_tokens question_tokens reserve_for_answer example_tokens`.
+
+
+  Return the maximum number of identical few-shot examples that fit, and the tokens left unused, as `n_examples
+  slack`.
+
+
+  The reserve is not optional. A prompt that fills the context leaves no room to generate, and the failure
+  is a truncated answer rather than an error — which looks like a bad model rather than a budgeting mistake.
+
+
+  Return `0 slack` when even zero examples overflow, and never a negative count.'
+order_index: 66
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def budget(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().budget(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def budget(self, tokens):\n        limit = int(tokens[0]);\
+  \ sys_t = int(tokens[1])\n        q = int(tokens[2]); res = int(tokens[3]); ex = int(tokens[4])\n  \
+  \      avail = limit - sys_t - q - res\n        if avail < 0:\n            return '0 ' + str(avail)\n\
+  \        n = 0 if ex <= 0 else avail // ex\n        return str(int(n)) + ' ' + str(int(avail - n * ex))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4096 500 200 1000 300
+  expected_output: 7 296
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4096 500 200 1000 10000
+  expected_output: 0 2396
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1000 900 200 100 50
+  expected_output: 0 -200
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 8192 1000 500 2000 512
+  expected_output: 9 84
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 4096 500 200 1000 0
+  expected_output: 0 2396
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2048 48 0 1000 200
+  expected_output: 5 0
+  is_hidden: true
+hints:
+- available = limit - system - question - reserve.
+- n = available // example_tokens, floored at 0.
+- slack is what remains after placing n examples.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

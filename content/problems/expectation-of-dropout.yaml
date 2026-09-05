@@ -1,0 +1,45 @@
+slug: expectation-of-dropout
+title: Compute the moments inverted dropout leaves behind
+difficulty: easy
+categories:
+- DL
+concepts:
+- regularization
+description: Write `dropout_moments(a, p, mode)` returning the constant applied to surviving units, the
+  expected value of the layer's summed output, and the variance of that sum. The trap is that the constant
+  is chosen to preserve the mean and nothing else — the variance it injects is what does the regularising
+  — and in eval mode there is no mask and no scaling at all.
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- Meta
+- NVIDIA
+prompt: Write `dropout_moments(a, p, mode)` returning the constant applied to surviving units, the expected
+  value of the layer's summed output, and the variance of that sum. The trap is that the constant is chosen
+  to preserve the mean and nothing else — the variance it injects is what does the regularising — and
+  in eval mode there is no mask and no scaling at all.
+approach: Write the output as a Bernoulli mask times the activation times a constant, then fix the constant
+  by matching the training expectation to what the plain network produces. The variance follows from Var
+  of a Bernoulli and the fact that independent masks let per-unit variances add.
+model_answer: "Let m ~ Bernoulli(1-p) with 1 = keep, activation a, scale c:\n    out = c * m * a\n\nEXPECTATION.\
+  \ E[m] = 1-p, so E[out] = c(1-p)a. Inference runs the plain network, E = a. Matching:\n    c(1-p) =\
+  \ 1   =>   c = 1/(1-p)\nSo survivors are divided by (1-p). At p = 0.5 they are doubled.\n\nVARIANCE.\
+  \ Var(m) = p(1-p), and for constant c·a:\n    Var(out) = c^2 a^2 Var(m) = a^2 p(1-p)/(1-p)^2 = a^2 *\
+  \ p/(1-p)\n\nZero at p = 0, unbounded as p -> 1. Only the *mean* is preserved; the injected variance\
+  \ is the regularisation.\n\nWHY THE SCALING LIVES ON THE TRAINING SIDE. You could equivalently multiply\
+  \ by (1-p) at inference, and the original paper did. Putting it in training means the deployed graph\
+  \ is the plain network: no dropout-aware serving code, changing p needs no serving change, and it is\
+  \ impossible to ship a model that forgot the correction — a bug invisible except as a uniformly wrong\
+  \ output scale.\n\nThe p/(1-p) term is also why dropout and batch norm interact badly: they disagree\
+  \ about the activation variance the norm layer estimated."
+follow_ups:
+- Why do dropout and batch norm conflict, concretely?
+- At what p does the injected variance exceed the signal?
+- Why is dropout largely absent from modern LLMs?
+red_flags:
+- Unable to show E[out] = a.
+- Believing dropout is active at inference.
+- Claiming the scaling preserves the distribution rather than just the mean.
+source_kind: interview_question

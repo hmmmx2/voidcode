@@ -1,0 +1,55 @@
+2026-03-10 21:30:04,471 - INFO - ============================================================
+2026-03-10 21:30:04,472 - INFO - SWINBURNE AI TUTOR - FINE-TUNING v5.3
+2026-03-10 21:30:04,472 - INFO - Hybrid Architecture: Fine-tuning + Prompt Engineering
+2026-03-10 21:30:04,472 - INFO - ============================================================
+2026-03-10 21:30:04,476 - INFO - Loaded config from C:\Users\User\Documents\DUNE project\swinburne_ai_tutor_project\llm\configs\training_config.yaml
+2026-03-10 21:30:04,476 - INFO - Training data: ./data/swinburne_training_data_v53.jsonl
+2026-03-10 21:30:04,477 - INFO - Max sequence length: 1536
+2026-03-10 21:30:04,477 - INFO - ============================================================
+2026-03-10 21:30:04,477 - INFO - SWINBURNE AI TUTOR v5.2 - HYBRID ARCHITECTURE
+2026-03-10 21:30:04,477 - INFO - ============================================================
+2026-03-10 21:30:04,478 - INFO - Fine-tuned: TEACHING, DEBUG, FOLLOWUP
+2026-03-10 21:30:04,478 - INFO - Prompt-engineered: EXPLAIN
+2026-03-10 21:30:04,478 - INFO - ============================================================
+2026-03-10 21:30:04,495 - INFO - GPU: NVIDIA GeForce RTX 5060 Ti
+2026-03-10 21:30:04,495 - INFO - GPU Memory: 17.1 GB
+2026-03-10 21:30:04,495 - INFO - PyTorch: 2.10.0+cu128
+2026-03-10 21:30:04,495 - INFO - CUDA: 12.8
+2026-03-10 21:30:04,495 - INFO - ============================================================
+2026-03-10 21:30:04,496 - INFO - MODEL LOADING
+2026-03-10 21:30:04,496 - INFO - ============================================================
+2026-03-10 21:30:04,496 - INFO - Loading: Qwen/Qwen2.5-7B-Instruct
+2026-03-10 21:30:04,497 - INFO - Quantization: 4-bit NF4 with bfloat16 compute
+2026-03-10 21:30:06,264 - INFO - Tokenizer vocab size: 151643
+2026-03-10 21:30:07,919 - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2026-03-10 21:30:27,766 - INFO - Model loaded successfully
+2026-03-10 21:30:27,918 - INFO - Gradient checkpointing enabled
+2026-03-10 21:30:27,918 - INFO - ============================================================
+2026-03-10 21:30:27,918 - INFO - LoRA SETUP
+2026-03-10 21:30:27,918 - INFO - ============================================================
+2026-03-10 21:30:28,310 - INFO - LoRA rank: 16
+2026-03-10 21:30:28,310 - INFO - LoRA alpha: 32
+2026-03-10 21:30:28,310 - INFO - Trainable parameters: 40,370,176 (0.92%)
+2026-03-10 21:30:28,310 - INFO - ============================================================
+2026-03-10 21:30:28,310 - INFO - DATA PREPARATION (Fine-tuned modes only)
+2026-03-10 21:30:28,310 - INFO - ============================================================
+2026-03-10 21:30:28,502 - INFO - Loaded 1860 examples from C:\Users\User\Documents\DUNE project\swinburne_ai_tutor_project\llm\data/swinburne_training_data_v53.jsonl
+2026-03-10 21:30:34,853 - INFO - Valid examples: 1860
+2026-03-10 21:30:34,853 - INFO - Invalid/excluded examples: 0
+2026-03-10 21:30:34,853 - INFO - Examples exceeding max_seq_length (1536): 1860
+2026-03-10 21:30:34,855 - INFO - Mode distribution: {'debug': 760, 'teaching': 900, 'followup': 200}
+2026-03-10 21:30:34,855 - INFO - Difficulty distribution: {'hard': 651, 'medium': 455, 'easy': 754}
+2026-03-10 21:30:35,034 - INFO - Train set: 1674
+2026-03-10 21:30:35,035 - INFO - Validation set: 93
+2026-03-10 21:30:35,035 - INFO - Test set: 93
+2026-03-10 21:30:35,051 - INFO - ============================================================
+2026-03-10 21:30:35,052 - INFO - TRAINER SETUP
+2026-03-10 21:30:35,052 - INFO - ============================================================
+2026-03-10 21:30:35,103 - INFO - Effective batch size: 32
+2026-03-10 21:30:35,103 - INFO - Learning rate: 0.0001
+2026-03-10 21:30:35,103 - INFO - Epochs: 1
+2026-03-10 21:30:35,103 - INFO - Max sequence length: 1536
+2026-03-10 21:30:35,103 - INFO - Packing: disabled
+2026-03-10 21:30:42,250 - INFO - ============================================================
+2026-03-10 21:30:42,251 - INFO - STARTING TRAINING
+2026-03-10 21:30:42,251 - INFO - ============================================================

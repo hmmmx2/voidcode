@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voidcode-api
+  labels: { app: voidcode-api }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: voidcode-api }
+  template:
+    metadata:
+      labels: { app: voidcode-api }
+      annotations:
+        # Scrape config lives on the pod so Prometheus finds it without a CRD. The
+        # port is NOT exposed through the ingress — /metrics has no auth, and its
+        # protection is that only the namespace can reach it.
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8000"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      # Migrations run ONCE per rollout, before any container serves.
+      #
+      # An initContainer rather than a Job: a Job is not ordered against the rollout,
+      # so pods can start serving against the old schema. And rather than putting it
+      # in the app's entrypoint, where two replicas would race each other on the
+      # alembic version table.
+      #
+      # This is what the Dockerfile fix was for — the image did not contain alembic/
+      # at all, so this container could not have existed.
+      initContainers:
+        - name: migrate
+          image: voidcode-api:latest
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef: { name: voidcode-api-secrets }
+            - configMapRef: { name: voidcode-api-config }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+      containers:
+        - name: api
+          image: voidcode-api:latest
+          ports:
+            - { name: http, containerPort: 8000 }
+          envFrom:
+            - secretRef: { name: voidcode-api-secrets }
+            - configMapRef: { name: voidcode-api-config }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            # readOnlyRootFilesystem needs somewhere writable for anything that uses
+            # a temp file. Without this the container starts and then fails the first
+            # time a library writes to /tmp, which reads as an application bug.
+            - { name: tmp, mountPath: /tmp }
+          # THREE PROBES, DOING THREE DIFFERENT JOBS. Collapsing them into one is the
+          # usual mistake and it is the one that causes rolling-restart loops.
+          #
+          # startup: the lifespan connects Postgres and Redis and may load a model.
+          # Until this passes, the other two are not run at all — a liveness probe
+          # without it kills the pod mid-startup, forever.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 30      # up to 5 minutes to become ready
+          # readiness: gates TRAFFIC. Failing removes the pod from the Service and
+          # nothing else.
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # liveness: RESTARTS the pod. Deliberately slacker than readiness, because a
+          # restart is the more violent response and a slow dependency is not a reason
+          # to reach for it.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            # requests are what the scheduler places on and what the HPA measures
+            # against; limits are the ceiling. Setting only limits means the scheduler
+            # assumes zero and overcommits the node.
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      # Long enough for an in-flight chat completion to finish streaming. The default
+      # 30s would cut a generation off mid-answer on every deploy.
+      terminationGracePeriodSeconds: 60

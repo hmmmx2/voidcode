@@ -1,0 +1,90 @@
+# LLM Training Configuration — v5.3
+# VoidCode AI: QLoRA fine-tuning on Qwen 2.5 7B
+# Profile A (Balanced — WSL2/Linux native FS): max_seq_length=1536, batch=2, grad_accum=16
+# Revert to Profile B (max_seq_length=1024, batch=1, grad_accum=32) if training on Windows natively.
+
+# ── Model ──────────────────────────────────────────────────────────────────────
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  # 4-bit NF4 quantization (BitsAndBytes QLoRA)
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  # Sequence length — Profile B (Conservative, reduced VRAM)
+  max_seq_length: 1024
+  use_flash_attention: false
+
+# ── Data ───────────────────────────────────────────────────────────────────────
+data:
+  train_file: "./data/voidcode_training_data_v53.jsonl"
+  validation_split: 0.05
+  test_split: 0.05
+
+# ── LoRA ───────────────────────────────────────────────────────────────────────
+lora:
+  r: 16
+  lora_alpha: 32
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  lora_dropout: 0.05
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# ── Training ───────────────────────────────────────────────────────────────────
+training:
+  output_dir: "./outputs/final_model"
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 32        # effective batch = 1 * 32 = 32
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  optim: "paged_adamw_32bit"
+  logging_steps: 10
+  save_strategy: "steps"
+  save_steps: 50
+  save_total_limit: 3
+  eval_strategy: "steps"
+  eval_steps: 50
+  seed: 42
+  dataloader_num_workers: 0
+  remove_unused_columns: false
+  load_best_model_at_end: false
+  metric_for_best_model: "eval_loss"
+
+# ── SFTTrainer extras ──────────────────────────────────────────────────────────
+sft:
+  packing: false
+  neftune_noise_alpha: 0
+  dataset_text_field: "text"
+
+# ── Inference modes (informational — not used by train.py) ────────────────────
+modes:
+  teaching:
+    enabled: true
+    temperature: 0.7
+    max_tokens: 1024
+  debug:
+    enabled: true
+    temperature: 0.5
+    max_tokens: 1024
+  followup:
+    enabled: true
+    temperature: 0.7
+    max_tokens: 512
+  explain:
+    enabled: true
+    use_adapter: false
+    temperature: 0.6
+    max_tokens: 1024

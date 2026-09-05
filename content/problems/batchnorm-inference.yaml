@@ -1,0 +1,197 @@
+slug: batchnorm-inference
+title: BatchNorm at Inference
+difficulty: medium
+categories:
+- TensorFlow
+- DL
+concepts:
+- normalization_layers
+description: 'Implement BatchNorm in inference mode.
+
+
+  `y = (x - running_mean) / sqrt(running_var + eps) * gamma + beta`
+
+
+  **Compare this with LayerNorm, which you have already written.** LayerNorm computes its statistics from
+  the sample in front of it, across features. BatchNorm normalises **per feature, across the batch** --
+  so at inference, where the batch may be a single example, it cannot compute anything. It uses statistics
+  accumulated during training instead.
+
+
+  That is the whole reason BatchNorm has a train mode and an eval mode, and why forgetting `model.eval()`
+  silently changes your predictions.
+
+
+  `running_mean`, `running_var`, `gamma` and `beta` all hold one entry **per feature** -- one per column
+  of `x`, not per row.'
+inferred_concepts: true
+review_needed: true
+order_index: 12
+examples:
+- input: x = [[1,2],[3,4]], running_mean = [2,3], running_var = [1,1], gamma = [1,1], beta = [0,0], eps
+    = 1e-5
+  output: '[[-0.999995, -0.999995], [0.999995, 0.999995]]'
+  explanation: Each column uses its own statistic. Not exactly 1, because eps sits inside the sqrt.
+- input: x = [[5.0]], running_mean = [5.0], running_var = [4.0], gamma = [1.0], beta = [0.0], eps = 1e-5
+  output: '[[0.0]]'
+  explanation: A batch of one. BatchNorm still works, because at inference it never looks at the batch.
+- input: x = [[0,0]], running_mean = [0,0], running_var = [1,1], gamma = [2,3], beta = [1,-1], eps = 1e-5
+  output: '[[1.0, -1.0]]'
+  explanation: Normalised to zero, so the output is just beta. gamma has nothing to scale.
+constraints:
+- 1 <= len(x) <= 10^3 rows, 1 <= len(x[0]) <= 10^3 features
+- len(running_mean) == len(running_var) == len(gamma) == len(beta) == number of features
+- 0 < eps <= 1e-3
+- Use the running statistics as given -- do not compute any statistic from x.
+- Return values rounded to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints:
+- The parameters are indexed by COLUMN, not row. For x[i][j], every statistic you need sits at index j.
+- Nothing here is computed from x itself. If you find yourself taking a mean of anything, you have written
+  the training-mode path.
+- 'For each element: (v - running_mean[j]) / sqrt(running_var[j] + eps), then * gamma[j] + beta[j]. eps
+  goes inside the sqrt, exactly as in LayerNorm.'
+hint_ladder:
+  level_0: The parameters are indexed by COLUMN, not row. For x[i][j], every statistic you need sits at
+    index j.
+  level_1: Nothing here is computed from x itself. If you find yourself taking a mean of anything, you
+    have written the training-mode path.
+  level_2: 'For each element: (v - running_mean[j]) / sqrt(running_var[j] + eps), then * gamma[j] + beta[j].
+    eps goes inside the sqrt, exactly as in LayerNorm.'
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: x
+    value: '[[1.0, 2.0], [3.0, 4.0]]'
+  - name: running_mean
+    value: '[2.0, 3.0]'
+  - name: running_var
+    value: '[1.0, 1.0]'
+  - name: gamma
+    value: '[1.0, 1.0]'
+  - name: beta
+    value: '[0.0, 0.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[[1.0, 2.0], [3.0, 4.0]]
+
+    [2.0, 3.0]
+
+    [1.0, 1.0]
+
+    [1.0, 1.0]
+
+    [0.0, 0.0]
+
+    1e-5'
+  expected_output: '[[-0.999995, -0.999995], [0.999995, 0.999995]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: x
+    value: '[[5.0]]'
+  - name: running_mean
+    value: '[5.0]'
+  - name: running_var
+    value: '[4.0]'
+  - name: gamma
+    value: '[1.0]'
+  - name: beta
+    value: '[0.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[[5.0]]
+
+    [5.0]
+
+    [4.0]
+
+    [1.0]
+
+    [0.0]
+
+    1e-5'
+  expected_output: '[[0.0]]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: x
+    value: '[[0.0, 0.0]]'
+  - name: running_mean
+    value: '[0.0, 0.0]'
+  - name: running_var
+    value: '[1.0, 1.0]'
+  - name: gamma
+    value: '[2.0, 3.0]'
+  - name: beta
+    value: '[1.0, -1.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[[0.0, 0.0]]
+
+    [0.0, 0.0]
+
+    [1.0, 1.0]
+
+    [2.0, 3.0]
+
+    [1.0, -1.0]
+
+    1e-5'
+  expected_output: '[[1.0, -1.0]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: x
+    value: '[[10.0, 20.0], [30.0, 40.0]]'
+  - name: running_mean
+    value: '[20.0, 30.0]'
+  - name: running_var
+    value: '[100.0, 100.0]'
+  - name: gamma
+    value: '[2.0, 0.5]'
+  - name: beta
+    value: '[1.0, 1.0]'
+  - name: eps
+    value: 1e-5
+  stdin: '[[10.0, 20.0], [30.0, 40.0]]
+
+    [20.0, 30.0]
+
+    [100.0, 100.0]
+
+    [2.0, 0.5]
+
+    [1.0, 1.0]
+
+    1e-5'
+  expected_output: '[[-1.0, 0.5], [3.0, 1.5]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def batchNorm(self, x, running_mean, running_var,\
+    \ gamma, beta, eps):\n        \"\"\"\n        :type x: List[List[float]]\n        :type running_mean:\
+    \ List[float]\n        :type running_var: List[float]\n        :type gamma: List[float]\n        :type\
+    \ beta: List[float]\n        :type eps: float\n        :rtype: List[List[float]]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    x = json.loads(_in[0]); rm = json.loads(_in[1]); rv = json.loads(_in[2])
+
+    gamma = json.loads(_in[3]); beta = json.loads(_in[4]); eps = float(_in[5])
+
+    print([[round(v, 6) for v in row] for row in Solution().batchNorm(x, rm, rv, gamma, beta, eps)])
+
+    '
+source_kind: problem
+reference_solution: "import math\nclass Solution(object):\n    def batchNorm(self, x, running_mean, running_var,\
+  \ gamma, beta, eps):\n        out = []\n        for row in x:\n            new_row = []\n          \
+  \  for j, v in enumerate(row):\n                norm = (v - running_mean[j]) / math.sqrt(running_var[j]\
+  \ + eps)\n                new_row.append(norm * gamma[j] + beta[j])\n            out.append(new_row)\n\
+  \        return out\n"

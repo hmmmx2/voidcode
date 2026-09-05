@@ -1,0 +1,49 @@
+slug: coalescing-transaction-count
+title: Count the sectors a warp actually fetches
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- memory_coalescing
+- warp_divergence
+description: 'Write `memory_traffic(addresses, elem_bytes, sector_bytes)` taking one starting byte address
+  per lane and returning how many distinct memory sectors the warp touches, how many bytes that costs,
+  and what fraction of them the warp asked for. The trap is the straddle: a lane whose element is not
+  sector-aligned drags in two sectors, not one.'
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+- Meta
+prompt: 'Write `memory_traffic(addresses, elem_bytes, sector_bytes)` taking one starting byte address
+  per lane and returning how many distinct memory sectors the warp touches, how many bytes that costs,
+  and what fraction of them the warp asked for. The trap is the straddle: a lane whose element is not
+  sector-aligned drags in two sectors, not one.'
+approach: Turn each lane's byte range into a range of sector indices with floor division on its first
+  and last byte, union those indices across the whole warp, and multiply the count by the sector size.
+  The requested side is a second set, because lanes that overlap must not have their bytes counted twice.
+model_answer: "COALESCED. 32 threads × 4 bytes = 128 contiguous bytes, which is exactly 4 sectors of 32\
+  \ bytes.\n    fetched = 128 B, requested = 128 B  ->  100% efficiency\n\nSTRIDED by 1024 floats (4096\
+  \ B). Every thread's word lands in a different sector:\n    fetched = 32 × 32 B = 1024 B, requested\
+  \ = 128 B\n    efficiency = 128/1024 = **12.5%** — an 8× waste\nYou pull a whole sector to use four\
+  \ bytes of it, so effective bandwidth collapses by roughly an order of magnitude.\n\nWHY A TRANSPOSE\
+  \ CANNOT ESCAPE THIS. Reading along rows and writing along columns means one of the two is strided regardless\
+  \ of loop order. You cannot fix it by reindexing, only move it.\n\nTHE FIX. Stage through shared memory:\
+  \ read a tile coalesced, write it to shared, __syncthreads(), read out transposed, write global coalesced.\
+  \ Both global accesses are now sequential and the strided access happens in shared memory, where non-contiguity\
+  \ costs nothing.\n\nTHE PADDING. Shared memory has 32 banks of 4 bytes. With a 32-wide tile, column\
+  \ j of every row maps to the same bank, so a transposed column read hits one bank 32 times and serialises\
+  \ 32-way — you have swapped a global-memory problem for a bank-conflict problem of similar size. Declaring\
+  \ the tile [32][33] shifts each row by one bank, so a column touches all 32 banks and conflicts vanish.\
+  \ One character, typically several times faster."
+follow_ups:
+- Work through why 33 removes the conflict, bank by bank.
+- What happens with a stride of 2 rather than 1024?
+- When does L2 hide poor coalescing?
+red_flags:
+- Confusing requested bytes with fetched bytes.
+- Proposing the shared-memory tile without padding, or unable to say why.
+- Believing caches make access patterns irrelevant on a GPU.
+source_kind: interview_question

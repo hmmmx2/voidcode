@@ -1,0 +1,21 @@
+{
+  "assumptions": {
+    "gen_len": 1024,
+    "group": 8,
+    "kv_dtype_bytes": 2,
+    "lora_r": 32,
+    "seq": 1024
+  },
+  "derived_colocate_floor_gib": 11.61,
+  "derived_inference_weights_gib": 2.88,
+  "derived_kv_cache_gib": 0.44,
+  "device_total_gib": 15.93,
+  "fits": true,
+  "headroom_gib": 4.32,
+  "lora_trainable_m": 36.93,
+  "loss_backend": "fused_triton",
+  "measured_train_peak_gib": 8.29,
+  "measured_weights_gib": 2.88,
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "params_b": 1.581
+}

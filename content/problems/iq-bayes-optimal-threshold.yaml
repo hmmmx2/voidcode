@@ -1,0 +1,183 @@
+slug: iq-bayes-optimal-threshold
+title: Threshold a calibrated score by cost
+difficulty: medium
+categories:
+- ML
+concepts:
+- loss_functions
+description: 'Implement `threshold_and_cost(probs, c_fn, c_fp)`.
+
+
+  For a single row with a calibrated `p = P(y=1|x)`, the two available actions have expected costs
+
+
+  ```
+
+  E[cost | flag]       = (1 - p) * c_fp     (you pay only when y = 0)
+
+  E[cost | do nothing] = p * c_fn           (you pay only when y = 1)
+
+  ```
+
+
+  Flagging is cheaper exactly when `(1-p)*c_fp < p*c_fn`, which rearranges into a threshold that depends
+  only on the ratio of the costs:
+
+
+  ```
+
+  t = c_fp / (c_fn + c_fp)
+
+  ```
+
+
+  Return `[t, cost_at_t, cost_at_half]`, each rounded to 6 decimal places, where each cost is the **sum
+  over all rows** of the expected cost of the action the rule picks:
+
+
+  - `cost_at_t` -- flag row `i` when `probs[i] > t`, otherwise do nothing.
+
+  - `cost_at_half` -- the same sum with the threshold held at `0.5`.
+
+
+  **Flag on a strict `>`.** At `p == t` the two actions cost the same by construction, so the convention
+  is invisible there; at `p == 0.5` under asymmetric costs it is not, and `p = 0.5` is *not* flagged by
+  the 0.5 rule.
+
+
+  `cost_at_half` is the comparison, not a second answer. The default 0.5 is optimal only in the special
+  case `c_fn == c_fp`; at a 100:1 cost ratio it can cost several times more than the right threshold.
+  Note also that `t` contains no class prior -- the base rate enters through `p`, not through the threshold,
+  which is why this rule is only valid on calibrated probabilities.
+
+
+  Standard library only -- no numpy, no sklearn.'
+inferred_concepts: true
+review_needed: true
+order_index: 6
+examples:
+- input: probs = [0.02, 0.6], c_fn = 500, c_fp = 5
+  output: '[0.009901, 6.9, 12.0]'
+  explanation: 't = 5/505 = 0.009901, so both rows clear it and are flagged: 0.98*5 + 0.4*5 = 6.9. The
+    0.5 rule skips the 0.02 row and pays 0.02*500 = 10 for it, ending at 12.0 -- nearly double the cost
+    for the same model.'
+- input: probs = [0.3, 0.5, 0.7], c_fn = 1, c_fp = 1
+  output: '[0.5, 1.1, 1.1]'
+  explanation: 'Equal costs put t at exactly 0.5, so the two totals coincide: 0.3 + 0.5 + 0.3 = 1.1. This
+    is the only situation in which the default threshold is the right answer.'
+constraints:
+- 1 <= len(probs) <= 10^5
+- 0 <= probs[i] <= 1
+- c_fn > 0 and c_fp > 0
+- Flag when p > threshold, strictly greater.
+- Round all three returned values to 6 decimal places.
+- Standard library only -- no numpy, no sklearn.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: probs
+    value: '[0.02, 0.6]'
+  - name: c_fn
+    value: '500'
+  - name: c_fp
+    value: '5'
+  stdin: '[0.02, 0.6]
+
+    500
+
+    5'
+  expected_output: '[0.009901, 6.9, 12.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: probs
+    value: '[0.3, 0.5, 0.7]'
+  - name: c_fn
+    value: '1'
+  - name: c_fp
+    value: '1'
+  stdin: '[0.3, 0.5, 0.7]
+
+    1
+
+    1'
+  expected_output: '[0.5, 1.1, 1.1]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: probs
+    value: '[0.02, 0.6]'
+  - name: c_fn
+    value: '100'
+  - name: c_fp
+    value: '1'
+  stdin: '[0.02, 0.6]
+
+    100
+
+    1'
+  expected_output: '[0.009901, 1.38, 2.4]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: probs
+    value: '[0.6, 0.95]'
+  - name: c_fn
+    value: '1'
+  - name: c_fp
+    value: '9'
+  stdin: '[0.6, 0.95]
+
+    1
+
+    9'
+  expected_output: '[0.9, 1.05, 4.05]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: probs
+    value: '[0.5]'
+  - name: c_fn
+    value: '500'
+  - name: c_fp
+    value: '5'
+  stdin: '[0.5]
+
+    500
+
+    5'
+  expected_output: '[0.009901, 2.5, 250.0]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def threshold_and_cost(self, probs, c_fn, c_fp):\n    \
+    \    \"\"\"\n        :type probs: List[float]  -- calibrated P(y=1|x) per row\n        :type c_fn:\
+    \ float         -- cost of a missed positive\n        :type c_fp: float         -- cost of a false\
+    \ alarm\n        :rtype: List[float]       -- [t, cost_at_t, cost_at_half]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    probs = json.loads(_in[0])
+
+    c_fn = float(_in[1])
+
+    c_fp = float(_in[2])
+
+    _r = Solution().threshold_and_cost(probs, c_fn, c_fp)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def threshold_and_cost(self, probs, c_fn, c_fp):\n \
+  \       t = c_fp / (c_fn + c_fp)\n        cost_opt = 0.0\n        cost_half = 0.0\n        for p in\
+  \ probs:\n            cost_opt += (1.0 - p) * c_fp if p > t else p * c_fn\n            cost_half +=\
+  \ (1.0 - p) * c_fp if p > 0.5 else p * c_fn\n        return [t, cost_opt, cost_half]\n"

@@ -1,0 +1,351 @@
+slug: attention-is-all-you-need
+title: Attention Is All You Need
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- attention_scaled_dot
+description: TODO
+inferred_concepts: true
+review_needed: true
+authors: Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin
+year: 2017
+venue: NeurIPS
+arxiv_id: '1706.03762'
+pdf_url: https://arxiv.org/pdf/1706.03762
+order_index: 1
+abstract: The paper that removed recurrence. It proposes the Transformer, an encoder-decoder built entirely
+  from attention and feed-forward layers, and shows it beats recurrent and convolutional models on translation
+  while training in a fraction of the time. Nearly every language model since is a descendant of the decoder
+  half.
+related_problem_slugs:
+- scaled-dot-product-attention
+- layer-norm
+- stable-softmax
+key_equations:
+- label: Scaled dot-product attention
+  latex: \mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+  note: The whole paper in one line. Everything else is plumbing around this.
+- label: Multi-head attention
+  latex: \mathrm{MultiHead}(Q,K,V) = \mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_h)W^O
+  note: h heads of dimension d_model/h, so multi-head costs the same as single-head at full width.
+- label: Position-wise feed-forward
+  latex: \mathrm{FFN}(x) = \max(0, xW_1 + b_1)W_2 + b_2
+  note: Two thirds of the parameters live here, not in attention — which surprises people.
+sections:
+  architecture: '## The shape of it
+
+
+    Six encoder layers, six decoder layers, `d_model = 512`, `h = 8` heads,
+
+    `d_ff = 2048`. Every sub-layer is wrapped the same way:
+
+
+    ```
+
+    x = LayerNorm(x + Sublayer(x))
+
+    ```
+
+
+    That wrapper is doing two jobs. The residual gives every layer a path to the
+
+    loss that does not pass through the other eleven. The norm keeps activation
+
+    scale from drifting as depth accumulates.
+
+
+    ## The encoder layer
+
+
+    Two sub-layers: multi-head self-attention, then a position-wise feed-forward
+
+    network. Self-attention means Q, K and V all come from the same sequence, so
+
+    every position can see every other position in **one** layer. That is the
+
+    property recurrence never had — an RNN needs `n` steps to connect positions `1`
+
+    and `n`, and the gradient has to survive all of them.
+
+
+    ## The decoder layer
+
+
+    Three sub-layers. Masked self-attention, then cross-attention over the encoder
+
+    output, then the feed-forward. The mask is what makes the model usable for
+
+    generation: position `i` may only attend to positions up to `i`, so one forward
+
+    pass produces a valid next-token prediction at **every** position at once.
+
+
+    Without the mask, position `i` would see token `i+1` and the task would be
+
+    copying.
+
+
+    ## Where the parameters actually are
+
+
+    Per layer, attention is `4 * d_model^2` (Q, K, V and the output projection) and
+
+    the FFN is `2 * d_model * d_ff`. With `d_ff = 4 * d_model` that is `4d^2` versus
+
+    `8d^2` — **the feed-forward holds twice what attention does.** People assume a
+
+    Transformer is mostly attention. It is mostly MLP.
+
+
+    ## What the paper got wrong, gently
+
+
+    Post-norm. The paper applies `LayerNorm(x + Sublayer(x))`, and that is why it
+
+    needs a warmup schedule to train at all — the residual path passes through a
+
+    norm at every layer, so gradient scale at the bottom depends on depth. Modern
+
+    implementations use pre-norm, `x + Sublayer(LayerNorm(x))`, which leaves the
+
+    residual stream clean and trains without the same warmup sensitivity.
+
+
+    Sinusoidal position encodings are also gone. RoPE replaced them, for reasons
+
+    that are in the mathematics section.
+
+    '
+  implementation: "## The five lines that matter\n\n```python\nscores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)\n\
+    if mask is not None:\n    scores = scores.masked_fill(mask == 0, float(\"-inf\"))\nweights = scores.softmax(dim=-1)\n\
+    out = weights @ V\n```\n\nEverything else in an implementation is reshaping.\n\n**Implement it yourself:**\
+    \ `scaled-dot-product-attention` in the problem\ncatalogue grades exactly this, including the causal\
+    \ mask.\n\n## The traps, in the order people hit them\n\n**Masking after the softmax.** Zeroing the\
+    \ weights after normalising leaves the\nrow summing to less than 1, so every masked row is silently\
+    \ scaled down. The\nmask must be applied to the *scores*, before the softmax, so the excluded\npositions\
+    \ receive exactly zero weight and the rest still sum to 1.\n\n**Using `-1e9` instead of `-inf`.**\
+    \ Usually fine, and occasionally not: with\nfp16 the largest finite value is 65504, so `-1e9` overflows\
+    \ to `-inf` anyway,\nand with a fully-masked row true `-inf` gives `0/0 = NaN`. Neither is wrong\n\
+    everywhere, but you have to know which failure you are choosing.\n\n**Forgetting the head reshape.**\
+    \ `(B, T, d_model)` becomes\n`(B, h, T, d_model/h)` before attention and back afterwards. Get the\
+    \ transpose\nwrong and it still runs — heads just attend across the wrong axis, and the\nmodel quietly\
+    \ learns less.\n\n**Scaling by `d_model` instead of `d_k`.** With 8 heads that is a factor of\n`sqrt(8)`\
+    \ too much, which does not crash and does not obviously diverge. It just\nunderfits.\n\n## The KV\
+    \ cache\n\nAt generation time the keys and values for every previous position never change,\nso recomputing\
+    \ them per token is pure waste. Cache them, and each step attends\nover the cache while computing\
+    \ Q for one position only.\n\nThis is why causal masking and the cache are the same design decision:\
+    \ because\nposition `i` can never depend on anything after `i`, a cached key stays valid\nforever.\
+    \ Drop the mask and the cache is invalid.\n"
+  systems: '## Where the time goes
+
+
+    Attention is `O(n^2 d)` per layer, the FFN is `O(n d^2)`. Attention only
+
+    dominates once `n` exceeds roughly `d` — with `d_model = 512` that is around 500
+
+    tokens, and with `d_model = 4096` it is closer to 4000.
+
+
+    **So "attention is quadratic" is true and usually not the binding constraint.**
+
+    At the sequence lengths the original paper used, the feed-forward was the more
+
+    expensive half.
+
+
+    ## Prefill and decode are different machines
+
+
+    **Prefill** processes the whole prompt at once. Large matmuls, high arithmetic
+
+    intensity, compute bound. This is where the quadratic term actually bites.
+
+
+    **Decode** generates one token at a time. Each step reads the entire KV cache
+
+    from memory to produce a single token, so intensity is terrible and the step is
+
+    **bandwidth** bound. Faster arithmetic does not help; moving fewer bytes does.
+
+
+    Confusing these two is the most common mistake in Transformer performance work.
+
+
+    ## The KV cache is the memory constraint
+
+
+    Per token: `2 * layers * kv_heads * head_dim * dtype_bytes`. For a 7B model at
+
+    32 layers and `d_model = 4096` in bf16, that is about 512KB **per token**. An 8k
+
+    context is 4GB for a single request — while the weights themselves are 14GB.
+
+
+    On an 80GB card that leaves room for roughly fifteen concurrent 8k requests. The
+
+    cache, not the weights, is what caps your throughput.
+
+
+    Grouped-query attention exists for exactly this: cutting 32 KV heads to 8
+
+    quarters the cache and roughly quadruples concurrency, for a small quality cost.
+
+    That is a training-time architectural decision made entirely for an
+
+    inference-time memory bill.
+
+
+    ## What FlashAttention changed
+
+
+    Not the FLOPs — the memory traffic. Naive attention materialises the `n x n`
+
+    score matrix in HBM, which is quadratic **memory**. FlashAttention tiles the
+
+    computation so that matrix never exists in full, using an online softmax that
+
+    rescales a running sum as larger scores appear.
+
+
+    Same arithmetic, quadratic memory becomes linear, and the kernel moves from
+
+    bandwidth bound to compute bound. It is not an approximation — the result is
+
+    numerically the same attention.
+
+    '
+  mathematics: '## Why divide by sqrt(d_k)
+
+
+    Take `q` and `k` as independent with zero mean and unit variance per component.
+
+    Their dot product is a sum of `d_k` independent products, each with mean 0 and
+
+    variance 1. Variances add:
+
+
+    ```math
+
+    \mathrm{Var}(q \cdot k) = d_k, \qquad \sigma = \sqrt{d_k}
+
+    ```
+
+
+    So without scaling, the logits entering softmax grow as `sqrt(d_k)`. At
+
+    `d_k = 64` that is a spread of roughly plus or minus 8, and softmax over logits
+
+    that far apart is effectively an argmax — one weight near 1, the rest near 0.
+
+
+    The damage is to the gradient. Softmax''s Jacobian carries factors of `p(1-p)`,
+
+    which vanish when `p` is saturated at 0 or 1:
+
+
+    ```math
+
+    \frac{\partial p_i}{\partial z_j} = p_i(\delta_{ij} - p_j)
+
+    ```
+
+
+    A saturated attention row therefore receives almost no gradient, and the model
+
+    cannot learn to look somewhere else. It is stuck wherever initialisation put it.
+
+
+    **Why `sqrt(d_k)` and not `d_k`:** you are normalising a standard deviation, not
+
+    a variance. Dividing by `d_k` would over-correct and shrink the logits toward
+
+    zero, making attention uniform — the opposite failure, and just as untrainable.
+
+
+    Note the scale uses the **head** dimension. With multi-head attention
+
+    `d_k = d_model / h`, so it adapts automatically as head count changes, which is
+
+    the property you want since the variance argument is per-head.
+
+
+    ## Why softmax at all
+
+
+    Attention needs weights that are non-negative and sum to one, so the output is a
+
+    convex combination of values rather than an arbitrary linear map. Softmax is the
+
+    maximum-entropy distribution subject to a fixed expected score — the least
+
+    committed choice consistent with the scores you have.
+
+
+    It is also differentiable everywhere, which argmax is not.
+
+
+    ## Sinusoidal positions, and why they lost
+
+
+    The paper encodes position with fixed sinusoids at geometrically spaced
+
+    frequencies:
+
+
+    ```math
+
+    PE_{(pos, 2i)} = \sin\!\left(\frac{pos}{10000^{2i/d}}\right)
+
+    ```
+
+
+    The stated hope was that `PE(pos+k)` is a linear function of `PE(pos)`, so the
+
+    model could learn relative offsets. True — but the encoding is **added to the
+
+    input embedding**, so by the time scores are computed the position information
+
+    has been mixed through several learned projections, and the linear relationship
+
+    is no longer available where it is needed.
+
+
+    RoPE fixes this by rotating **q and k** rather than adding to `x`. Because the
+
+    dot product of two rotated vectors depends only on the difference of their
+
+    rotation angles:
+
+
+    ```math
+
+    (R_m q)^\top (R_n k) = q^\top R_{n-m} k
+
+    ```
+
+
+    the attention logit becomes a function of relative position exactly, at the
+
+    point where it matters. That is why every recent model uses it.
+
+
+    ## The residual, in one line
+
+
+    A residual block computes `x + F(x)`, so its Jacobian is `I + dF/dx`. Stack `L`
+
+    of them and the gradient is a product of `(I + J_l)` terms, which expands into a
+
+    sum over `2^L` paths of every length — including the identity path that passes
+
+    through no transformation at all.
+
+
+    That is why depth stopped being the limiting factor. The gradient cannot vanish
+
+    uniformly when one of its terms is 1.
+
+    '
+source_kind: paper

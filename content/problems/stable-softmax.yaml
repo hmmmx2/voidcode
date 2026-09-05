@@ -1,0 +1,97 @@
+slug: stable-softmax
+title: Numerically Stable Softmax
+difficulty: easy
+categories:
+- ML
+- DL
+concepts:
+- numerical_stability
+description: 'Implement softmax over a vector of logits.
+
+
+  The textbook definition is `softmax(x)_i = exp(x_i) / sum_j exp(x_j)`. Written literally, that function
+  is **broken for real model outputs**: a logit of 1000 makes `exp(x_i)` overflow to infinity and the
+  result becomes `nan`.
+
+
+  Softmax is shift-invariant -- subtracting any constant from every logit leaves the output unchanged.
+  Use that property to make the implementation safe for any input.
+
+
+  Return the probabilities in the same order as the input.'
+inferred_concepts: true
+review_needed: true
+order_index: 1
+examples:
+- input: logits = [1.0, 2.0, 3.0]
+  output: '[0.090031, 0.244728, 0.665241]'
+  explanation: The largest logit receives the largest probability, and the three sum to 1.
+- input: logits = [1000.0, 1000.0, 1000.0]
+  output: '[0.333333, 0.333333, 0.333333]'
+  explanation: All logits are equal, so the distribution is uniform. A naive exp() overflows here.
+- input: logits = [-1.0, 0.0, 1.0]
+  output: '[0.090031, 0.244728, 0.665241]'
+  explanation: Identical to example 1 -- the logits differ by a constant shift, and softmax ignores it.
+constraints:
+- 1 <= len(logits) <= 10^4
+- -10^4 <= logits[i] <= 10^4
+- Return values rounded to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints:
+- Try your implementation on [1000, 1000, 1000] before reading further. If it returns nan, the problem
+  is exp(1000), not your division.
+- softmax(x) == softmax(x - c) for any scalar c. Pick a c that guarantees every exponent you evaluate
+  is <= 0, so exp() can never overflow.
+- Subtract max(logits) from every logit first. The largest exponent becomes exp(0) == 1, everything else
+  lands in (0, 1], and the sum is always >= 1 so the division is safe.
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: logits
+    value: '[1.0, 2.0, 3.0]'
+  stdin: '[1.0, 2.0, 3.0]'
+  expected_output: '[0.090031, 0.244728, 0.665241]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: logits
+    value: '[1000.0, 1000.0, 1000.0]'
+  stdin: '[1000.0, 1000.0, 1000.0]'
+  expected_output: '[0.333333, 0.333333, 0.333333]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: logits
+    value: '[-1.0, 0.0, 1.0]'
+  stdin: '[-1.0, 0.0, 1.0]'
+  expected_output: '[0.090031, 0.244728, 0.665241]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: logits
+    value: '[0.0]'
+  stdin: '[0.0]'
+  expected_output: '[1.0]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def softmax(self, logits):\n        \"\"\
+    \"\n        :type logits: List[float]\n        :rtype: List[float]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    logits = json.loads(_in[0])
+
+    print([round(v, 6) for v in Solution().softmax(logits)])
+
+    '
+source_kind: problem
+reference_solution: "import math\nclass Solution(object):\n    def softmax(self, logits):\n        m =\
+  \ max(logits)\n        exps = [math.exp(v - m) for v in logits]\n        total = sum(exps)\n       \
+  \ return [e / total for e in exps]\n"

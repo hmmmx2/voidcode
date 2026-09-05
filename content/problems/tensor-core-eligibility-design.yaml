@@ -1,0 +1,89 @@
+slug: tensor-core-eligibility-design
+title: Why did this matmul not use the tensor cores?
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- tiled_matmul
+- memory_hierarchy
+- roofline_analysis
+grading: rubric
+description: 'A profiler shows a matmul running at a small fraction of the card''s advertised throughput,
+  and the tensor-core utilisation counter is near zero. The kernel is a standard `cublasSgemm`-style call
+  on fp32 data with shapes (M=4096, K=4093, N=4096).
+
+
+  List the conditions a matmul must satisfy for tensor cores to be used at all, decide which one this
+  case violates, and give the fix.
+
+
+  Then answer the judgement question: **the obvious fix changes the numerics.** Say what changes, and
+  how you would decide whether that is acceptable for training versus for inference.
+
+
+
+  MEASURED ON AN NVIDIA A40, AND ONE PART OF THE PREMISE IS WRONG
+
+  -----------------------------------------------------------------
+
+  | configuration        | throughput   |
+
+  |----------------------|--------------|
+
+  | fp32, K=4096         |  22.51 TFLOP/s |
+
+  | fp32, K=4093         |  22.06 TFLOP/s |
+
+  | bf16, K=4096         | 113.74 TFLOP/s |
+
+  | bf16, K=4093         |  69.26 TFLOP/s |
+
+  | fp32 with tf32 on    |  53.44 TFLOP/s |
+
+
+  **Alignment barely matters in fp32** -- K=4093 costs 2%, because fp32 was never on the tensor cores
+
+  for the alignment to matter to. It costs **39%** in bf16. So the two conditions are not independent
+
+  faults to choose between: dtype is the gate, and the alignment penalty only becomes visible once
+
+  dtype is fixed. Fixing dtype alone is 3.1x; fixing both is 5.1x.
+
+
+  **And note the last row.** PyTorch enables tf32 by default for fp32 matmuls, which DOES use the
+
+  tensor cores -- 53.44 against 22.51. So "fp32 never touches the tensor cores" is false on modern
+
+  PyTorch unless someone has explicitly disabled tf32. A strong answer knows that the profiler counter
+
+  being near zero is itself evidence tf32 was off.
+
+  '
+hints:
+- Tensor cores operate on specific dtypes. fp32 is not usually one of them.
+- Look hard at K = 4093.
+- Accumulation precision and input precision are separate choices.
+hint_ladder:
+  level_0: Tensor cores operate on specific dtypes. fp32 is not usually one of them.
+  level_1: Look hard at K = 4093.
+  level_2: Accumulation precision and input precision are separate choices.
+rubric:
+- criterion: 'Names the dtype requirement: tensor cores need reduced-precision inputs (fp16/bf16, or tf32
+    on Ampere and later), so a plain fp32 gemm does not qualify.'
+  weight: 0.3
+- criterion: 'Names the shape/alignment requirement -- dimensions should be multiples of the MMA tile
+    (8 or 16) -- and identifies K=4093 as unaligned. Credit for recognising that alignment only bites
+    AFTER the dtype is fixed: measured on an A40 it costs 2% in fp32 and 39% in bf16.'
+  weight: 0.25
+- criterion: 'Gives a concrete fix: cast to bf16/fp16 or enable tf32, and pad K to a multiple of 8.'
+  weight: 0.2
+- criterion: 'Addresses numerics: reduced-precision inputs with fp32 accumulate changes results; bf16
+    keeps fp32''s exponent range and loses mantissa, which is usually safe for training, while fp16 risks
+    overflow without loss scaling.'
+  weight: 0.15
+- criterion: Distinguishes training from inference in the tolerance argument rather than giving one blanket
+    answer.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

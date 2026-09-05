@@ -1,0 +1,47 @@
+slug: pinned-memory-and-transfer-overlap-design
+title: The H2D copy dominates. Fix it without a faster bus.
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- memory_hierarchy
+- gpu_execution_model
+- serving_latency
+grading: rubric
+description: 'A batch inference loop copies inputs host-to-device, runs a kernel, and copies results back.
+  The profiler shows the GPU idle for most of the wall clock, waiting on transfers. The bus cannot be
+  upgraded.
+
+
+  Explain the two independent changes that let compute and transfer overlap, why *both* are required (one
+  alone will not overlap anything), and what memory cost you have accepted.
+
+
+  Then state the case where none of this helps, and what you would do about it instead.'
+hints:
+- Can the driver DMA directly out of ordinary pageable host memory?
+- Two operations on the same stream are ordered with respect to each other.
+- Pinned memory is not free — it is locked out of the OS paging system.
+hint_ladder:
+  level_0: Can the driver DMA directly out of ordinary pageable host memory?
+  level_1: Two operations on the same stream are ordered with respect to each other.
+  level_2: Pinned memory is not free — it is locked out of the OS paging system.
+rubric:
+- criterion: Identifies pinned (page-locked) host memory as necessary for asynchronous DMA, since pageable
+    memory forces a staging copy and a synchronous transfer.
+  weight: 0.3
+- criterion: Identifies multiple CUDA streams with async copies as the second requirement, so a copy in
+    one stream overlaps a kernel in another.
+  weight: 0.25
+- criterion: 'Explains why both are needed: async copy on pageable memory silently degrades to synchronous,
+    and pinned memory on a single stream still serialises.'
+  weight: 0.2
+- criterion: 'States the cost of pinning: memory locked out of paging, so over-pinning degrades whole-system
+    performance and is not a free win.'
+  weight: 0.15
+- criterion: Names the case where it does not help — a workload whose transfer time exceeds total compute
+    time, where overlap only hides the smaller of the two.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

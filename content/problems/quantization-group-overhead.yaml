@@ -1,0 +1,79 @@
+slug: quantization-group-overhead
+title: What do per-group scales cost you?
+difficulty: medium
+categories:
+- Systems
+- CUDA
+concepts:
+- quantization_schemes
+description: "Input: `n_weights bits group_size scale_bits`.\n\nGroup-wise quantization stores one scale\
+  \ per group of `group_size` weights. Return `total_bits effective_bits_per_weight`, the second rounded\
+  \ to 3 decimal places.\n\n    total = n_weights * bits + ceil(n_weights / group_size) * scale_bits\n\
+  \nThis is the arithmetic that makes \"4-bit\" not quite 4 bits. A group size of 128 with 16-bit scales\
+  \ adds 0.125 bits per weight — small, and not nothing, and it shrinks as the group grows at the cost\
+  \ of accuracy."
+order_index: 60
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def overhead(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().overhead(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def overhead(self, tokens):\n       \
+  \ n = int(tokens[0]); b = int(tokens[1])\n        g = int(tokens[2]); sb = int(tokens[3])\n        if\
+  \ n <= 0 or g <= 0:\n            return '0 0.0'\n        total = n * b + math.ceil(n / g) * sb\n   \
+  \     return str(total) + ' ' + str(round(total / n, 3))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1024 4 128 16
+  expected_output: 4224 4.125
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1024 4 1024 16
+  expected_output: 4112 4.016
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1000 4 128 16
+  expected_output: 4128 4.128
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 1024 8 64 16
+  expected_output: 8448 8.25
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 4 128 16
+  expected_output: 20 20.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 1024 4 32 16
+  expected_output: 4608 4.5
+  is_hidden: true
+hints:
+- 'Scales are a ceiling division: a partial final group still needs one.'
+- effective = total_bits / n_weights.
+- Smaller groups mean better accuracy and more scale overhead.
+hint_ladder:
+  level_0: 'Scales are a ceiling division: a partial final group still needs one.'
+  level_1: effective = total_bits / n_weights.
+  level_2: Smaller groups mean better accuracy and more scale overhead.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

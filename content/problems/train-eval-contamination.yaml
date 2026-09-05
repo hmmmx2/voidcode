@@ -1,0 +1,82 @@
+slug: train-eval-contamination
+title: How much of your eval set is in the training data?
+difficulty: medium
+categories:
+- ML
+concepts:
+- dataloading
+description: 'Input: `n_train n_eval`, then the `n_train` training ids, then the `n_eval` eval ids.
+
+
+  Return `n_contaminated pct_of_eval`, where contaminated means an eval id that also appears in training.
+  Percentage rounded to 1 decimal place.
+
+
+  Contamination inflates every evaluation number without breaking anything, so it is invisible in exactly
+  the way that matters. Nothing about a contaminated benchmark looks wrong — the score just goes up, and
+  the model looks better than it is on data it has already seen.'
+order_index: 84
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def contam(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().contam(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def contam(self, tokens):\n        nt = int(tokens[0]);\
+  \ ne = int(tokens[1])\n        train = set(tokens[2:2 + nt])\n        ev = set(tokens[2 + nt:2 + nt\
+  \ + ne])\n        if not ev:\n            return '0 0.0'\n        bad = len(train & ev)\n        return\
+  \ str(bad) + ' ' + str(round(bad / len(ev) * 100, 1))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 3 3 a b c a b c
+  expected_output: 3 100.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 3 3 a b c x y z
+  expected_output: 0 0.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 3 2 a b c c d
+  expected_output: 1 50.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0 2 x y
+  expected_output: 0 0.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 3 0 a b c
+  expected_output: 0 0.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 4 4 a a b b a b c d
+  expected_output: 2 50.0
+  is_hidden: true
+hints:
+- A set intersection is enough; duplicates within eval count once.
+- Percentage is against the eval size, not the training size.
+- Zero eval examples returns 0 0.0 rather than dividing.
+hint_ladder:
+  level_0: A set intersection is enough; duplicates within eval count once.
+  level_1: Percentage is against the eval size, not the training size.
+  level_2: Zero eval examples returns 0 0.0 rather than dividing.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

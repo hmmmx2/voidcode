@@ -1,0 +1,216 @@
+slug: iq-bias-variance-decomposition
+title: Split test error into bias, variance and noise
+difficulty: hard
+categories:
+- ML
+concepts:
+- tensors_and_shapes
+description: 'Implement `decompose(preds, f_true, sigma2, k)`.
+
+
+  - `preds` -- `M x N`; `preds[i][j]` is model `i`''s prediction at test point `j`. The M models were
+  fit on M independent resamples of the training set.
+
+  - `f_true` -- length N, the noise-free target `f(x_j)`.
+
+  - `sigma2` -- the irreducible noise variance, from `y = f(x) + eps` with `Var(eps) = sigma2`.
+
+  - `k` -- an ensemble size.
+
+
+  For each test point `j`, let `f_bar[j]` be the mean prediction over the M models. Averaged over the
+  N test points:
+
+
+  ```
+
+  bias2    = mean_j ( f_true[j] - f_bar[j] )^2
+
+  variance = mean_j ( (1/M) * sum_i ( preds[i][j] - f_bar[j] )^2 )
+
+  noise    = sigma2
+
+  total    = bias2 + variance + noise
+
+  total_k  = bias2 + variance / k + noise
+
+  ```
+
+
+  Return `[bias2, variance, noise, total, total_k]`, each rounded to 6 decimal places.
+
+
+  **Three ways to get this wrong.**
+
+
+  1. `bias2` squares the *difference of the means*. Averaging `(f_true[j] - preds[i][j])^2` over both
+  `i` and `j` instead gives `bias2 + variance` -- the two quantities you were asked to separate, added
+  back together.
+
+  2. Divide by `M`, not `M - 1`. This is a decomposition of an expectation, not a sample estimate from
+  a survey, and `M = 1` must give a variance of `0.0` rather than raising.
+
+  3. `f_bar` is per test point. A single mean over the whole matrix is a different number entirely.
+
+
+  `total_k` is the payoff: averaging `k` independent models leaves `f_bar`, and therefore `bias2`, untouched
+  while dividing the variance by `k`. Ensembling buys the variance term and nothing else -- and since
+  the members are never truly independent, decorrelating them matters more than adding more of them. `noise`
+  is a floor no model of any kind gets under.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 8
+examples:
+- input: preds = [[1.0, 2.0], [3.0, 4.0]], f_true = [2.0, 2.0], sigma2 = 0.5, k = 2
+  output: '[0.5, 1.0, 0.5, 2.0, 1.5]'
+  explanation: f_bar = [2.0, 3.0], so bias2 = mean(0, 1) = 0.5. At each point the two predictions sit
+    one unit either side of their mean, so variance = 1.0. Total is 0.5 + 1.0 + 0.5 = 2.0, and averaging
+    2 models halves the variance term to give 1.5.
+- input: preds = [[0.0], [4.0]], f_true = [2.0], sigma2 = 0.0, k = 4
+  output: '[0.0, 4.0, 0.0, 4.0, 1.0]'
+  explanation: The two models straddle the target, so the mean prediction is exactly right and bias2 is
+    0 -- every bit of the error is variance. Averaging 4 such models cuts 4.0 down to 1.0, which no amount
+    of ensembling could do to a biased model.
+constraints:
+- 1 <= M <= 200, 1 <= N <= 10^3
+- len(preds[i]) == len(f_true) == N for every i
+- sigma2 >= 0 and k >= 1
+- Variance divides by M, not M - 1; M = 1 gives 0.0 and must not raise.
+- Round each of the five values to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: preds
+    value: '[[1.0, 2.0], [3.0, 4.0]]'
+  - name: f_true
+    value: '[2.0, 2.0]'
+  - name: sigma2
+    value: '0.5'
+  - name: k
+    value: '2'
+  stdin: '[[1.0, 2.0], [3.0, 4.0]]
+
+    [2.0, 2.0]
+
+    0.5
+
+    2'
+  expected_output: '[0.5, 1.0, 0.5, 2.0, 1.5]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: preds
+    value: '[[0.0], [4.0]]'
+  - name: f_true
+    value: '[2.0]'
+  - name: sigma2
+    value: '0.0'
+  - name: k
+    value: '4'
+  stdin: '[[0.0], [4.0]]
+
+    [2.0]
+
+    0.0
+
+    4'
+  expected_output: '[0.0, 4.0, 0.0, 4.0, 1.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: preds
+    value: '[[1.0], [2.0]]'
+  - name: f_true
+    value: '[0.0]'
+  - name: k
+    value: '1'
+  stdin: '[[1.0], [2.0]]
+
+    [0.0]
+
+    0.0
+
+    1'
+  expected_output: '[2.25, 0.25, 0.0, 2.5, 2.5]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: preds
+    value: '[[1.0, 3.0]]'
+  - name: f_true
+    value: '[2.0, 2.0]'
+  - name: sigma2
+    value: '1.0'
+  - name: k
+    value: '3'
+  stdin: '[[1.0, 3.0]]
+
+    [2.0, 2.0]
+
+    1.0
+
+    3'
+  expected_output: '[1.0, 0.0, 1.0, 2.0, 2.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: preds
+    value: '[[1.0, 10.0], [3.0, 20.0]]'
+  - name: f_true
+    value: '[2.0, 14.0]'
+  - name: sigma2
+    value: '0.25'
+  - name: k
+    value: '1'
+  stdin: '[[1.0, 10.0], [3.0, 20.0]]
+
+    [2.0, 14.0]
+
+    0.25
+
+    1'
+  expected_output: '[0.5, 13.0, 0.25, 13.75, 13.75]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def decompose(self, preds, f_true, sigma2, k):\n      \
+    \  \"\"\"\n        :type preds: List[List[float]]  -- M models x N test points\n        :type f_true:\
+    \ List[float]       -- noise-free target per test point\n        :type sigma2: float             --\
+    \ irreducible noise variance\n        :type k: int                    -- ensemble size\n        :rtype:\
+    \ List[float]  -- [bias2, variance, noise, total, total_k]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    preds = json.loads(_in[0])
+
+    f_true = json.loads(_in[1])
+
+    sigma2 = float(_in[2])
+
+    k = int(_in[3])
+
+    _r = Solution().decompose(preds, f_true, sigma2, k)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def decompose(self, preds, f_true, sigma2, k):\n   \
+  \     m = len(preds)\n        n = len(f_true)\n        bias2 = 0.0\n        variance = 0.0\n       \
+  \ for j in range(n):\n            f_bar = sum(preds[i][j] for i in range(m)) / float(m)\n          \
+  \  bias2 += (f_true[j] - f_bar) ** 2\n            variance += sum((preds[i][j] - f_bar) ** 2 for i in\
+  \ range(m)) / float(m)\n        bias2 /= float(n)\n        variance /= float(n)\n        total = bias2\
+  \ + variance + sigma2\n        total_k = bias2 + variance / float(k) + sigma2\n        return [bias2,\
+  \ variance, sigma2, total, total_k]\n"

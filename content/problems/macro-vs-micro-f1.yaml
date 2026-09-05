@@ -1,0 +1,87 @@
+slug: macro-vs-micro-f1
+title: Macro and micro F1 disagree. Say which and why.
+difficulty: hard
+categories:
+- ML
+concepts:
+- classification_metrics
+description: 'Input: `n_classes`, then `tp fp fn` for each class.
+
+
+  Micro-F1 pools the counts across classes and computes one F1. Macro-F1 computes F1 per class and takes
+  an unweighted mean. Return `micro macro` each rounded to 4 decimal places.
+
+
+  They diverge under class imbalance, and the direction tells you something: macro below micro means the
+  rare classes are being handled worse than the common ones, which pooling hides. A class with `tp = 0`
+  contributes an F1 of 0 to the macro mean — it is not skipped, because ignoring the classes you fail
+  on is how a model looks good at them.'
+order_index: 65
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def f1s(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().f1s(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def f1s(self, tokens):\n        n = int(tokens[0])\n\
+  \        v = [int(x) for x in tokens[1:1 + 3 * n]]\n        def f1(tp, fp, fn):\n            if tp ==\
+  \ 0:\n                return 0.0\n            p = tp / (tp + fp); r = tp / (tp + fn)\n            return\
+  \ 0.0 if p + r == 0 else 2 * p * r / (p + r)\n        TP = sum(v[3 * i] for i in range(n))\n       \
+  \ FP = sum(v[3 * i + 1] for i in range(n))\n        FN = sum(v[3 * i + 2] for i in range(n))\n     \
+  \   micro = f1(TP, FP, FN)\n        macro = sum(f1(v[3 * i], v[3 * i + 1], v[3 * i + 2])\n         \
+  \           for i in range(n)) / n if n else 0.0\n        return str(round(micro, 4)) + ' ' + str(round(macro,\
+  \ 4))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 10 0 0 10 0 0
+  expected_output: 1.0 1.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 90 5 5 0 5 5
+  expected_output: 0.9 0.4737
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 5 5 5
+  expected_output: 0.5 0.5
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 3 10 1 1 10 1 1 10 1 1
+  expected_output: 0.9091 0.9091
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 2 100 0 0 1 0 0
+  expected_output: 1.0 1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 0 5 5 0 5 5
+  expected_output: 0.0 0.0
+  is_hidden: true
+hints:
+- Micro pools first, then computes -- one precision, one recall.
+- Macro computes F1 per class, then averages with equal weight.
+- A class with no true positives scores 0, and still counts in the mean.
+hint_ladder:
+  level_0: Micro pools first, then computes -- one precision, one recall.
+  level_1: Macro computes F1 per class, then averages with equal weight.
+  level_2: A class with no true positives scores 0, and still counts in the mean.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

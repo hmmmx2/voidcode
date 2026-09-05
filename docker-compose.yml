@@ -1,0 +1,164 @@
+###############################################################################
+# VoidCode AI - Local Infrastructure Services
+#
+# Provides PostgreSQL, Redis, and Judge0 for the backend API.
+# The backend (FastAPI) and frontend (Next.js) run on the host.
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose down           # Stop all services
+#   docker compose logs -f        # View logs
+#   docker compose down -v        # Stop + delete data volumes
+###############################################################################
+
+services:
+  # === PostgreSQL ===
+  postgres:
+    image: postgres:16-alpine
+    container_name: voidcode-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: alwin
+      POSTGRES_PASSWORD: alwin_dev
+      POSTGRES_DB: alwin_tutor
+    ports:
+      - "5433:5432"          # host:5433 → container:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alwin -d alwin_tutor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # === Redis ===
+  redis:
+    image: redis:7-alpine
+    container_name: voidcode-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"          # host:6380 → container:6379
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # === Judge0 (Code Execution Sandbox) ===
+  #
+  # THIS CONTAINER RUNS UNTRUSTED CODE AND IS PRIVILEGED. Treat its port as an
+  # arbitrary-code-execution endpoint, because that is exactly what it is.
+  #
+  # It used to publish `2358:2358` — bound to every interface on the host, with no
+  # authentication token configured. On a laptop behind NAT that is survivable. On
+  # any public host it means anyone who can reach port 2358 can run code inside a
+  # privileged container.
+  #
+  # Now bound to 127.0.0.1 only, and gated on a token. The API talks to it over
+  # the compose network as `judge0-server:2358`, which does not need a published
+  # port at all — the loopback binding exists purely so a developer can still
+  # curl it while debugging. Drop the `ports:` block entirely in production; see
+  # docker-compose.prod.yml.
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: voidcode-judge0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:2358:2358"
+    depends_on:
+      judge0-postgres:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    environment:
+      # Judge0 uses its own separate Postgres + Redis
+      POSTGRES_HOST: judge0-postgres
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0_dev
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      # Allow all languages
+      ENABLE_WAIT_RESULT: "true"
+      ENABLE_BATCHED_SUBMISSIONS: "true"
+      # Refuse network access per submission, not merely default it off.
+      #
+      # `GET /config_info` reported `enable_network: false` but
+      # `allow_enable_network: true` — so a submission that asked for egress would
+      # have been granted it. `sandbox/adversarial.py` confirmed DNS and raw-IP
+      # egress are blocked today, which is the default holding; this removes the
+      # switch entirely so it cannot be flipped from a request.
+      ALLOW_ENABLE_NETWORK: "false"
+      # Per-process limits, not just per-cgroup totals. Without these, one thread of
+      # a multi-threaded submission can consume the whole allowance and the others
+      # are starved — which looks like a flaky judge rather than a limit being hit.
+      ENABLE_PER_PROCESS_AND_THREAD_TIME_LIMIT: "true"
+      ENABLE_PER_PROCESS_AND_THREAD_MEMORY_LIMIT: "true"
+      # Require a token on every request. AUTHN guards submissions; AUTHZ guards
+      # the administrative endpoints, which can read every submission ever made
+      # and so needs a DIFFERENT secret — sharing one means a leaked submission
+      # token is also an admin token.
+      #
+      # Empty by default, which leaves Judge0 open exactly as before: that is
+      # deliberate for `docker compose up` with no .env, and it is why
+      # `assert_production_config()` should refuse to start without them once
+      # this service is exposed. Set both in .env.
+      AUTHN_HEADER: X-Auth-Token
+      AUTHN_TOKEN: ${JUDGE0_AUTH_TOKEN:-}
+      AUTHZ_HEADER: X-Auth-User
+      AUTHZ_TOKEN: ${JUDGE0_ADMIN_TOKEN:-}
+    privileged: true         # Required for isolate sandboxing
+
+  judge0-postgres:
+    image: postgres:16-alpine
+    container_name: voidcode-judge0-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0_dev
+      POSTGRES_DB: judge0
+    volumes:
+      - judge0pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: voidcode-judge0-redis
+    restart: unless-stopped
+    volumes:
+      - judge0redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # === Judge0 Workers (process submissions) ===
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: voidcode-judge0-workers
+    restart: unless-stopped
+    command: ["./scripts/workers"]
+    depends_on:
+      judge0-server:
+        condition: service_started
+    environment:
+      POSTGRES_HOST: judge0-postgres
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0_dev
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+    privileged: true
+
+volumes:
+  pgdata:
+  redisdata:
+  judge0pgdata:
+  judge0redisdata:

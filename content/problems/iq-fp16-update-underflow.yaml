@@ -1,0 +1,222 @@
+slug: iq-fp16-update-underflow
+title: Simulate a weight update in a low-precision format
+difficulty: hard
+categories:
+- DL
+- CUDA
+- PyTorch
+concepts:
+- mixed_precision
+description: "Model a binary float format by two numbers: `mantissa_bits`, the number of fraction bits,\
+  \ and `min_exp`, the exponent of the smallest normal value. fp16 is `(10, -14)`, fp32 is `(23, -126)`,\
+  \ bf16 is `(7, -126)`.\n\nWrite\n\n```\nclass Solution(object):\n    def simulate(self, w, u, steps,\
+  \ mantissa_bits, min_exp):\n        # -> [ulps, w_final]\n```\n\n**Spacing.** The gap between neighbouring\
+  \ representable values at `x` is\n\n```\nspacing(x):\n    if x == 0:  return 2 ** (min_exp - mantissa_bits)\n\
+  \    e = floor(log2(abs(x)))          # use math.frexp: m, k = frexp(abs(x)) -> e = k - 1\n    e = max(e,\
+  \ min_exp)              # subnormals all share one spacing\n    return 2 ** (e - mantissa_bits)\n```\n\
+  \n`math.frexp` is the safe way to get `e` — it is exact where `log2` can be one bit off at boundaries.\n\
+  \n**Quantizing.** Round to the nearest representable value, ties to even:\n\n```\nquantize(x):\n   \
+  \ s = spacing(x)\n    return round(x / s) * s\n```\n\nPython's built-in `round` on a float already breaks\
+  \ ties to even, so this is literally the rule.\n\n**What to return.**\n\n1. `ulps` — the update measured\
+  \ in units of the spacing **at the starting weight**: `u / spacing(w)`. This is the whole diagnostic.\
+  \ Below 0.5 the update cannot survive rounding, and it will not survive on any later step either, because\
+  \ the spacing has not changed.\n2. `w_final` — the weight after applying the update `steps` times, each\
+  \ step being an addition in full precision followed by one `quantize`:\n\n```\ncur = w\nrepeat steps\
+  \ times:  cur = quantize(cur + u)\n```\n\nNote the failure is silent: no NaN, no warning, just a parameter\
+  \ that never moves however long the run goes on. The fix is the fp32 master copy — same `u`, same `w`,\
+  \ larger `mantissa_bits`. A loss scaler changes neither number here, because rescaling the gradient\
+  \ does not change the spacing of values near `w`.\n\nThe driver rounds both returned values to 9 decimal\
+  \ places.\n\nStandard library only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 12
+examples:
+- input: w = 1.0, u = 1e-6, steps = 1, mantissa_bits = 10, min_exp = -14
+  output: '[0.001024, 1.0]'
+  explanation: With a 10-bit mantissa the spacing at 1.0 is 2^-10 = 0.0009765625, so an update of 1e-6
+    is about one thousandth of one step. It rounds straight back to 1.0.
+- input: w = 1.0, u = 1e-6, steps = 1, mantissa_bits = 23, min_exp = -126
+  output: '[8.388608, 1.000000954]'
+  explanation: An fp32 master copy has spacing 2^-23 near 1.0, so the same update is about 8 spacings
+    and lands cleanly.
+constraints:
+- 0 <= steps <= 200000
+- 1 <= mantissa_bits <= 52
+- -1074 <= min_exp <= 0
+- abs(w) < 2^30, abs(u) < 2^30
+- Compute ulps from the spacing at the STARTING w.
+- spacing(0.0) is 2 ** (min_exp - mantissa_bits).
+- Round to nearest, ties to even.
+- Round both returned values to 9 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: w
+    value: '1.0'
+  - name: u
+    value: 1e-6
+  - name: steps
+    value: '1'
+  - name: mantissa_bits
+    value: '10'
+  - name: min_exp
+    value: '-14'
+  stdin: '1.0
+
+    1e-6
+
+    1
+
+    10
+
+    -14'
+  expected_output: '[0.001024, 1.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: steps
+    value: '100000'
+  - name: mantissa_bits
+    value: '10'
+  stdin: '1.0
+
+    1e-6
+
+    100000
+
+    10
+
+    -14'
+  expected_output: '[0.001024, 1.0]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: mantissa_bits
+    value: '23'
+  - name: min_exp
+    value: '-126'
+  stdin: '1.0
+
+    1e-6
+
+    1
+
+    23
+
+    -126'
+  expected_output: '[8.388608, 1.000000954]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: w
+    value: '0.0'
+  - name: u
+    value: 1e-8
+  - name: steps
+    value: '100'
+  stdin: '0.0
+
+    1e-8
+
+    100
+
+    10
+
+    -14'
+  expected_output: '[0.16777216, 0.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 4
+  inputs:
+  - name: w
+    value: '1024.0'
+  - name: u
+    value: '0.1'
+  stdin: '1024.0
+
+    0.1
+
+    1
+
+    10
+
+    -14'
+  expected_output: '[0.1, 1024.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 5
+  inputs:
+  - name: mantissa_bits
+    value: '7'
+  - name: min_exp
+    value: '-126'
+  stdin: '1.0
+
+    1e-6
+
+    1000
+
+    7
+
+    -126'
+  expected_output: '[0.000128, 1.0]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 6
+  inputs:
+  - name: steps
+    value: '100000'
+  - name: mantissa_bits
+    value: '23'
+  stdin: '1.0
+
+    1e-6
+
+    100000
+
+    23
+
+    -126'
+  expected_output: '[8.388608, 1.095367432]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def simulate(self, w, u, steps, mantissa_bits,\
+    \ min_exp):\n        \"\"\"\n        :type w: float\n        :type u: float\n        :type steps:\
+    \ int\n        :type mantissa_bits: int\n        :type min_exp: int\n        :rtype: List[float] \
+    \ -- [ulps, w_final]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    w = float(_in[0])
+
+    u = float(_in[1])
+
+    steps = int(_in[2])
+
+    mantissa_bits = int(_in[3])
+
+    min_exp = int(_in[4])
+
+    _r = Solution().simulate(w, u, steps, mantissa_bits, min_exp)
+
+    print([round(x, 9) for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def simulate(self, w, u, steps, mantissa_bits,\
+  \ min_exp):\n        def spacing(x):\n            if x == 0.0:\n                return math.ldexp(1.0,\
+  \ min_exp - mantissa_bits)\n            _m, k = math.frexp(abs(x))\n            e = k - 1          \
+  \       # abs(x) lies in [2**e, 2**(e+1))\n            if e < min_exp:           # subnormal: one fixed\
+  \ spacing\n                e = min_exp\n            return math.ldexp(1.0, e - mantissa_bits)\n\n  \
+  \      def quantize(x):\n            s = spacing(x)\n            return round(x / s) * s   # round()\
+  \ breaks ties to even\n\n        ulps = u / spacing(w)\n        cur = w\n        for _ in range(steps):\n\
+  \            cur = quantize(cur + u)\n        return [ulps, cur]\n"

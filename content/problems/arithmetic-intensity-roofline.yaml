@@ -1,0 +1,49 @@
+slug: arithmetic-intensity-roofline
+title: Place a kernel on the roofline
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- roofline_analysis
+description: 'Write `roofline(flops, bytes_moved, peak_flops, peak_bw)` returning the kernel''s arithmetic
+  intensity, the fraction of peak arithmetic throughput it can actually reach, and whether it is memory
+  or compute bound. The trap is the clamp: the bandwidth roof keeps sloping upward forever, so a kernel
+  well above the ridge point must not report four times peak.'
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Anthropic
+prompt: 'Write `roofline(flops, bytes_moved, peak_flops, peak_bw)` returning the kernel''s arithmetic
+  intensity, the fraction of peak arithmetic throughput it can actually reach, and whether it is memory
+  or compute bound. The trap is the clamp: the bandwidth roof keeps sloping upward forever, so a kernel
+  well above the ridge point must not report four times peak.'
+approach: Intensity is FLOPs over bytes moved to and from HBM; the ridge point is peak throughput over
+  peak bandwidth. Compare the two to classify the kernel, and take the minimum of the flat compute roof
+  and the sloped bandwidth roof to get what it can achieve. Decide up front what happens exactly at the
+  ridge.
+model_answer: "RIDGE POINT (A100, bf16): ~312 TFLOP/s over ~1.55 TB/s\n    ≈ 200 FLOP/byte. Below it,\
+  \ bandwidth bound; above, compute bound.\n\nELEMENT-WISE ADD, c = a + b, fp32:\n    per element: 1 FLOP,\
+  \ 12 bytes (read a, read b, write c)\n    intensity = 1/12 ≈ **0.083 FLOP/byte**\n  Three orders of\
+  \ magnitude below the ridge — hopelessly bandwidth bound. Making the arithmetic faster is worthless;\
+  \ the only lever is moving fewer bytes, i.e. fusing it into a neighbouring kernel so the intermediate\
+  \ never reaches HBM. That is the entire reason fused kernels exist.\n\nMATMUL, N = 4096:\n    FLOPs\
+  \ = 2N³ = 1.37e11\n    bytes = 3N² * 2 = 1.0e8   (two inputs, one output, bf16)\n    intensity = 1.37e11\
+  \ / 1.0e8 ≈ **1365 FLOP/byte**\n  Well above the ridge — compute bound. Here tensor cores, tile shapes\
+  \ and occupancy are the levers, and shaving bytes buys nothing.\n\nTHE NUANCE. Intensity depends on\
+  \ where you draw the boundary. Attention as three separate kernels writes the n×n matrix to HBM and\
+  \ is bandwidth bound; FlashAttention does the *same FLOPs* but tiles so that matrix never materialises,\
+  \ raising intensity and moving the kernel across the ridge. Same maths, different roofline position\
+  \ — which is why FlashAttention is not an approximation and does not reduce arithmetic."
+follow_ups:
+- Compute the intensity of a fused softmax over a row of 4096.
+- At what N does a matmul stop being compute bound?
+- Occupancy is 25%. Does that tell you the kernel is slow?
+red_flags:
+- Optimising arithmetic in a bandwidth-bound kernel.
+- Reaching for occupancy before knowing which limit binds.
+- Not seeing that fusion changes intensity by removing HBM round trips.
+source_kind: interview_question

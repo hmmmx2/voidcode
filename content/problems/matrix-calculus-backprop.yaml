@@ -1,0 +1,46 @@
+slug: matrix-calculus-backprop
+title: Backprop a linear layer by hand
+difficulty: medium
+categories:
+- DL
+concepts:
+- backpropagation
+- linear_layers
+description: Write `linear_backward(X, W, dY)` for `Y = X @ W + b`, with `X` of shape (N, D) and `W` of
+  shape (D, M), returning `[dX, dW, db]`. Shape analysis pins both transposes down uniquely — but `db`
+  accumulates over the batch as a sum rather than a mean, and `dW` needs the saved `X`, which is the reason
+  every forward activation has to stay resident until its backward pass runs.
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- NVIDIA
+- Meta
+prompt: Write `linear_backward(X, W, dY)` for `Y = X @ W + b`, with `X` of shape (N, D) and `W` of shape
+  (D, M), returning `[dX, dW, db]`. Shape analysis pins both transposes down uniquely — but `db` accumulates
+  over the batch as a sum rather than a mean, and `dW` needs the saved `X`, which is the reason every
+  forward activation has to stay resident until its backward pass runs.
+approach: Derive one entry with explicit indices from `Y[n][m] = sum_d X[n][d] * W[d][m]`, then read off
+  the matrix form and confirm it against the shapes — only one arrangement of each product type-checks.
+  Three plain triple loops are enough; the difficulty is which index is summed over in each.
+model_answer: "Entrywise, Y_nm = sum_d X_nd W_dm.\n\n    dL/dX_nd = sum_m (dL/dY_nm)(dY_nm/dX_nd) = sum_m\
+  \ dL/dY_nm W_dm\n             => dL/dX = dL/dY @ W^T    (N,M)(M,D) = (N,D)  ✓\n\n    dL/dW_dm = sum_n\
+  \ (dL/dY_nm)(dY_nm/dW_dm) = sum_n X_nd dL/dY_nm\n             => dL/dW = X^T @ dL/dY    (D,N)(N,M) =\
+  \ (D,M)  ✓\n\nShape analysis pins both down uniquely — the fastest way to get them right under pressure\
+  \ and to check them afterwards.\n\nMEMORY. dL/dW needs X, so the input activation of every linear layer\
+  \ must stay resident from its forward pass until its backward pass runs. Activation memory scales as\
+  \ batch × seq_len × d_model × depth, which in a transformer dominates parameter memory at any real batch\
+  \ size.\n\nThat single fact explains gradient checkpointing: discard activations, recompute them in\
+  \ the backward pass, pay ~30% more compute for a large memory saving. It also explains the cost ratio\
+  \ — backward does two matmuls of the same size where forward did one, so a training step is about 3×\
+  \ a forward pass. That is the origin of 6 FLOPs per parameter per token: 2 forward, 4 backward."
+follow_ups:
+- Redo it with a bias term. What is dL/db?
+- Which activations are cheap to recompute, and which are worth keeping?
+- Derive 6 FLOPs per parameter per token from this.
+red_flags:
+- Getting the transposes wrong and not checking against shapes.
+- Not realising the forward input must be retained for the weight gradient.
+- Thinking backward costs the same as forward.
+source_kind: interview_question

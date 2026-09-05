@@ -1,0 +1,10 @@
+{
+  "backend": "hf_generate",
+  "prompts": 12,
+  "tokens": 28809,
+  "seconds": 80.77,
+  "tokens_per_s": 356.7,
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "group": 16,
+  "max_new": 640
+}

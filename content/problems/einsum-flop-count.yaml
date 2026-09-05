@@ -1,0 +1,113 @@
+slug: einsum-flop-count
+title: How many FLOPs is this einsum?
+difficulty: medium
+categories:
+- DL
+concepts:
+- einsum_notation
+- vectorization
+description: 'Return the FLOP count of an einsum expression.
+
+
+  Write `einsum_flops(spec, sizes)` where `spec` is like `"bij,bjk->bik"` and `sizes` maps each index
+
+  letter to its dimension.
+
+
+  The cost is the size of the **full index space** — the product of every index appearing anywhere —
+
+  times 2 for the multiply-accumulate, when any index is summed over. When no index is summed (the
+
+  output keeps them all, as in an outer product or a pure permutation) there is no accumulation, so
+
+  count 1 per element rather than 2.
+
+
+  **Why the full index space and not the output size.** The summed indices are the work. `bij,bjk->bik`
+
+  has an output of `b*i*k` but does `b*i*j*k` multiply-adds, because `j` is contracted away. Reading
+
+  cost off the output shape is the most common way an einsum''s expense gets underestimated — the
+
+  expensive part is exactly the part that does not appear in the answer.
+
+
+  **Which is also why index order matters for real performance, though not for this count.** A
+
+  contraction expressed as one einsum may be executed as a single enormous intermediate, where the
+
+  same computation split into two contractions is dramatically cheaper. `opt_einsum` exists for that
+
+  reason, and the FLOP count here is the *lower bound* a good path achieves, not what a naive one
+
+  costs.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 34
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def einsum_flops(self, spec, sizes):\n        \"\"\"\n\
+    \        :type spec: str    # e.g. \"bij,bjk->bik\"\n        :type sizes: dict  # letter -> dimension\n\
+    \        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _line = sys.stdin.read().strip()
+
+    _spec, _rest = _line.split(None, 1)
+
+    _sizes = {k.strip(): int(v) for k, v in (p.split(''='') for p in _rest.split('',''))}
+
+    print(Solution().einsum_flops(_spec, _sizes))
+
+    '
+reference_solution: "class Solution(object):\n    def einsum_flops(self, spec, sizes):\n        lhs, rhs\
+  \ = spec.split('->')\n        all_idx = set(''.join(lhs.split(',')))\n        out_idx = set(rhs)\n \
+  \       total = 1\n        for i in sorted(all_idx):\n            total *= sizes[i]\n        return\
+  \ total * 2 if all_idx - out_idx else total\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: bij,bjk->bik b=8,i=128,j=64,k=256
+  expected_output: '33554432'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: ij,jk->ik i=512,j=512,k=512
+  expected_output: '268435456'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: i,j->ij i=100,j=200
+  expected_output: '20000'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: bhqd,bhkd->bhqk b=4,h=8,q=512,k=512,d=64
+  expected_output: '1073741824'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: ij->ji i=64,j=64
+  expected_output: '4096'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: bij,bj->bi b=16,i=128,j=128
+  expected_output: '524288'
+  is_hidden: true
+hints:
+- The full index space is every distinct letter across inputs and output.
+- 2 FLOPs per element when something is contracted; 1 when nothing is.
+- The output shape does not tell you the cost.
+hint_ladder:
+  level_0: The full index space is every distinct letter across inputs and output.
+  level_1: 2 FLOPs per element when something is contracted; 1 when nothing is.
+  level_2: The output shape does not tell you the cost.

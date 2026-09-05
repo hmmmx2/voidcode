@@ -1,0 +1,49 @@
+slug: derive-layernorm-backward
+title: Push a gradient back through LayerNorm
+difficulty: hard
+categories:
+- DL
+- CUDA
+concepts:
+- normalization_layers
+- backpropagation
+description: Fill in `layernorm_backward(x, dy, gamma, eps)` so that it returns `[dx, dgamma, dbeta]`
+  for one row. Because mu and sigma are both functions of every element, dividing the incoming gradient
+  by sigma is not the answer — two reduction terms have to come out with it, and the result is forced
+  to have zero mean and zero projection onto the normalised input.
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Anthropic
+prompt: Fill in `layernorm_backward(x, dy, gamma, eps)` so that it returns `[dx, dgamma, dbeta]` for one
+  row. Because mu and sigma are both functions of every element, dividing the incoming gradient by sigma
+  is not the answer — two reduction terms have to come out with it, and the result is forced to have zero
+  mean and zero projection onto the normalised input.
+approach: 'Trace the three routes from each `x_i` to the loss: directly, through the mean, and through
+  the variance. Collect the terms and the two extra pieces turn out to be simple averages over the row,
+  which is why a fused kernel needs only two reductions rather than four.'
+model_answer: "For a vector x of length H: mu = (1/H) sum x_j, var = (1/H) sum (x_j - mu)^2, sigma = sqrt(var\
+  \ + eps), y_i = (x_i - mu)/sigma.\n\nEvery x_i reaches the loss three ways: directly, through mu, and\
+  \ through sigma. Treating the statistics as constants gives dL/dx = dL/dy / sigma — wrong, and dangerously\
+  \ so, because it still trains, just worse.\n\nWriting g_i = dL/dy_i and collecting terms:\n\n    dL/dx_i\
+  \ = (1/sigma) [ g_i - (1/H) sum_j g_j\n                              - y_i * (1/H) sum_j g_j y_j ]\n\
+  \nRead the three terms as what they are: the direct path, a correction removing the mean of the incoming\
+  \ gradient (the mu path), and a correction removing its projection onto y (the sigma path).\n\nThe consequence\
+  \ is geometric: the result has zero mean and is orthogonal to y. LayerNorm projects out exactly the\
+  \ two directions it is invariant to — shifting all inputs equally, and scaling them equally — because\
+  \ the loss genuinely cannot change along those.\n\nImplementation note: this form needs only two reductions\
+  \ over H (sum g, and sum g·y), which is why a fused LayerNorm is a single pass and why a naive implementation\
+  \ costs several extra trips through HBM."
+follow_ups:
+- Add the learnable gain and bias. What are dL/dgamma and dL/dbeta?
+- How does this simplify for RMSNorm, which drops mean-centring?
+- Why does this fuse into two reductions rather than four?
+red_flags:
+- Backpropagating as if mu and sigma were constants.
+- Not recognising every input affects every output through the statistics.
+- Unable to say why the result comes out orthogonal to y.
+source_kind: interview_question

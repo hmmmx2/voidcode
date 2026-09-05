@@ -1,0 +1,82 @@
+slug: ndcg-at-k
+title: Compute NDCG@k from a ranked relevance list
+difficulty: medium
+categories:
+- ML
+concepts:
+- classification_metrics
+description: 'Ranking quality is reported as NDCG@k throughout this project, and it is worth being able
+  to compute it by hand.
+
+
+  Input: `k`, then the graded relevance of each item **in the order your ranker returned them**.
+
+
+  DCG@k sums `rel_i / log2(i + 2)` over the first k positions (i counted from 0). IDCG@k is the same sum
+  over the relevances sorted descending — the best any ranker could do on this set. NDCG is their ratio,
+  rounded to 4 decimal places.
+
+
+  Return `0.0` when IDCG is 0, which happens when nothing relevant exists: a ranker cannot be penalised
+  for failing to surface what is not there.'
+order_index: 42
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def ndcg(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().ndcg(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def ndcg(self, tokens):\n        k =\
+  \ int(tokens[0])\n        rel = [float(x) for x in tokens[1:]]\n        def dcg(xs):\n            return\
+  \ sum(r / math.log2(i + 2) for i, r in enumerate(xs[:k]))\n        ideal = dcg(sorted(rel, reverse=True))\n\
+  \        if ideal == 0:\n            return 0.0\n        return round(dcg(rel) / ideal, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 3 3 2 1
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 3 1 2 3
+  expected_output: '0.79'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 2 0 0 0 0
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 5 3 3 3
+  expected_output: '1.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 0 5
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 4 2 0 0 1
+  expected_output: '0.9239'
+  is_hidden: true
+hints:
+- Position 0 divides by log2(2) = 1, so the first item is never discounted.
+- IDCG uses the SAME relevance values, sorted descending -- not a perfect list you invent.
+- All-zero relevance means IDCG is 0; return 0.0 rather than dividing.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

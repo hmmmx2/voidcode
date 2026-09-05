@@ -1,0 +1,112 @@
+slug: grad-accum-ragged-batch
+title: Make accumulation match the large batch when the last microbatch is short
+difficulty: medium
+categories:
+- DL
+concepts:
+- gradient_accumulation
+- loss_functions
+description: 'You are accumulating gradients over k microbatches to simulate one large batch. Each microbatch
+  reports its MEAN per-example gradient and how many examples it held.
+
+
+  Return the accumulated gradient that exactly equals what a single batch over all the examples would
+  have produced, rounded to 6 decimal places.
+
+
+  The trap: summing the microbatch means and dividing by k is correct only when every microbatch is the
+  same size. Real dataloaders produce a short final microbatch, and dividing by k then over-weights the
+  examples in it — a 2-example tail counts as much as a 32-example microbatch. Nothing crashes; accumulated
+  training just quietly stops matching the large-batch run it is supposed to reproduce.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 40
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def accumulate(self, means, counts):\n        \"\"\"\n\
+    \        :type means: List[float]   per-microbatch MEAN gradient\n        :type counts: List[int]\
+    \    examples in each microbatch\n        :rtype: float              gradient equal to a single batch\
+    \ over every example\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _tok = sys.stdin.read().split()
+
+    _k = int(_tok[0])
+
+    _means = [float(x) for x in _tok[1:1 + _k]]
+
+    _counts = [int(x) for x in _tok[1 + _k:1 + 2 * _k]]
+
+    print(Solution().accumulate(_means, _counts))
+
+    '
+reference_solution: "class Solution(object):\n    def accumulate(self, means, counts):\n        # Weight\
+  \ each microbatch by the examples it actually held. Summing means and dividing by k\n        # is the\
+  \ same thing ONLY when every count is equal, which is the case that hides the bug.\n        total =\
+  \ 0.0\n        for mean, count in zip(means, counts):\n            total += mean * count\n        return\
+  \ round(total / sum(counts), 6)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: '2
+
+    0.4 0.6
+
+    8 8
+
+    '
+  expected_output: '0.5'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: '2
+
+    0.4 1.0
+
+    8 2
+
+    '
+  expected_output: '0.52'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: '1
+
+    0.35
+
+    16
+
+    '
+  expected_output: '0.35'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: '3
+
+    0.1 0.2 3.0
+
+    32 32 1
+
+    '
+  expected_output: '0.193846'
+  is_hidden: true
+hints:
+- 'Write down what a single batch over all the examples computes: the sum of every per-example gradient,
+  divided by the number of examples.'
+- A microbatch's mean times its count recovers its SUM. That is the quantity that is safe to add across
+  microbatches; means are not.
+- Test yourself with counts [8, 2]. If dividing by 2 gives you the same answer as dividing by 10 examples,
+  your microbatches were equal-sized and the case was not testing anything.
+hint_ladder:
+  level_0: 'Write down what a single batch over all the examples computes: the sum of every per-example
+    gradient, divided by the number of examples.'
+  level_1: A microbatch's mean times its count recovers its SUM. That is the quantity that is safe to
+    add across microbatches; means are not.
+  level_2: Test yourself with counts [8, 2]. If dividing by 2 gives you the same answer as dividing by
+    10 examples, your microbatches were equal-sized and the case was not testing anything.

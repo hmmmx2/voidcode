@@ -1,0 +1,45 @@
+slug: cross-attention-versus-prefix-tokens-design
+title: Inject vision by cross-attention or by prefix tokens? Choose.
+difficulty: hard
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- projection_layers
+- vision_transformer
+grading: rubric
+description: "Two families of VLM architecture:\n\n  A. **Prefix tokens** — project visual features into\
+  \ the text embedding space and prepend them as tokens (LLaVA-style).\n  B. **Cross-attention** — keep\
+  \ visual features separate and add gated cross-attention layers inside the language model (Flamingo-style).\n\
+  \nCompare them on three axes: how much of the language model must be modified, how the cost scales with\
+  \ the number of visual tokens, and how easily each is adapted to a new base language model.\n\nThen\
+  \ pick one for a tutor that answers mostly text-only questions and occasionally receives a diagram,\
+  \ and justify the choice against that specific traffic pattern."
+hints:
+- Which design leaves the language model's own weights and architecture untouched?
+- Prefix tokens join the self-attention sequence. What is attention's cost in sequence length?
+- For a mostly-text workload, which design costs nothing when there is no image?
+hint_ladder:
+  level_0: Which design leaves the language model's own weights and architecture untouched?
+  level_1: Prefix tokens join the self-attention sequence. What is attention's cost in sequence length?
+  level_2: For a mostly-text workload, which design costs nothing when there is no image?
+rubric:
+- criterion: Prefix tokens require no architectural change — visual features become ordinary tokens —
+    so any base language model works and the design ports easily.
+  weight: 0.25
+- criterion: Cross-attention adds new layers inside the language model, so it needs training of those
+    layers and is tied to that model's internals.
+  weight: 0.2
+- criterion: 'Gets the scaling right: prefix tokens extend the self-attention sequence, so cost grows
+    quadratically with visual token count, while cross-attention keeps visual features in a separate stream
+    with cost linear in them.'
+  weight: 0.25
+- criterion: Chooses for the stated traffic pattern and justifies it — prefix tokens cost literally nothing
+    on a text-only turn, which is most turns for this tutor.
+  weight: 0.2
+- criterion: Names a condition that would flip the choice, such as very high visual token counts from
+    high-resolution tiling.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

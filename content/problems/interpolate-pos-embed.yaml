@@ -1,0 +1,50 @@
+slug: interpolate-pos-embed
+title: Resize a ViT's position embeddings
+difficulty: hard
+categories:
+- VLM
+concepts:
+- embeddings
+- vision_transformer
+- image_preprocessing
+description: A ViT trained on a 2x2 patch grid must run at 4x4. Write the position-embedding resize. One
+  row of the table must not be interpolated at all, and getting that wrong is silent.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- Meta
+- Google DeepMind
+prompt: A ViT trained on a 2x2 patch grid must run at 4x4. Write the position-embedding resize. One row
+  of the table must not be interpolated at all, and getting that wrong is silent.
+approach: Separate the CLS row before touching anything -- it has no position, so interpolating it mixes
+  a non-spatial vector into the grid. Then treat the rest as a square grid per channel and bilinearly
+  sample it.
+model_answer: "    def resize_pos_embed(pe, old=16, new=32):\n        # pe: (1 + old*old, D). Row 0 is\
+  \ CLS.\n        cls, grid = pe[:1], pe[1:]\n        D = len(grid[0])\n\n        # (old*old, D) -> (old,\
+  \ old, D)\n        g = [[grid[r * old + c] for c in range(old)] for r in range(old)]\n\n        out\
+  \ = []\n        for r in range(new):\n            for c in range(new):\n                # map new-grid\
+  \ centre to old-grid coordinates\n                y = (r + 0.5) * old / new - 0.5\n                x\
+  \ = (c + 0.5) * old / new - 0.5\n                y0, x0 = int(y // 1), int(x // 1)\n               \
+  \ dy, dx = y - y0, x - x0\n                y0 = min(max(y0, 0), old - 1); y1 = min(y0 + 1, old - 1)\n\
+  \                x0 = min(max(x0, 0), old - 1); x1 = min(x0 + 1, old - 1)\n                out.append([\n\
+  \                    (1-dy)*((1-dx)*g[y0][x0][d] + dx*g[y0][x1][d])\n                    + dy *((1-dx)*g[y1][x0][d]\
+  \ + dx*g[y1][x1][d])\n                    for d in range(D)\n                ])\n        return cls\
+  \ + out\n\nWHAT MUST NOT BE INTERPOLATED: the CLS token. It has no spatial position, so including it\
+  \ in the grid shifts every patch embedding by one and silently corrupts the whole map. Slicing it off\
+  \ and concatenating it back unchanged is the single most important line here, and the most commonly\
+  \ missed.\n\nThe half-pixel offsets ((r + 0.5)*old/new - 0.5) align the *centres* of the two grids.\
+  \ Using r*old/new instead aligns corners, which introduces a systematic half-patch drift — small, and\
+  \ it degrades quality without producing any visible error.\n\nBicubic is generally preferred to bilinear\
+  \ in practice for slightly better fidelity, and either way the model needs a short fine-tune: interpolated\
+  \ embeddings are a starting point, not a free upgrade."
+follow_ups:
+- Why do 2D RoPE approaches avoid this problem entirely?
+- What does aligning corners instead of centres cost?
+- How would you handle a non-square target grid?
+red_flags:
+- Interpolating the CLS token along with the patch grid.
+- Treating the embeddings as 1D and interpolating the flat sequence.
+- Assuming the model works at the new resolution with no fine-tuning.
+source_kind: interview_question

@@ -1,0 +1,89 @@
+slug: speculative-accept-rate
+title: When does speculative decoding pay off?
+difficulty: medium
+categories:
+- LLM
+concepts:
+- speculative_decoding
+- sampling_decoding
+description: "Return the expected speedup from speculative decoding.\n\nWrite `expected_speedup(k, accept_rate,\
+  \ draft_cost)`.\n\nA draft model proposes `k` tokens; the target verifies them in one forward pass and\
+  \ accepts a\nprefix. With independent per-token acceptance probability `alpha`, the expected number\
+  \ of accepted\ntokens per round — including the one free token the target always produces — is\n\n \
+  \   (1 - alpha**(k+1)) / (1 - alpha)\n\nThe round costs one target forward plus `k` draft forwards,\
+  \ and `draft_cost` is the draft's cost\nas a fraction of the target's. So the speedup is `expected_tokens\
+  \ / (1 + k * draft_cost)`.\n\nRound to 4 decimal places.\n\n**Why a bigger k is not always better, which\
+  \ is the point of the question.** Accepted tokens grow\nsublinearly in `k` — each extra draft token\
+  \ needs *all* the previous ones accepted — while the\ndraft cost grows linearly. Past a point every\
+  \ additional speculation is paid for and thrown away.\nThe optimum is usually small, 3 to 5 for typical\
+  \ acceptance rates.\n\n**And why the whole technique can lose.** If `draft_cost` is high or `alpha`\
+  \ is low, the speedup\nfalls below 1.0 and you have made generation slower while adding a second model\
+  \ to serve. A draft\nthat is 30% of the target's cost with 60% acceptance is not obviously worth it,\
+  \ and the arithmetic\nhere says which side it lands on.\n\nSpeculative decoding is also **exact**: the\
+  \ verification step preserves the target's output\ndistribution, so this is pure throughput and not\
+  \ a quality trade."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 31
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def expected_speedup(self, k, accept_rate, draft_cost):\n\
+    \        \"\"\"\n        :rtype: float\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().expected_speedup(int(_p[0]), float(_p[1]), float(_p[2])))
+
+    '
+reference_solution: "class Solution(object):\n    def expected_speedup(self, k, accept_rate, draft_cost):\n\
+  \        a = accept_rate\n        if a == 1.0:\n            expected = k + 1\n        else:\n      \
+  \      expected = (1 - a ** (k + 1)) / (1 - a)\n        return round(expected / (1 + k * draft_cost),\
+  \ 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4 0.8 0.1
+  expected_output: '2.4011'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4 0.3 0.3
+  expected_output: '0.6478'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 1 0.9 0.1
+  expected_output: '1.7273'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 8 0.8 0.1
+  expected_output: '2.405'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 4 1.0 0.1
+  expected_output: '3.5714'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 10 0.5 0.2
+  expected_output: '0.6663'
+  is_hidden: true
+hints:
+- Expected accepted tokens is a geometric sum, including the free token the target always emits.
+- Cost is one target forward plus k draft forwards.
+- alpha == 1.0 makes the geometric sum degenerate; handle it.
+hint_ladder:
+  level_0: Expected accepted tokens is a geometric sum, including the free token the target always emits.
+  level_1: Cost is one target forward plus k draft forwards.
+  level_2: alpha == 1.0 makes the geometric sum degenerate; handle it.

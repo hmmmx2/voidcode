@@ -1,0 +1,45 @@
+slug: training-checkpoint-cadence-design
+title: How often should a training run checkpoint?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- checkpointing_recovery
+- memory_accounting
+grading: rubric
+description: 'A multi-day training run checkpoints every 1,000 steps. A step takes 3 seconds and writing
+  a checkpoint stalls training for 90 seconds.
+
+
+  Derive the cadence that minimises expected total time lost, given a failure rate you should state as
+  an assumption. Show both terms: the cost of writing and the cost of the work discarded on a crash.
+
+
+  Then explain how asynchronous checkpointing changes the calculation, and what it does NOT remove.'
+hints:
+- Two costs move in opposite directions as the interval changes.
+- Expected work lost on a crash is roughly half an interval.
+- Async writing overlaps the copy with compute, but something must still be consistent.
+hint_ladder:
+  level_0: Two costs move in opposite directions as the interval changes.
+  level_1: Expected work lost on a crash is roughly half an interval.
+  level_2: Async writing overlaps the copy with compute, but something must still be consistent.
+rubric:
+- criterion: 'Sets up both terms: write cost per unit time falls with a longer interval, expected lost
+    work rises with it, and the optimum is where they trade.'
+  weight: 0.3
+- criterion: States a failure-rate assumption explicitly instead of leaving it implicit -- the answer
+    is a function of it.
+  weight: 0.2
+- criterion: Computes a concrete cadence from the stated numbers rather than giving only the shape of
+    the answer.
+  weight: 0.2
+- criterion: Explains async checkpointing as overlapping the write with compute, with the snapshot still
+    needing a consistent view of weights and optimizer state.
+  weight: 0.2
+- criterion: Notes what checkpointing must include beyond weights -- optimizer state, dataloader position,
+    RNG state -- or resume is not a resume.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

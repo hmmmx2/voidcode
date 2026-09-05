@@ -1,0 +1,44 @@
+slug: gpu-fragmentation-design
+title: The cluster shows free GPUs and your job will not schedule
+difficulty: hard
+categories:
+- Systems
+concepts:
+- gpu_execution_model
+- data_parallel
+- collective_ops
+grading: rubric
+description: 'A cluster reports 12 free GPUs across many nodes. Your 8-GPU job stays pending.
+
+
+  Explain what is happening, why the scheduler is behaving correctly, and what a distributed training
+  job needs from placement that a pool of free GPUs does not describe.
+
+
+  Then give two ways to make the job schedulable and say what each costs.'
+hints:
+- Where are those 12 GPUs? Count per node, not in total.
+- What does an all-reduce cost if the ranks span four nodes instead of one?
+- Gang scheduling means all-or-nothing placement.
+hint_ladder:
+  level_0: Where are those 12 GPUs? Count per node, not in total.
+  level_1: What does an all-reduce cost if the ranks span four nodes instead of one?
+  level_2: Gang scheduling means all-or-nothing placement.
+rubric:
+- criterion: 'Identifies fragmentation: the free GPUs are scattered, and a job needing 8 on adjacent hardware
+    cannot use 12 spread one or two per node.'
+  weight: 0.3
+- criterion: Explains gang scheduling -- a distributed job needs all ranks simultaneously, so partial
+    allocation is useless and the scheduler correctly waits.
+  weight: 0.25
+- criterion: 'Connects placement to interconnect: ranks spread across nodes pay network cost for every
+    collective, so topology-aware placement is about throughput not tidiness.'
+  weight: 0.25
+- criterion: Gives two concrete remedies with costs -- shrink the job and accept slower training, or defragment
+    by preempting and repacking, which wastes others' work.
+  weight: 0.15
+- criterion: Mentions checkpointing as what makes preemption survivable.
+  weight: 0.05
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,86 @@
+slug: tensor-core-tile-padding
+title: Pad a shape up to the MMA tile
+difficulty: easy
+categories:
+- CUDA
+concepts:
+- tiled_matmul
+description: 'Input: `m n k tile`.
+
+
+  Return the three dimensions rounded UP to the nearest multiple of `tile`, then the percentage of wasted
+  multiply-accumulates introduced, rounded to 1 decimal place: `M N K waste_pct`.
+
+
+  Waste is `(M*N*K - m*n*k) / (M*N*K) * 100`, the share of the padded computation doing nothing.
+
+
+  An already-aligned shape must report exactly 0.0. This is the arithmetic behind an unaligned K costing
+  39% on an A40 while the same shape in fp32 costs 2% — the padding only matters once the tensor cores
+  are actually in play.'
+order_index: 71
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def pad(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().pad(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def pad(self, tokens):\n        m = int(tokens[0]);\
+  \ n = int(tokens[1])\n        k = int(tokens[2]); t = int(tokens[3])\n        if t <= 0:\n         \
+  \   return ' '.join([str(m), str(n), str(k), '0.0'])\n        up = lambda x: ((x + t - 1) // t) * t\n\
+  \        M, N, K = up(m), up(n), up(k)\n        big = M * N * K\n        waste = 0.0 if big == 0 else\
+  \ round((big - m * n * k) / big * 100, 1)\n        return ' '.join([str(M), str(N), str(K), str(waste)])\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4096 4096 4096 8
+  expected_output: 4096 4096 4096 0.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4096 4096 4093 8
+  expected_output: 4096 4096 4096 0.1
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 1 1 16
+  expected_output: 16 16 16 100.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 100 100 100 8
+  expected_output: 104 104 104 11.1
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 4096 4096 4096 0
+  expected_output: 4096 4096 4096 0.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 64 64 64 16
+  expected_output: 64 64 64 0.0
+  is_hidden: true
+hints:
+- 'Rounding up: ((x + tile - 1) // tile) * tile.'
+- Waste is measured against the PADDED volume, not the original.
+- tile <= 0 has no meaningful answer; return the inputs unchanged with 0.0 waste.
+hint_ladder:
+  level_0: 'Rounding up: ((x + tile - 1) // tile) * tile.'
+  level_1: Waste is measured against the PADDED volume, not the original.
+  level_2: tile <= 0 has no meaningful answer; return the inputs unchanged with 0.0 waste.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

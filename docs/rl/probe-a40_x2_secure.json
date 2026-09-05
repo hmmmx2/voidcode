@@ -1,0 +1,254 @@
+{
+  "disk": {
+    "hf_home": "/workspace/hf",
+    "hf_hub_cache": null,
+    "mounts": {
+      "/": {
+        "fits_working_set": false,
+        "free_gib": 19.77,
+        "total_gib": 20.0
+      },
+      "/root": {
+        "fits_working_set": false,
+        "free_gib": 19.77,
+        "total_gib": 20.0
+      },
+      "/workspace": {
+        "fits_working_set": true,
+        "free_gib": 234951.82,
+        "total_gib": 987864.07
+      }
+    },
+    "working_set_gib_assumed": 30,
+    "workspace_is_separate_mount": true,
+    "workspace_present": true
+  },
+  "host": {
+    "cpu_count": 96,
+    "gpus": [
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      },
+      {
+        "driver": "570.195.03",
+        "memory_total": "46068 MiB",
+        "name": "NVIDIA A40",
+        "pcie_gen_current": "1",
+        "pcie_width_current": "16"
+      }
+    ],
+    "platform": "Linux-6.5.0-45-generic-x86_64-with-glibc2.35",
+    "pod": {},
+    "python": "3.11.10",
+    "topology": "\t\u001b[4mGPU0\tGPU1\tNIC0\tNIC1\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \tPIX\tSYS\tSYS\t0-23,48-71\t0\t\tN/A\nGPU1\tPIX\t X \tSYS\tSYS\t0-23,48-71\t0\t\tN/A\nNIC0\tSYS\tSYS\t X \tPIX\t\t\t\t\nNIC1\tSYS\tSYS\tPIX\t X \t\t\t\t\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks\n\nNIC Legend:\n\n  NIC0: rocep177s0f0\n  NIC1: rocep177s0f1\n\n"
+  },
+  "matmul": {
+    "dtype": "bfloat16",
+    "iterations": 1316,
+    "matrix": 8192,
+    "seconds": 13.501,
+    "tflops": 107.18
+  },
+  "nccl": {
+    "note": null,
+    "ok": true,
+    "peak_busbw_gbps_at_256mib_plus": 22.11,
+    "route": "ZeRO-2 and ZeRO-3 both viable",
+    "rows": [
+      {
+        "busbw_gbps": 0.0,
+        "size_bytes": 8,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.0,
+        "size_bytes": 16,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.0,
+        "size_bytes": 32,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.01,
+        "size_bytes": 64,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.01,
+        "size_bytes": 128,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.03,
+        "size_bytes": 256,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.05,
+        "size_bytes": 512,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.11,
+        "size_bytes": 1024,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.21,
+        "size_bytes": 2048,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.43,
+        "size_bytes": 4096,
+        "size_mib": 0.0
+      },
+      {
+        "busbw_gbps": 0.84,
+        "size_bytes": 8192,
+        "size_mib": 0.01
+      },
+      {
+        "busbw_gbps": 1.64,
+        "size_bytes": 16384,
+        "size_mib": 0.02
+      },
+      {
+        "busbw_gbps": 3.07,
+        "size_bytes": 32768,
+        "size_mib": 0.03
+      },
+      {
+        "busbw_gbps": 4.84,
+        "size_bytes": 65536,
+        "size_mib": 0.06
+      },
+      {
+        "busbw_gbps": 6.69,
+        "size_bytes": 131072,
+        "size_mib": 0.12
+      },
+      {
+        "busbw_gbps": 8.41,
+        "size_bytes": 262144,
+        "size_mib": 0.25
+      },
+      {
+        "busbw_gbps": 10.12,
+        "size_bytes": 524288,
+        "size_mib": 0.5
+      },
+      {
+        "busbw_gbps": 14.05,
+        "size_bytes": 1048576,
+        "size_mib": 1.0
+      },
+      {
+        "busbw_gbps": 17.73,
+        "size_bytes": 2097152,
+        "size_mib": 2.0
+      },
+      {
+        "busbw_gbps": 19.8,
+        "size_bytes": 4194304,
+        "size_mib": 4.0
+      },
+      {
+        "busbw_gbps": 21.0,
+        "size_bytes": 8388608,
+        "size_mib": 8.0
+      },
+      {
+        "busbw_gbps": 21.54,
+        "size_bytes": 16777216,
+        "size_mib": 16.0
+      },
+      {
+        "busbw_gbps": 21.86,
+        "size_bytes": 33554432,
+        "size_mib": 32.0
+      },
+      {
+        "busbw_gbps": 21.99,
+        "size_bytes": 67108864,
+        "size_mib": 64.0
+      },
+      {
+        "busbw_gbps": 22.06,
+        "size_bytes": 134217728,
+        "size_mib": 128.0
+      },
+      {
+        "busbw_gbps": 22.08,
+        "size_bytes": 268435456,
+        "size_mib": 256.0
+      },
+      {
+        "busbw_gbps": 22.11,
+        "size_bytes": 536870912,
+        "size_mib": 512.0
+      },
+      {
+        "busbw_gbps": 22.11,
+        "size_bytes": 1073741824,
+        "size_mib": 1024.0
+      }
+    ],
+    "stderr_tail": null,
+    "transports_selected": [
+      "P2P"
+    ]
+  },
+  "profilers": {
+    "ncu_present": false,
+    "nsys_present": false,
+    "torch_profiler_cuda_events": 9,
+    "torch_profiler_error": null,
+    "torch_profiler_works": true
+  },
+  "schema": 1,
+  "spec": "a40_x2_secure",
+  "torch": {
+    "available": true,
+    "cuda": "12.4",
+    "cudnn": 90100,
+    "device_count": 2,
+    "devices": [
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 0,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      },
+      {
+        "capability": "8.6",
+        "fp8_capable": false,
+        "index": 1,
+        "multi_processor_count": 84,
+        "name": "NVIDIA A40",
+        "total_memory_gib": 44.432
+      }
+    ],
+    "p2p": [
+      {
+        "can_access": true,
+        "from": 0,
+        "to": 1
+      },
+      {
+        "can_access": true,
+        "from": 1,
+        "to": 0
+      }
+    ],
+    "version": "2.4.1+cu124"
+  }
+}

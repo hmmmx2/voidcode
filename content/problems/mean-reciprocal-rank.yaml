@@ -1,0 +1,83 @@
+slug: mean-reciprocal-rank
+title: MRR, and what it ignores
+difficulty: medium
+categories:
+- ML
+concepts:
+- classification_metrics
+description: 'Input: `n_queries`, then for each query the 1-based rank of its first relevant result, or
+  `0` when nothing relevant was returned.
+
+
+  Return MRR rounded to 4 decimal places: the mean of `1/rank`, counting a query with no relevant result
+  as 0.
+
+
+  MRR only sees the FIRST relevant result. A ranker that puts one good item at position 1 and nothing
+  else useful scores a perfect 1.0, identically to one that fills the whole page with good items. That
+  is the right metric when a learner needs one answer and the wrong one when they need a set — which is
+  why this project reports NDCG instead.'
+order_index: 72
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def mrr(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().mrr(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def mrr(self, tokens):\n        n = int(tokens[0])\n\
+  \        ranks = [int(x) for x in tokens[1:1 + n]]\n        if n == 0:\n            return 0.0\n   \
+  \     total = sum(0.0 if r <= 0 else 1.0 / r for r in ranks)\n        return round(total / n, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 3 1 1 1
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 3 1 2 4
+  expected_output: '0.5833'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 2 0 0
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 4 1 0 2 0
+  expected_output: '0.375'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 10
+  expected_output: '0.1'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: '0'
+  expected_output: '0.0'
+  is_hidden: true
+hints:
+- Rank 1 contributes 1.0; rank 2 contributes 0.5; rank 0 contributes 0.
+- Divide by n_queries, including the ones that found nothing.
+- MRR cannot distinguish 'one good result' from 'ten good results'.
+hint_ladder:
+  level_0: Rank 1 contributes 1.0; rank 2 contributes 0.5; rank 0 contributes 0.
+  level_1: Divide by n_queries, including the ones that found nothing.
+  level_2: MRR cannot distinguish 'one good result' from 'ten good results'.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

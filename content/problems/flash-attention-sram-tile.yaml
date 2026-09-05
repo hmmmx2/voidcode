@@ -1,0 +1,80 @@
+slug: flash-attention-sram-tile
+title: Pick a tile that fits in SRAM
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- memory_hierarchy
+- flash_attention
+description: 'Input: `sram_bytes head_dim bytes_per_elem`.
+
+
+  A FlashAttention block keeps three tiles live — the query block, the key block and the value block —
+  each `tile x head_dim` elements. Return the largest tile size that fits, rounded DOWN to a multiple
+  of 16, and the bytes it uses, as `tile bytes_used`.
+
+
+  Return `0 0` when even a tile of 16 does not fit. Rounding down to 16 matters: a tile that is not a
+  multiple of the warp-level fragment shape wastes the tail of every instruction, so the largest fitting
+  tile is not the fastest one.'
+order_index: 80
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def tile(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().tile(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def tile(self, tokens):\n        sram = float(tokens[0]);\
+  \ d = float(tokens[1]); by = float(tokens[2])\n        per = 3 * d * by\n        if per <= 0:\n    \
+  \        return '0 0'\n        raw = int(sram // per)\n        t = (raw // 16) * 16\n        if t <\
+  \ 16:\n            return '0 0'\n        return str(t) + ' ' + str(int(t * per))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 102400 64 2
+  expected_output: 256 98304
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 49152 128 2
+  expected_output: 64 49152
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1000 128 2
+  expected_output: 0 0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 102400 64 4
+  expected_output: 128 98304
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 64 2
+  expected_output: 0 0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 196608 64 2
+  expected_output: 512 196608
+  is_hidden: true
+hints:
+- Three tiles of tile * head_dim * bytes each.
+- max_tile = sram_bytes / (3 * head_dim * bytes), then floor to a multiple of 16.
+- Check that 16 itself fits before returning anything.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

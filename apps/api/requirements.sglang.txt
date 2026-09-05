@@ -1,0 +1,38 @@
+# apps/api/requirements.sglang.txt
+# ──────────────────────────────────────────────────────────────────────────────
+# Backend dependencies for the SGLang container (FastAPI only — no GPU).
+#
+# Intentionally excludes (those run in the sglang-server container):
+#   - torch / torchvision / torchaudio
+#   - vllm
+#   - bitsandbytes / peft / accelerate / transformers
+#   - triton
+#
+# The FastAPI container is CPU-only. It delegates all LLM inference to
+# the sglang-server container via the OpenAI-compatible HTTP API.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.129.0
+uvicorn[standard]==0.41.0
+pydantic==2.12.5
+python-multipart>=0.0.6
+
+# ── SGLang client — OpenAI-compatible HTTP calls to sglang-server ─────────────
+openai>=1.52.0
+
+# ── HTTP client ───────────────────────────────────────────────────────────────
+httpx==0.28.1
+
+# ── Database (PostgreSQL + async SQLAlchemy) ──────────────────────────────────
+sqlalchemy[asyncio]>=2.0.25
+asyncpg==0.31.0
+alembic==1.18.4
+psycopg2-binary==2.9.11
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+redis==7.2.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv==1.2.1
+huggingface-hub==0.36.2

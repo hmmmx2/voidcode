@@ -1,0 +1,93 @@
+slug: anyres-tile-token-count
+title: Count the visual tokens an AnyRes tiling scheme produces
+difficulty: medium
+categories:
+- VLM
+concepts:
+- vision_transformer
+- image_preprocessing
+- vlm_architecture
+description: 'High-resolution VLMs tile an image into encoder-sized crops, and often add one downscaled
+  view of the whole image so global layout is not lost.
+
+
+  Given `width`, `height`, the square `tile` size, the `patch` size, and a `thumbnail` flag (1 or 0),
+  return the total number of visual tokens.
+
+
+  Rules:
+
+
+  - A tile of side `tile` at patch size `patch` yields `(tile // patch) ** 2` tokens.
+
+  - Tiles cover the image, rounding UP on each axis — a partial tile is still a tile.
+
+  - The thumbnail, when present, contributes exactly one tile''s worth of tokens.
+
+  - Any non-positive dimension, tile or patch returns 0.
+
+
+  This is the arithmetic that decides whether a high-resolution scheme fits in context at all, and it
+  is worth being able to do it in your head in an interview.'
+order_index: 41
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def token_count(self, width, height, tile, patch, thumbnail):\n\
+    \        \"\"\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().token_count(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def token_count(self, width, height, tile, patch, thumbnail):\n\
+  \        if width <= 0 or height <= 0 or tile <= 0 or patch <= 0:\n            return 0\n        per_tile\
+  \ = (tile // patch) ** 2\n        cols = (width + tile - 1) // tile\n        rows = (height + tile -\
+  \ 1) // tile\n        total = cols * rows * per_tile\n        if thumbnail:\n            total += per_tile\n\
+  \        return total\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 336 336 336 14 0
+  expected_output: '576'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 672 336 336 14 1
+  expected_output: '1728'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 1500 1000 336 14 1
+  expected_output: '9216'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 100 100 336 14 0
+  expected_output: '576'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 336 336 336 14 1
+  expected_output: '1152'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 0 500 336 14 1
+  expected_output: '0'
+  is_hidden: true
+hints:
+- 'Tokens per tile is a square: (tile // patch) squared.'
+- Rounding up on each axis is (n + tile - 1) // tile, not n // tile.
+- The thumbnail is one extra tile's worth, regardless of how many tiles the image needed.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

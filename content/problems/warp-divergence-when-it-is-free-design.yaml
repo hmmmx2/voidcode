@@ -1,0 +1,43 @@
+slug: warp-divergence-when-it-is-free-design
+title: When does a branch cost nothing? Reason about warp divergence
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- warp_divergence
+- gpu_execution_model
+grading: rubric
+description: "Three kernels each contain an `if`:\n\n  A. `if (blockIdx.x % 2 == 0) { ... } else { ...\
+  \ }`\n  B. `if (threadIdx.x % 2 == 0) { ... } else { ... }`\n  C. `if (x[i] > 0.0f) { y[i] = x[i]; }\
+  \ else { y[i] = 0.0f; }`  (a ReLU)\n\nRank them by divergence cost and justify the ranking. One of them\
+  \ costs nothing at all, and one of them probably costs far less than it looks.\n\nBe precise about the\
+  \ unit at which divergence happens. Answers that say \"branches are slow on GPUs\" without naming that\
+  \ unit are the ones this question is written to separate from the rest."
+hints:
+- Divergence is a property of a warp, not of a block or a kernel.
+- Does every thread in a given warp take the same side of branch A?
+- For C, think about what the compiler can do with a branch whose two sides are a single assignment each.
+hint_ladder:
+  level_0: Divergence is a property of a warp, not of a block or a kernel.
+  level_1: Does every thread in a given warp take the same side of branch A?
+  level_2: For C, think about what the compiler can do with a branch whose two sides are a single assignment
+    each.
+rubric:
+- criterion: States that divergence occurs within a warp (32 threads sharing a program counter), so the
+    question is always whether lanes of one warp disagree.
+  weight: 0.3
+- criterion: 'A is free: blockIdx is uniform across every thread in the block, so all lanes of a warp
+    agree and no serialisation occurs.'
+  weight: 0.2
+- criterion: 'B is the worst case: alternating lanes disagree inside every warp, so both sides execute
+    with half the lanes masked.'
+  weight: 0.2
+- criterion: C is data-dependent, and likely cheap because the compiler emits predication or a select
+    rather than a real branch for such short bodies.
+  weight: 0.2
+- criterion: 'Notes that the cost of divergence is bounded by the work in the branch arms: two expensive
+    arms serialise expensively, two trivial arms barely matter.'
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,47 @@
+slug: atomics-versus-tree-reduction-design
+title: Global atomics or a reduction tree? Choose and defend it
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- reduction_kernels
+- memory_hierarchy
+- gpu_execution_model
+grading: rubric
+description: "You need the sum of a 100-million-element float array. Two designs:\n\n  A. Every thread\
+  \ does `atomicAdd(&out, x[i])` on one global accumulator.\n  B. Warp-level reduction, then per-block\
+  \ shared-memory reduction, then one atomic per block.\n\nPick one and justify it with an argument about\
+  \ contention, not a benchmark. State how many atomic operations each design issues.\n\nThen address\
+  \ the part that decides whether this is even a fair question: **is the result reproducible?** Say what\
+  \ happens to bitwise determinism in each design and why that might matter more than speed for a training\
+  \ run someone needs to reproduce."
+hints:
+- 'Count the atomics: design A issues one per element.'
+- A single global address means every atomic serialises against every other.
+- Floating-point addition is not associative, so the order the partial sums combine in changes the last
+  bits.
+hint_ladder:
+  level_0: 'Count the atomics: design A issues one per element.'
+  level_1: A single global address means every atomic serialises against every other.
+  level_2: Floating-point addition is not associative, so the order the partial sums combine in changes
+    the last bits.
+rubric:
+- criterion: 'Counts the atomics: A issues 100M against one address; B issues one per block, so on the
+    order of 10^5 — a reduction of roughly three orders of magnitude.'
+  weight: 0.3
+- criterion: Explains that atomics to a single address serialise, so A converges on a sequential sum regardless
+    of how many threads are launched.
+  weight: 0.2
+- criterion: 'Describes B''s hierarchy concretely: shuffle-based reduction within a warp, shared memory
+    across warps, one global atomic per block.'
+  weight: 0.2
+- criterion: 'Addresses determinism: neither is bitwise reproducible because atomic ordering is non-deterministic
+    and float addition is not associative; a fixed-order or deterministic-reduction variant is needed
+    if reproducibility is required.'
+  weight: 0.2
+- criterion: Names a case where A is acceptable anyway — very few elements, or contention spread across
+    many independent accumulators such as a histogram.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,16 @@
+[
+ {
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "config": "qlora_nf4_r16",
+  "seq": 1024,
+  "batch": 1,
+  "steps": 5
+ },
+ {
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "config": "qlora_nf4_r16",
+  "seq": 2048,
+  "batch": 1,
+  "steps": 5
+ }
+]

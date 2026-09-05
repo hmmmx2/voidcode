@@ -1,0 +1,88 @@
+slug: activation-memory-scaling
+title: Activation memory scales with batch and sequence, not parameters
+difficulty: medium
+categories:
+- Systems
+- DL
+concepts:
+- memory_accounting
+- gradient_checkpointing
+description: 'Input: `batch seq_len d_model n_layers bytes_per_elem`.
+
+
+  Take activation memory as roughly `batch * seq_len * d_model * n_layers * bytes * 10`, where the factor
+  of 10 stands in for the tensors a transformer block keeps live.
+
+
+  Return the total in GB rounded to 2 decimals, and the GB if `seq_len` doubles, as `gb gb_double_seq`.
+  Use 1 GB = 1e9 bytes.
+
+
+  The point is which knob moves it. Parameters do not appear in this formula at all: a learner who runs
+  out of memory reaches for a smaller model when the cheap fix is usually a shorter sequence or a smaller
+  batch.'
+order_index: 79
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def act(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().act(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def act(self, tokens):\n        b = float(tokens[0]);\
+  \ s = float(tokens[1]); d = float(tokens[2])\n        L = float(tokens[3]); by = float(tokens[4])\n\
+  \        gb = b * s * d * L * by * 10 / 1e9\n        return str(round(gb, 2)) + ' ' + str(round(gb *\
+  \ 2, 2))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1 2048 4096 32 2
+  expected_output: 5.37 10.74
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 8 2048 4096 32 2
+  expected_output: 42.95 85.9
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 1024 4096 32 2
+  expected_output: 2.68 5.37
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0 2048 4096 32 2
+  expected_output: 0.0 0.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 2048 4096 1 2
+  expected_output: 0.17 0.34
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 4 512 768 12 4
+  expected_output: 0.75 1.51
+  is_hidden: true
+hints:
+- Every term is linear, so doubling seq_len exactly doubles the total.
+- n_params is absent from the formula -- that is the lesson.
+- Attention scores add a term quadratic in seq_len that this simplification omits.
+hint_ladder:
+  level_0: Every term is linear, so doubling seq_len exactly doubles the total.
+  level_1: n_params is absent from the formula -- that is the lesson.
+  level_2: Attention scores add a term quadratic in seq_len that this simplification omits.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

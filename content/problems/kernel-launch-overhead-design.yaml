@@ -1,0 +1,79 @@
+slug: kernel-launch-overhead-design
+title: 'A model of tiny kernels: find the real bottleneck'
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- gpu_execution_model
+- kernel_fusion
+- serving_latency
+grading: rubric
+description: 'An inference graph runs 400 kernels per forward pass. Each kernel is small — a bias add,
+  an activation, a scale. The GPU shows low utilisation, the arithmetic is trivial, and the step time
+  is dominated by something the roofline model does not explain.
+
+
+  Explain what is being missed, estimate the floor it imposes given a per-launch overhead of roughly 5
+  microseconds, and give two independent ways to reduce it.
+
+
+  Then say which of your two fixes you would try first and why — they are not equally cheap to adopt.
+
+
+
+  MEASURED ON AN NVIDIA A40
+
+  ---------------------------
+
+  | quantity                          | measured   |
+
+  |-----------------------------------|------------|
+
+  | per-launch overhead               | **7.25 us**  |
+
+  | predicted floor, 400 launches     | 2.899 ms   |
+
+  | actual, 400 sequential launches   | 2.893 ms   |
+
+  | same 400 replayed as a CUDA graph | 0.425 ms   |
+
+
+  The model is almost exactly right: a floor predicted at 2.899 ms measured 2.893 ms, so per-launch
+
+  cost really does explain the whole gap. **The 5 us figure quoted above is the common rule of thumb
+
+  and it was low for this hardware** -- 7.25 us here. Use the mechanism, measure the constant.
+
+
+  CUDA graphs gave **6.8x** on this workload, which is the upper bound for a graph of pure launch
+
+  overhead: the kernels are unchanged, only the launch cost is amortised.
+
+  '
+hints:
+- The roofline model accounts for compute and bandwidth. Launch cost is neither.
+- 400 launches at 5 us each is a floor you cannot compute your way under.
+- One fix removes launches. The other makes launches cheaper without removing them.
+hint_ladder:
+  level_0: The roofline model accounts for compute and bandwidth. Launch cost is neither.
+  level_1: 400 launches at 5 us each is a floor you cannot compute your way under.
+  level_2: One fix removes launches. The other makes launches cheaper without removing them.
+rubric:
+- criterion: 'Identifies per-launch overhead as the bottleneck and computes the floor: 400 x 5 us = 2
+    ms per forward pass, independent of how fast the arithmetic is.'
+  weight: 0.3
+- criterion: Explains why the roofline model does not capture this — it models compute and memory traffic,
+    not fixed per-launch cost.
+  weight: 0.2
+- criterion: Gives fusion as one fix (fewer, larger kernels; naming torch.compile or a hand-fused epilogue
+    is fine) and reasons about how many launches it removes.
+  weight: 0.2
+- criterion: 'Gives CUDA graphs as the second fix: the launch sequence is captured and replayed, amortising
+    per-launch CPU cost without changing the kernels.'
+  weight: 0.2
+- criterion: Picks one to try first with a reason — typically CUDA graphs, being a smaller change that
+    does not require rewriting kernels, provided shapes are static.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

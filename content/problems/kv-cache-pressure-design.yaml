@@ -1,0 +1,47 @@
+slug: kv-cache-pressure-design
+title: The KV cache is full and requests are still arriving. Decide.
+difficulty: hard
+categories:
+- Systems
+concepts:
+- kv_cache
+- paged_attention
+- continuous_batching
+grading: rubric
+description: 'Your server admits requests until KV cache blocks run out. At capacity, a new request arrives
+  and every block is held by an in-flight generation.
+
+
+  Compare three policies: reject the new request, queue it until blocks free, or preempt an in-flight
+  request and recompute its cache later. For preemption, say what is actually lost and what it costs to
+  resume.
+
+
+  Then answer the scheduling question underneath: **which in-flight request would you preempt, and does
+  that choice create a starvation problem?**'
+hints:
+- Preempting frees blocks proportional to how many tokens that request has generated.
+- Recomputing a prefix is a prefill, and prefill is compute-bound and parallel.
+- If you always preempt the longest generation, what happens to long generations?
+hint_ladder:
+  level_0: Preempting frees blocks proportional to how many tokens that request has generated.
+  level_1: Recomputing a prefix is a prefill, and prefill is compute-bound and parallel.
+  level_2: If you always preempt the longest generation, what happens to long generations?
+rubric:
+- criterion: Explains that preemption discards computed KV state, and resuming means re-running prefill
+    over the prefix -- expensive but parallel, unlike decode.
+  weight: 0.25
+- criterion: 'Weighs the three policies on the metric each protects: rejection protects latency for admitted
+    requests, queueing protects completion, preemption protects throughput.'
+  weight: 0.25
+- criterion: Picks a preemption victim with a reason -- newest, or longest remaining -- rather than asserting
+    one.
+  weight: 0.2
+- criterion: 'Identifies the starvation risk: a policy that always preempts long generations may never
+    let one finish, and names a mitigation such as an attempt cap or ageing.'
+  weight: 0.2
+- criterion: Notes that swapping cache to host memory is a fourth option, bounded by PCIe bandwidth.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

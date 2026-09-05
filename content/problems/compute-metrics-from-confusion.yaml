@@ -1,0 +1,45 @@
+slug: compute-metrics-from-confusion
+title: Score a classifier from four raw counts
+difficulty: easy
+categories:
+- ML
+concepts:
+- classification_metrics
+description: Given the dataset size, how many rows are truly positive, how many the model flagged and
+  how many of those flags were correct, rebuild the confusion matrix and return accuracy, precision, recall,
+  F1 and the majority-class baseline accuracy. The traps are the empty denominators and the baseline,
+  which tracks the larger class and is not always the negatives.
+inferred_concepts: false
+review_needed: false
+domain: ml
+kind: code
+companies:
+- Meta
+- OpenAI
+prompt: Given the dataset size, how many rows are truly positive, how many the model flagged and how many
+  of those flags were correct, rebuild the confusion matrix and return accuracy, precision, recall, F1
+  and the majority-class baseline accuracy. The traps are the empty denominators and the baseline, which
+  tracks the larger class and is not always the negatives.
+approach: Recover TP, FP, FN and TN from the four counts first; every metric is then a one-liner off those
+  cells. Guard each denominator so a model that flags nothing returns 0.0 instead of raising, and take
+  the baseline as the larger of the two class rates.
+model_answer: "CONFUSION MATRIX.\n    TP = 80          (flagged and fraud)\n    FP = 180 - 80 = 100\n\
+  \    FN = 100 - 80 = 20   (fraud missed)\n    TN = 10000 - 80 - 100 - 20 = 9800\n\nMETRICS.\n    accuracy\
+  \  = (TP+TN)/N = 9880/10000 = 98.8%\n    precision = TP/(TP+FP) = 80/180  = 44.4%\n    recall    = TP/(TP+FN)\
+  \ = 80/100  = 80.0%\n    F1 = 2PR/(P+R) = 2(0.444)(0.8)/1.244 = 57.1%\n\nWHAT ACCURACY TELLS YOU: nothing.\
+  \ Predicting 'never fraud' gives 9900/10000 = 99.0% — *higher* than the model's 98.8%. On this base\
+  \ rate the model is worse than the trivial baseline by accuracy while catching 80% of fraud, which is\
+  \ the entire point.\n\nRead the operating point instead: it catches 4 in 5 frauds, and 56% of its alerts\
+  \ are false. Whether that is good is an operational question — can the review team absorb 100 false\
+  \ positives a day, and what does a missed fraud cost against a wrongly declined card? Those numbers\
+  \ pick the threshold; F1 just assumes precision and recall matter equally, which here they almost certainly\
+  \ do not."
+follow_ups:
+- Compute specificity and the false positive rate. Why does FPR look so good?
+- At this base rate, why does ROC-AUC flatter the model over PR-AUC?
+- A missed fraud costs $500, a false positive $5. Where do you put the threshold?
+red_flags:
+- Reporting 98.8% accuracy as a good result without computing the baseline.
+- Mixing up precision and recall denominators.
+- Reaching for F1 without asking whether the two errors cost the same.
+source_kind: interview_question

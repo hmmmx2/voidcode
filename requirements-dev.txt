@@ -1,0 +1,12 @@
+pytest>=8.0
+numpy>=2.0
+
+# The numerics oracle and the distributed tests need torch, but only on CPU -- they are exact
+# float64 checks on a tiny model, and gloo runs collectives without a GPU. Every test that needs
+# it is guarded by `pytest.importorskip`, so the suite still runs, and reports what it skipped,
+# on a machine with no training stack at all.
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# Left unpinned and uninstalled by default rather than listed as a hard dependency: pulling ~200 MB
+# to run a grader test would make the cheap suite expensive.

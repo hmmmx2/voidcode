@@ -1,0 +1,63 @@
+# Ruff config for the VoidCode AI Python tree.
+# `apps/api` was brought under this config by fixing its 338 findings, not by
+# silencing rules: every remaining suppression is a per-line noqa with a stated
+# reason. `llm/` and `packages/` still predate it. Widen the include list when
+# those are brought up to standard the same way.
+
+line-length = 100
+target-version = "py312"
+
+include = [
+    "features/**/*.py",
+    "ranking/**/*.py",
+    "sql/**/*.py",
+    "analysis/**/*.py",
+    "quality/**/*.py",
+    "tests/**/*.py",
+    # Added with the work that created them, rather than left uncovered — which is how
+    # apps/ and llm/ ended up outside this list in the first place.
+    "sandbox/**/*.py",
+    "deploy/**/*.py",
+    "scripts/**/*.py",
+    # Brought in by fixing the tree, not by relaxing the rules. The two findings that
+    # survive are per-line noqa: an import that can only follow a sys.path.insert, and a
+    # prompt-building %-format that two separate f-string rewrites silently corrupted.
+    "apps/**/*.py",
+]
+
+exclude = [
+    ".git", "__pycache__", "node_modules",
+    # Vendored third-party Python inside the web app's dependencies. Not ours to lint.
+    "apps/web/node_modules",
+    "llm", "packages", "scripts/memory_audit",
+]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "C4",       # comprehensions
+    "RUF",
+]
+ignore = [
+    "E501",     # line length is enforced by the formatter, not the linter
+    "B008",     # function call in default arg — argparse/Spark idiom here
+    # RUF003 flags "ambiguous" unicode in COMMENTS. The rule guards against homoglyph
+    # attacks — a real concern in identifiers and string literals, which is why RUF001
+    # and RUF002 stay on. But this codebase's comments use en and em dashes as ordinary
+    # English punctuation, and rewriting prose into ASCII to satisfy a rule aimed at
+    # something else is worse writing for no security gain.
+    "RUF003",
+]
+
+[lint.per-file-ignores]
+# Spark jobs legitimately shadow builtins via F.col aliases and use star-ish
+# imports of pyspark.sql.functions as F.
+"features/spark_jobs/*.py" = ["A003"]
+"tests/*.py" = ["B011"]
+
+[lint.isort]
+known-first-party = ["features", "ranking", "sql", "analysis", "quality"]

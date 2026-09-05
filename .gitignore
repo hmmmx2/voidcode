@@ -1,0 +1,169 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+.next/
+/out/
+
+# production
+/build
+dist/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+# ...but the documented templates must be tracked. `.env*` was swallowing them, so
+# NEITHER apps/api/.env.example NOR apps/web/.env.example was ever committed: both
+# existed only on this machine, and a fresh clone had to reverse-engineer every
+# required variable out of config.py, auth.ts and client.ts. These files contain
+# names and comments, never values.
+!.env.example
+!*/.env.example
+!**/.env.example
+!**/.env.docker.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.eggs/
+*.egg-info/
+
+# LLM/ML
+llm/outputs/checkpoint-*/
+llm/outputs/final_model/
+*.safetensors
+*.bin
+*.ckpt
+*.pt
+*.pth
+wandb/
+
+# Turbo
+.turbo
+next-env.d.ts
+
+# VoidCode AI — Phase 2 data.
+# The Codeforces corpus is NOT redistributable (see docs/DATA_SOURCES.md §1):
+# the API publishes no open-data licence. Raw and derived data stay local.
+/data/raw/
+/data/warehouse/
+*.jsonl.tmp
+features/**/__pycache__/
+scripts/memory_audit/out_*.jsonl
+scripts/memory_audit/out_*.json
+
+# VoidCode AI — Python tooling and Hive/Derby artifacts
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+derby.log
+metastore_db/
+/data/hive_warehouse/
+.Rhistory
+analysis/*.Rout
+sql/**/*.out
+
+# VoidCode AI — LLM corpora and model artifacts.
+#
+# Derived, large, and regenerable from the scripts in llm/scripts/. Keeping them
+# out is also what makes the existing *.safetensors / *.bin rules coherent: the
+# weights were already ignored, so committing a 10MB tokenizer.json beside them
+# would ship an artifact that is useless without the file it accompanies.
+#
+# The corpora are the build output of the generation pipeline, not its source.
+# Version the generator, not the ~70MB it emits.
+llm/data/*.jsonl
+# ...but NOT the eval gold sets. The rule above was written for the training corpora (51 MB across
+# mode_*.jsonl and voidcode_training_data_v*.jsonl) and caught these with them. Gold sets are 48 KB
+# total, hand-authored, and they ARE the definition of the metric -- an eval whose scenarios are
+# untracked is not reproducible from a clone, and its numbers cannot be compared across machines.
+# eval_debug_gold.jsonl had been untracked since it was written.
+#
+# The glob is `*gold*` and not `*_gold`, because the narrower form was written when every gold file
+# ended in `_gold.jsonl` and then silently dropped `eval_debug_gold_extended.jsonl` -- the same
+# failure a second time, in the fix for the first one. `test_every_gold_file_is_tracked_by_git`
+# checks this by asking git rather than by reading this pattern.
+!llm/data/eval_*gold*.jsonl
+llm/outputs/awq_model/
+llm/outputs/merged_model/
+*.bak
+
+# Derived: cached out-of-fold IRT predictions from features/export_calibration.py.
+# 9.5 MB, regenerable with --refit in ~10 minutes. The ARTIFACT (apps/api/data/
+# calibration_map.json, 12 KB) is tracked on purpose; this is not.
+.cache/
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Merged in from the RL training repo (voidcode-training) during consolidation.
+# Paths are rewritten where that repo's `docs/` now lives at `docs/rl/`.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Root-level RL run output. Scoped with a leading slash on purpose: a bare
+# `outputs/` would also swallow llm/outputs/, whose config and tokenizer files
+# are tracked deliberately while only its weights are ignored above.
+/outputs/
+/checkpoints/
+
+# The filtered DeepCoder sample: 885 MB, ~9x GitHub's 100 MB per-file limit, so a
+# push would be rejected outright and the commit would bloat history permanently
+# even after removal. Regenerate with scripts/adapt_deepcoder.py.
+#
+# data/deepcoder-band.json is deliberately NOT ignored: 373 KB, and it is the
+# *result* of the paid A40 filter pass — it cannot be regenerated without
+# renting the GPU again.
+data/deepcoder-sample.json
+
+# THE ANSWER KEY. data/catalogue.json carries reference solutions; publishing it
+# destroys every benchmark that grades against it. The upstream training repo
+# tracked it because that repo is private and its public mirror omits the file.
+# This consolidated repo has no remote yet, so the file is ignored here rather
+# than relying on that distinction holding. The file still exists on disk, so
+# tests/test_differential.py runs normally — only committing is prevented.
+# Remove this line ONLY if you are certain this repo will never be published.
+data/catalogue.json
+
+# Process detritus from detached pod/local runs, now under docs/rl/.
+docs/rl/*.err
+docs/rl/*.pid
+bpr.log
+bpr*.log
+qwen7b-restore.log
+
+# Pod run logs: hundreds of MB of generated-solution stdout (numpy array prints
+# from graded candidates). The results live in the .json beside them; these are
+# raw noise. A single-level `docs/*.log` nearly let a 164 MB and a 350 MB file in,
+# so this is the recursive form.
+docs/**/*.log

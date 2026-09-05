@@ -1,0 +1,102 @@
+slug: shared-memory-tile-budget
+title: How large a tile fits in shared memory?
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- memory_hierarchy
+- tiled_matmul
+description: 'Return the largest square tile dimension that fits in a streaming multiprocessor''s shared
+  memory.
+
+
+  Write `max_tile(smem_bytes, dtype_bytes, buffers)` returning the largest `T` such that
+
+  `T*T * dtype_bytes * buffers <= smem_bytes`. Return 0 if even a 1x1 tile does not fit.
+
+
+  `buffers` is how many tiles are resident at once: 2 for a standard tiled matmul holding a tile of
+
+  A and a tile of B, 4 if you double-buffer to overlap the next load with the current compute.
+
+
+  **Why the answer is not simply "the biggest tile that fits".** Shared memory is also what limits
+
+  *occupancy* — it is a per-SM budget shared between resident blocks. A tile that consumes all
+
+  48 KB lets exactly one block live on the SM, so there is nothing to switch to when that block
+
+  stalls on a global load, and latency hiding disappears. The largest tile is frequently not the
+
+  fastest; it is the point at which you have traded away every other block.
+
+
+  Double buffering makes this sharper: it halves the tile you can afford in exchange for overlapping
+
+  the load with the compute, and which side wins depends on whether the kernel is bandwidth-bound or
+
+  latency-bound — a question the arithmetic here sets up but does not answer.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 24
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def max_tile(self, smem_bytes, dtype_bytes, buffers):\n\
+    \        \"\"\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().max_tile(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def max_tile(self, smem_bytes, dtype_bytes, buffers):\n\
+  \        t = 0\n        while (t + 1) ** 2 * dtype_bytes * buffers <= smem_bytes:\n            t +=\
+  \ 1\n        return t\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 49152 4 2
+  expected_output: '78'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 49152 4 4
+  expected_output: '55'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 49152 2 2
+  expected_output: '110'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 163840 4 2
+  expected_output: '143'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 4 4 2
+  expected_output: '0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 2 4 2
+  expected_output: '0'
+  is_hidden: true
+hints:
+- Solve T*T * dtype_bytes * buffers <= smem_bytes for the largest integer T.
+- buffers=2 is a plain tiled matmul; 4 is double buffering.
+- Return 0 when even T=1 does not fit.
+hint_ladder:
+  level_0: Solve T*T * dtype_bytes * buffers <= smem_bytes for the largest integer T.
+  level_1: buffers=2 is a plain tiled matmul; 4 is double buffering.
+  level_2: Return 0 when even T=1 does not fit.

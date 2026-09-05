@@ -1,0 +1,74 @@
+{
+  "disk": {
+    "hf_home": null,
+    "hf_hub_cache": null,
+    "mounts": {
+      "/": {
+        "fits_working_set": true,
+        "free_gib": 58.04,
+        "total_gib": 930.57
+      },
+      "C:\\Users\\User": {
+        "fits_working_set": true,
+        "free_gib": 58.04,
+        "total_gib": 930.57
+      }
+    },
+    "working_set_gib_assumed": 30,
+    "workspace_is_separate_mount": null,
+    "workspace_present": false
+  },
+  "host": {
+    "cpu_count": 12,
+    "gpus": [
+      {
+        "driver": "591.86",
+        "memory_total": "16311 MiB",
+        "name": "NVIDIA GeForce RTX 5060 Ti",
+        "pcie_gen_current": "2",
+        "pcie_width_current": "8"
+      }
+    ],
+    "platform": "Windows-11-10.0.26200-SP0",
+    "pod": {},
+    "python": "3.13.14",
+    "topology": "ERROR: Option -m is missing its value. Please run 'nvidia-smi -h' for help.\n\n"
+  },
+  "matmul": {
+    "dtype": "bfloat16",
+    "iterations": 1156,
+    "matrix": 8192,
+    "seconds": 25.912,
+    "tflops": 49.05
+  },
+  "nccl": {
+    "skipped": "fewer than 2 GPUs - a collective needs two ranks"
+  },
+  "profilers": {
+    "ncu_present": true,
+    "nsys_present": false,
+    "torch_profiler_cuda_events": 14,
+    "torch_profiler_error": null,
+    "torch_profiler_works": true
+  },
+  "schema": 1,
+  "spec": "rtx5060ti_x1_local",
+  "torch": {
+    "available": true,
+    "cuda": "12.9",
+    "cudnn": 91002,
+    "device_count": 1,
+    "devices": [
+      {
+        "capability": "12.0",
+        "fp8_capable": true,
+        "index": 0,
+        "multi_processor_count": 36,
+        "name": "NVIDIA GeForce RTX 5060 Ti",
+        "total_memory_gib": 15.928
+      }
+    ],
+    "p2p": [],
+    "version": "2.9.0+cu129"
+  }
+}

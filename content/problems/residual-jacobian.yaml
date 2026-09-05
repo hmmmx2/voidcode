@@ -1,0 +1,47 @@
+slug: residual-jacobian
+title: Decompose a residual stack's gradient by path length
+difficulty: medium
+categories:
+- DL
+concepts:
+- backpropagation
+description: Given the scalar Jacobian of each block F in a stack of residual layers y = x + F(x), write
+  a function returning how much of the end-to-end gradient travels through paths of each length. The trap
+  is that there are 2^L paths and you must not enumerate them.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- Meta
+- Google DeepMind
+- NVIDIA
+prompt: Given the scalar Jacobian of each block F in a stack of residual layers y = x + F(x), write a
+  function returning how much of the end-to-end gradient travels through paths of each length. The trap
+  is that there are 2^L paths and you must not enumerate them.
+approach: The end-to-end derivative is the product of (1 + j_l). Expanding that product groups terms by
+  how many Jacobians each term passes through, which is the elementary symmetric polynomial of degree
+  k. Build all L+1 of them with one pass over the layers, updating the accumulator from the high index
+  downward.
+model_answer: "PLAIN.  dy/dx = J_F, so over L layers the gradient carries\n    prod_{l=1..L} J_l\nIf each\
+  \ has spectral norm s, the product scales as s^L. At s = 0.9 and L = 100 that is 0.9^100 ≈ 2.7e-5; at\
+  \ s = 1.1 it is ≈ 1.4e4. There is no stable middle — the product is exponential in depth either way.\n\
+  \nRESIDUAL.  dy/dx = I + J_F, so\n    prod_{l=1..L} (I + J_l)\nExpanding gives I + sum_l J_l + sum_{l<m}\
+  \ J_l J_m + ... — a sum over **all 2^L subsets** of layers, i.e. over paths of every length. The leading\
+  \ I is a direct route from the loss to layer 1 through no Jacobians at all, so the gradient cannot vanish\
+  \ uniformly: the short paths survive whatever the long ones do. This is the sense in which a residual\
+  \ network behaves like an ensemble of shallower networks.\n\nZERO-INIT OF F's LAST LAYER. Then J_F =\
+  \ 0 at step 0, so dy/dx = I exactly and the block is the identity. The network starts as a well-conditioned\
+  \ shallow function and deepens as F learns, which is why it removes the need for careful depth-dependent\
+  \ init and stabilises the first few hundred steps of very deep models.\n\nThat is also the sharper form\
+  \ of the usual answer: it is not only that gradients flow, it is that adding depth cannot make the function\
+  \ class worse, since F = 0 recovers the shallower model exactly."
+follow_ups:
+- Where does the 2^L path count come from?
+- How does pre-norm keep the residual path clean where post-norm does not?
+- Does the argument still work when F contains a normalisation layer?
+red_flags:
+- Saying 'vanishing gradients' with no product of Jacobians.
+- Not seeing the identity gives a path through zero Jacobians.
+- Thinking the deep plain network's problem was overfitting rather than optimisation.
+source_kind: interview_question

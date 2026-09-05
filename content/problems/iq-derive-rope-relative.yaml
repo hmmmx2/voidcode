@@ -1,0 +1,256 @@
+slug: iq-derive-rope-relative
+title: Rotate q and k by position, then dot them
+difficulty: hard
+categories:
+- LLM
+concepts:
+- positional_encoding
+description: 'Rotary position embedding rotates a query vector by its absolute position and a key vector
+  by its own, and the property that makes it useful is that the resulting dot product depends only on
+  the offset between the two positions. Write the function that produces that dot product, so the property
+  becomes testable.
+
+
+  `rope_dot(self, q, k, m, n, base) -> float`
+
+
+  `q` and `k` are flat lists of the same even length `d`. `m` is the position of `q`, `n` is the position
+  of `k`, and `base` sets the frequency schedule.
+
+
+  **Pairing.** Split a vector into adjacent 2-D pairs: `(x[0], x[1])`, `(x[2], x[3])`, ..., `(x[d-2],
+  x[d-1])`. Pair `i` (0-indexed, `0 <= i < d/2`) gets frequency
+
+
+  ```
+
+  theta_i = base ** (-2 * i / d)
+
+  ```
+
+
+  **Rotation.** At position `p`, pair `i` is rotated by the angle `a = p * theta_i`:
+
+
+  ```
+
+  y[2i]   = x[2i] * cos(a) - x[2i+1] * sin(a)
+
+  y[2i+1] = x[2i] * sin(a) + x[2i+1] * cos(a)
+
+  ```
+
+
+  Rotate `q` at position `m`, rotate `k` at position `n`, and return `sum(q_rot[j] * k_rot[j] for j in
+  range(d))`. The driver rounds to 6 decimals.
+
+
+  **Why the tests look the way they do.** Each 2-D rotation is orthogonal and rotations compose by adding
+  angles, so `<R(m)q, R(n)k> = q^T R(n - m) k`. Two hidden cases hold `n - m` fixed while sliding both
+  positions, and one sets `m == n`, where the answer must collapse to the plain dot product `q . k`. An
+  implementation that pairs `x[i]` with `x[i + d/2]`, or that writes the frequency as `base ** (-i / d)`,
+  still passes a `d = 2` case and fails these.
+
+
+  Positions are non-negative integers and may exceed any training length; the formula is defined everywhere,
+  so nothing special happens at large `p`.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 21
+examples:
+- input: q = [1.0, 0.0], k = [0.0, 1.0], m = 1, n = 0, base = 10000.0
+  output: '0.841471'
+  explanation: d = 2 is a single pair with theta_0 = base^0 = 1. q rotates by 1 radian to (cos 1, sin
+    1); k sits at position 0 and does not move. The dot product is sin(1) = 0.841471.
+- input: q = [1.0, 0.0], k = [0.0, 1.0], m = 101, n = 100, base = 10000.0
+  output: '0.841471'
+  explanation: Same offset, both positions moved by 100. The answer is bit-for-bit the same, which is
+    the property being tested.
+constraints:
+- 2 <= d <= 512, and d is even
+- 0 <= m, n <= 10^6
+- base > 1
+- Pair x[2i] with x[2i+1]; theta_i = base ** (-2*i/d)
+- Round to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: q
+    value: '[1.0, 0.0]'
+  - name: k
+    value: '[0.0, 1.0]'
+  - name: m
+    value: '1'
+  - name: n
+    value: '0'
+  - name: base
+    value: '10000.0'
+  stdin: '[1.0, 0.0]
+
+    [0.0, 1.0]
+
+    1
+
+    0
+
+    10000.0'
+  expected_output: '0.841471'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: q
+    value: '[1.0, 0.0, 0.0, 1.0]'
+  - name: k
+    value: '[0.0, 1.0, 1.0, 0.0]'
+  - name: m
+    value: '3'
+  - name: n
+    value: '1'
+  - name: base
+    value: '10000.0'
+  stdin: '[1.0, 0.0, 0.0, 1.0]
+
+    [0.0, 1.0, 1.0, 0.0]
+
+    3
+
+    1
+
+    10000.0'
+  expected_output: '0.889299'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: q
+    value: '[1.0, 0.0]'
+  - name: k
+    value: '[0.0, 1.0]'
+  - name: m
+    value: '101'
+  - name: n
+    value: '100'
+  - name: base
+    value: '10000.0'
+  stdin: '[1.0, 0.0]
+
+    [0.0, 1.0]
+
+    101
+
+    100
+
+    10000.0'
+  expected_output: '0.841471'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: q
+    value: '[0.5, -1.5, 2.0, 0.25]'
+  - name: k
+    value: '[1.0, 2.0, -0.5, 3.0]'
+  - name: m
+    value: '7'
+  - name: n
+    value: '7'
+  - name: base
+    value: '10000.0'
+  stdin: '[0.5, -1.5, 2.0, 0.25]
+
+    [1.0, 2.0, -0.5, 3.0]
+
+    7
+
+    7
+
+    10000.0'
+  expected_output: '-2.75'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: q
+    value: '[0.5, -1.5, 2.0, 0.25, 1.0, -1.0, 0.75, 0.5]'
+  - name: k
+    value: '[1.0, 2.0, -0.5, 3.0, 0.25, 0.5, -2.0, 1.5]'
+  - name: m
+    value: '0'
+  - name: n
+    value: '5'
+  - name: base
+    value: '500000.0'
+  stdin: '[0.5, -1.5, 2.0, 0.25, 1.0, -1.0, 0.75, 0.5]
+
+    [1.0, 2.0, -0.5, 3.0, 0.25, 0.5, -2.0, 1.5]
+
+    0
+
+    5
+
+    500000.0'
+  expected_output: '-0.708211'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: q
+    value: '[0.5, -1.5, 2.0, 0.25, 1.0, -1.0, 0.75, 0.5]'
+  - name: k
+    value: '[1.0, 2.0, -0.5, 3.0, 0.25, 0.5, -2.0, 1.5]'
+  - name: m
+    value: '9'
+  - name: n
+    value: '14'
+  - name: base
+    value: '500000.0'
+  stdin: '[0.5, -1.5, 2.0, 0.25, 1.0, -1.0, 0.75, 0.5]
+
+    [1.0, 2.0, -0.5, 3.0, 0.25, 0.5, -2.0, 1.5]
+
+    9
+
+    14
+
+    500000.0'
+  expected_output: '-0.708211'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def rope_dot(self, q, k, m, n, base):\n\
+    \        \"\"\"\n        :type q: List[float]\n        :type k: List[float]\n        :type m: int\n\
+    \        :type n: int\n        :type base: float\n        :rtype: float\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    q = json.loads(_in[0])
+
+    k = json.loads(_in[1])
+
+    m = int(_in[2])
+
+    n = int(_in[3])
+
+    base = float(_in[4])
+
+    _r = Solution().rope_dot(q, k, m, n, base)
+
+    print(round(_r, 6))
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def rope_dot(self, q, k, m, n, base):\n\
+  \        return sum(a * b for a, b in zip(self._rot(q, m, base), self._rot(k, n, base)))\n\n    def\
+  \ _rot(self, x, pos, base):\n        d = len(x)\n        out = [0.0] * d\n        for i in range(d //\
+  \ 2):\n            theta = base ** (-2.0 * i / d)\n            a = pos * theta\n            c, s = math.cos(a),\
+  \ math.sin(a)\n            x0, x1 = x[2 * i], x[2 * i + 1]\n            out[2 * i] = x0 * c - x1 * s\n\
+  \            out[2 * i + 1] = x0 * s + x1 * c\n        return out\n"

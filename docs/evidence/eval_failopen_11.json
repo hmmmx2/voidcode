@@ -1,0 +1,527 @@
+{
+ "summary": {
+  "by_bucket": {
+   "('explain', 'ALL')": {
+    "passed": 1,
+    "n": 5,
+    "rate": 0.2,
+    "ci95": [
+     0.0362,
+     0.6245
+    ]
+   },
+   "('explain', 'hard')": {
+    "passed": 1,
+    "n": 2,
+    "rate": 0.5,
+    "ci95": [
+     0.0945,
+     0.9055
+    ]
+   },
+   "('explain', 'medium')": {
+    "passed": 0,
+    "n": 3,
+    "rate": 0.0,
+    "ci95": [
+     0.0,
+     0.5615
+    ]
+   },
+   "('teaching', 'ALL')": {
+    "passed": 2,
+    "n": 6,
+    "rate": 0.3333,
+    "ci95": [
+     0.0968,
+     0.7
+    ]
+   },
+   "('teaching', 'easy')": {
+    "passed": 2,
+    "n": 2,
+    "rate": 1.0,
+    "ci95": [
+     0.3424,
+     1.0
+    ]
+   },
+   "('teaching', 'hard')": {
+    "passed": 0,
+    "n": 1,
+    "rate": 0.0,
+    "ci95": [
+     0.0,
+     0.7935
+    ]
+   },
+   "('teaching', 'medium')": {
+    "passed": 0,
+    "n": 3,
+    "rate": 0.0,
+    "ci95": [
+     0.0,
+     0.5615
+    ]
+   }
+  },
+  "by_check": {
+   "asks_a_question": {
+    "passed": 5,
+    "n": 6,
+    "rate": 0.8333,
+    "ci95": [
+     0.4365,
+     0.9699
+    ]
+   },
+   "mentions_required": {
+    "passed": 3,
+    "n": 11,
+    "rate": 0.2727,
+    "ci95": [
+     0.0975,
+     0.5657
+    ]
+   },
+   "no_answer_leakage": {
+    "passed": 11,
+    "n": 11,
+    "rate": 1.0,
+    "ci95": [
+     0.7412,
+     1.0
+    ]
+   }
+  },
+  "total_scenarios": 11,
+  "provenance": {
+   "backend": "raw vLLM (OpenAI-compatible)",
+   "base_url": "http://127.0.0.1:8123",
+   "served_model": "voidcode-awq",
+   "prompt_mode": "finetuned",
+   "prompt_layer": "FINETUNED_SYSTEM_PROMPT (what the LoRA was trained on)",
+   "mode_source": "gold set (detect_mode NOT exercised)",
+   "grounding": "NOT APPLIED - no embedder or corpus; grounded modes received UNGROUNDED_INSTRUCTION only",
+   "sampling": "per-mode from prompts.get_generation_config",
+   "thinking": "NOT reproduced - no vLLM equivalent, and Qwen2.5 has no thinking phase; the debug prompt's enumeration step is specified to run there"
+  }
+ },
+ "results": [
+  {
+   "scenario": {
+    "id": "teach_attention_softmax_scale_001",
+    "difficulty": "medium",
+    "user_message": "Teach me why attention divides by sqrt(d_k) before the softmax.",
+    "must_mention": [
+     "variance",
+     "softmax"
+    ],
+    "notes": "Must reach the variance-of-dot-product argument, not just 'for stability'.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nThe key insight is that dividing by \u221ad_k helps the gradients flow better during training. Let's break down why this is important.\n\n[TEMPLATE]\n```python\n# Apply attention mechanism\nattention_scores = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(d_k)\nattention_probs = torch.softmax(attention_scores, dim=-1)\n```\n\n[GUIDE]\nLine 2: We divide the dot product by \u221ad_k. What goes here? \u2014 Line 2\n```python\nattention_scores = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(d_k)\n```\nLine 2 [Dividing by \u221ad_k helps gradients flow better during training]. The square root of d_k is used to normalize the scores. Why is normalization important? \u2014 Line 2\n```python\nattention_scores = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(d_k)\n```\nLine 2 [Normalization helps with gradient explosion or vanishing]. By normalizing, we ensure that each query position doesn't dominate the others too much. This keeps the scale of the scores similar across different positions. What happens if the scale varies too much? \u2014 Line 2\n```python\nattention_scores = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(d_k)\n```\n\nLet's tackle Line 2 first. What goes here? Line 2 has the dot product divided by \u221ad_k. What does this achieve? Line 2 also has the softmax applied afterward. What does the softmax do? Line 2 ensures the probabilities sum to 1. Line 2 also helps with gradient flow. What problem does Line 2 solve? Line 2 helps with gradient explosion or vanishing. Line 2 keeps the scale of the scores similar across different positions. Line 2 helps the model learn effectively. Line 2 is crucial for the attention mechanism to work well. Line 2 is a key component of the attention mechanism. Line 2 is essential for the model to learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps the model learn effectively. Line 2 helps",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "variance"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_layernorm_placement_001",
+    "difficulty": "medium",
+    "user_message": "Teach me the difference between pre-norm and post-norm transformers.",
+    "must_mention": [
+     "residual",
+     "gradient"
+    ],
+    "notes": "Pre-norm keeps a clean residual path; post-norm needs warmup.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nIn Transformer architecture, the choice between pre-norm and post-norm affects how the layer normalization is applied relative to the residual connections. Both approaches have their theoretical underpinnings and practical implications.\n\n[TEMPLATE]\n```python\n# Pre-Norm: LayerNorm before residual connection\nclass PreNormTransformerLayer(nn.Module):\n    def forward(self, x):\n        x = x + self.mha(x)  # Residual connection\n        x = ____               # Line 1                     # Line 2\n        x = x + self.ff(x)    # Residual connection\n        return x\n\n# Post-Norm: LayerNorm after residual connections\nclass PostNormTransformerLayer(nn.Module):\n    def forward(self, x):\n        x = x + self.mha(x)  # Residual connection\n        x = ____               # Line 1                     # Line 2\n        x = x + self.ff(x)    # Residual connection\n        return x\n```\n\n[GUIDE]\nLine 1: Apply LayerNorm to the input. For Pre-Norm, this goes before the first residual connection.\n```python\nx = ____  # Line 1\n```\nLine 1 is key because it determines whether the LayerNorm happens before or after the first residual connection. What goes here for Pre-Norm? What about Post-Norm? Line 1 is crucial because it determines whether the LayerNorm happens before or after the first residual connection. Line 1 is the core of the difference between Pre-Norm and Post-Norm architectures. Line 1 is the heart of the distinction. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the battleground for understanding the architectural choices.\n\nLet's tackle Line 1 first. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the battleground for understanding the architectural choices. Line 1 is the core of the difference between Pre-Norm and Post-Norm architectures. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of the layer design pivots. Line 1 is the fulcrum around which the rest of",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": true,
+      "has_blanks": true
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "gradient"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_kv_cache_001",
+    "difficulty": "easy",
+    "user_message": "Teach me what a KV cache is and why decoding needs one.",
+    "must_mention": [
+     "cache",
+     "token"
+    ],
+    "notes": "Should reach recomputation avoided per generated token.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nA KV (Key-Value) cache is a data structure that stores previously computed results. It maps keys to values, allowing fast retrieval. When decoding, we use it to store decoded tokens we've seen before, so we don't have to decode the same token multiple times.\n\n[TEMPLATE]\n```python\nclass DecodeWithCache:\n    def __init__(self):\n        self.cache = ____                    # Line 1\n\n    def decode(self, encoded):\n        result = []\n        for char in encoded:\n            if char in self.cache:\n                # Line 2\n                decoded_char = self.cache[char]\n            else:\n                # Line 3\n                decoded_char = self.decode_token(char)\n                self.cache[____] = ____      # Line 4\n            result.append(____)               # Line 5\n        return ''.join(result)\n```\n\n[GUIDE]\nLine 1: What data structure gives O(1) lookup for strings? This is key for performance.\n```python\n        self.cache = ____    # Line 1\n```\nLine 2: We already have the char. What did we store for this char when we saw it before?\n```python\n            decoded_char = self.cache[____]    # Line 2\n```\nLine 3: We haven't seen this char before. What function do we call to decode it?\n```python\n            decoded_char = self.decode_token(____)    # Line 3\n```\nLine 4: After we decode it, we store it in the cache. What goes on the left? What goes on the right?\n```python\n                self.cache[____] = ____    # Line 4\n```\nLine 5: We just got the decoded character. What goes here to add it to our result?\n```python\n            result.append(____)    # Line 5\n```\n\nLet's begin at Line 1. What data structure gives O(1) lookup for strings? This is key for performance. What goes here?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": true,
+      "has_blanks": true
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_lora_rank_001",
+    "difficulty": "medium",
+    "user_message": "Teach me how to choose the rank r in LoRA.",
+    "must_mention": [
+     "rank",
+     "parameter"
+    ],
+    "notes": "Capacity vs parameter count; r is not free accuracy.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nFor LoRA (Low-Rank Adaptation), choosing the rank r is crucial. The rank controls how many dimensions of the original matrix you're approximating. It's a trade-off between model size and performance.\n\n[TEMPLATE]\n```python\n# Rank r: Controls the number of dimensions to approximate\nrank = ____(1)____  # Line 1\n```\n\n[GUIDE]\nLine 1: The rank determines how many dimensions of the original matrix we're approximating. A higher rank means more capacity but also larger model size. What value would you choose if you wanted to keep the model size down while still getting decent performance?\n```python\n# Rank r: Controls the number of dimensions to approximate\nrank = ____  # Line 1\n```\n\nStart with 8 or 16 for a balance between model size and performance. For very large models, you might try 32 or even 64. For smaller models, 4 or 8 might be enough. Try different values and measure the impact on accuracy and inference speed. What value did you choose? Let's evaluate its impact on your model's performance first. How does increasing the rank affect accuracy and inference time?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": true
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "parameter"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_grad_accum_001",
+    "difficulty": "easy",
+    "user_message": "Teach me how gradient accumulation simulates a larger batch.",
+    "must_mention": [
+     "batch",
+     "step"
+    ],
+    "notes": "Must mention that the loss needs scaling, or the effective LR changes.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nGradient accumulation is a technique that allows us to simulate training with a larger batch size. The key insight is that gradient descent with a small batch size can be viewed as an approximation to the true gradient. By accumulating gradients over multiple mini-batches, we can approximate the effect of using a larger batch.\n\n[TEMPLATE]\n```python\n# Track accumulated gradients\naccumulated_gradients = [torch.zeros_like(param) for param in model.parameters()]\n\nfor _ in range(num_steps):\n    # Forward pass\n    output = model(input_data)\n    loss = loss_function(output, target)\n\n    # Backward pass\n    loss.backward()\n\n    # Accumulate gradients\n    for grad, param_grad in zip(accumulated_gradients, model.parameters()):\n        grad += param_grad.grad\n\n    # Update weights every k steps\n    if step % accumulation_steps == 0:\n        for param, accumulated_grad in zip(model.parameters(), accumulated_gradients):\n            param.data -= learning_rate * accumulated_grad\n\n    # Clear gradients\n    model.zero_grad()\n```\n\n[GUIDE]\nLine 1: We need a list to store accumulated gradients. What goes here? (model.parameters() or .parameters())\n```python\naccumulated_gradients = [torch.zeros_like(param) for param in model.parameters()]  # Line 1\n```\nLine 2: After forward and backward passes, the gradients accumulate. What happens to model.parameters().grad? (it's None or it contains gradients)\n```python\n    for grad, param_grad in zip(accumulated_gradients, model.parameters()):\n        grad += param_grad.grad  # Line 2\n```\nLine 3: Update weights every k steps. What condition ensures we update? (step % k == 0 or step % k != 0)\n```python\n    if step % accumulation_steps == 0:  # Line 3\n```\n\nLine 3 is key: Update weights every k steps. What condition ensures we update? (step % k == 0 or step % k != 0)",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_mixed_precision_001",
+    "difficulty": "hard",
+    "user_message": "Teach me why mixed precision training needs loss scaling.",
+    "must_mention": [
+     "fp16",
+     "underflow"
+    ],
+    "notes": "Small gradients underflow fp16's range; scaling moves them up.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nMixed precision training uses lower-precision floating-point types (like float16) to speed up training. However, this introduces a risk: underflow. Underflow occurs when the result of a computation is too small to be represented by the floating-point format. This can lead to NaNs or infinities, which break training.\n\n[TEMPLATE]\n```python\n# Apply gradient descent with learning rate scheduler\nfor epoch in range(num_epochs):\n    optimizer.zero_grad()  # Clear gradients from previous iterations\n    outputs = model(inputs)  # Forward pass\n    loss = criterion(outputs, targets)  # Calculate loss\n    # Line 12: Scale the loss before backward to prevent underflow\n    scaled_loss = loss * ____  # Line 12\n    scaled_loss.backward()  # Backward pass\n    # Line 13: Unscale the gradients before updating weights\n    optimizer.step()  # Update weights\n    # Line 14: Rescale the gradients back to original scale\n    for param in model.parameters():\n        param.data = param.data / ____\n    # Line 15: Track metrics\n    train_loss += loss.item()\n    if (epoch + 1) % print_every == 0:\n        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item():.4f}')\n```\n\n[GUIDE]\nLine 12: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\n```python\n    # Line 12: Scale the loss before backward to prevent underflow\n    scaled_loss = loss * ____  # Line 12\n```\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the loss up so it stays above the minimum representable value.\n\nLine 12 is key: The loss might become very small during training. When you multiply a tiny number by 1e-2 (or another factor), it can become even tinier, leading to underflow. We need to scale the",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": true
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "fp16"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_flash_attention_001",
+    "difficulty": "hard",
+    "user_message": "Explain how FlashAttention avoids materialising the attention matrix.",
+    "must_mention": [
+     "tiling",
+     "softmax"
+    ],
+    "notes": "Online softmax with running max and sum; exact, not approximate.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "FlashAttention works by breaking the query, key, value tensors into blocks. It computes the logits and softmax for each block separately, which means it never needs to materialize the whole Q \u00d7 K^T matrix at once. This makes it possible to compute the attention without using O(n\u00b2) memory for the entire matrix.\n\nThis approach relies on some clever math and parallelism to work efficiently. The key is in how it handles the logits and the mask. Does this give you an idea of what's happening? What do you think about the mask \u2014 why is it important?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "tiling"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_zero_stages_001",
+    "difficulty": "hard",
+    "user_message": "Explain the difference between ZeRO stage 2 and stage 3.",
+    "must_mention": [
+     "gradient",
+     "parameter"
+    ],
+    "notes": "Stage 2 shards optimizer+gradients; stage 3 also shards parameters.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "ZeRO stage 2 and stage 3 both address memory issues in training large models. Stage 2 focuses on gradient reduction to reduce peak GPU memory usage. Stage 3 builds on that by also offloading optimizer states (like momentum) to disk.\n\nThe key difference is:\n- **Stage 2**: Reduces peak GPU memory by storing gradients in CPU memory (or page-locked memory) instead of GPU memory. This helps when you run out of GPU memory but still have CPU memory to spare.\n- **Stage 3**: Also uses CPU (or page-locked) memory for optimizer states. This can help even when you're close to running out of CPU memory too.\n\nAnother critical difference:\n- **Stage 2** works for any model parallelism setup (data parallel, pipeline parallel, model parallel).\n- **Stage 3** requires model parallelism because it needs to shard the model parameters across different GPUs.\n\nOne limitation:\n- Both methods require careful tuning to balance performance and memory usage. For example, you might need to adjust batch size, gradient accumulation steps, or model parallel ranks.\n\nThe choice between stage 2 and stage 3 often comes down to how much GPU and CPU memory you have available, as well as the complexity of your model parallel setup.\n\nWhich aspect would you like to dive into first? The benefits of each stage, their trade-offs, or how they handle memory?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_quantization_awq_001",
+    "difficulty": "medium",
+    "user_message": "Explain what AWQ does differently from naive round-to-nearest quantization.",
+    "must_mention": [
+     "outlier",
+     "scale"
+    ],
+    "notes": "Activation-aware: protects salient weight channels via scaling.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "AWQ (Adaptive Weight Quantization) is a technique used in neural network optimization. The key difference lies in how it decides which weights to quantize.\n\n**Naive Round-to-Nearest:**\n- Quantizes all weights to the nearest value of the quantization scale.\n- Can be suboptimal because it treats all weights equally.\n\n**AWQ (Adaptive):**\n- Chooses which weights to quantize adaptively based on their importance.\n- Typically uses some form of gradient importance to guide which weights to keep in FP32.\n\nThe core idea is: **not all weights are created equal!**\n\nBy being adaptive, AWQ can achieve better accuracy than naive quantization while using fewer bits.\n\nDo you understand the basic tradeoff? What happens when you treat all weights equally vs selectively keeping some in FP32?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "outlier"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_speculative_decoding_001",
+    "difficulty": "medium",
+    "user_message": "Explain speculative decoding and when it stops helping.",
+    "must_mention": [
+     "draft",
+     "accept"
+    ],
+    "notes": "Gains depend on acceptance rate; a poor draft model is a net loss.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "Speculative decoding can stop helping when the prediction is too far off from the actual execution pattern. The more inaccurate the prediction, the less benefit you get from speculative execution.\n\nFor example, if branch prediction is 90% accurate but the predicted path takes 50 cycles while the actual path takes 1 cycle, you're better off not speculating at all. The cost of invalidating and rescheduling dominates.\n\nWhen does speculative decoding stop helping?\n1. **Prediction accuracy falls below X%**\n2. **The penalty for misprediction is Y cycles**\n3. **The performance benefit of correct prediction is Z cycles**\n\nEach architecture has different numbers for X, Y, and Z. For modern x86, typical values might be:\n- X: 75-90%\n- Y: 50-100 cycles\n- Z: 20-50 cycles\n\nThe exact threshold is a tradeoff between the cost of speculation and the benefit. It's not a one-size-fits-all \u2014 it depends on the workload and how well the hardware can predict branch outcomes.\n\nWhat happens when the prediction error exceeds this threshold? The CPU typically stalls, flushes the pipeline, or reissues instructions. This is the point where speculative decoding becomes detrimental.\n\nThink about why speculative decoding would become counterproductive. What factors determine when the tradeoff shifts from benefit to cost?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 2,
+      "missing": [
+       "draft",
+       "accept"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_rope_001",
+    "difficulty": "medium",
+    "user_message": "Explain rotary position embeddings and why they extrapolate better.",
+    "must_mention": [
+     "rotation",
+     "relative"
+    ],
+    "notes": "Relative position emerges from the rotation's inner product.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "Rotary position embeddings (RoPE) are a technique used in transformer models to capture positional information without requiring learnable position vectors. The key insight is that sinusoidal positional encodings alone don't scale well because the frequency of the signal needs to decrease as distance increases.\n\nThe formula for RoPE at position `i` for dimension `j` is:\n\\[ \\text{angle} = \\text{positions}[i] / d_{\\text{max}} \\]\n\\[ \\theta = 2\\pi \\times \\text{angle} \\]\n\\[ \\cos(\\theta), \\sin(\\theta) \\]\n\nFor each dimension, we use both the cosine and sine values. By using the angle for both sine and cosine, we can represent rotation in 2D space. This allows us to rotate the position in the embedding space.\n\nRoPE helps extrapolate better because:\n- **Fits long-range dependencies**: By using rotations, RoPE can handle longer sequences more effectively than traditional positional encoding.\n- **Less computational overhead**: Unlike learned position embeddings, RoPE doesn't require additional parameters to be trained. It also uses less memory.\n\nBy using RoPE, models can maintain performance even when the sequence length exceeds what was seen during training.\n\nWhy does this help with extrapolation? Think about it: what property of rotations makes them particularly good for handling long distances?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "relative"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  }
+ ]
+}

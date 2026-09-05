@@ -1,0 +1,523 @@
+{
+ "summary": {
+  "by_bucket": {
+   "('explain', 'ALL')": {
+    "passed": 3,
+    "n": 5,
+    "rate": 0.6,
+    "ci95": [
+     0.2307,
+     0.8824
+    ]
+   },
+   "('explain', 'hard')": {
+    "passed": 1,
+    "n": 2,
+    "rate": 0.5,
+    "ci95": [
+     0.0945,
+     0.9055
+    ]
+   },
+   "('explain', 'medium')": {
+    "passed": 2,
+    "n": 3,
+    "rate": 0.6667,
+    "ci95": [
+     0.2077,
+     0.9385
+    ]
+   },
+   "('teaching', 'ALL')": {
+    "passed": 2,
+    "n": 6,
+    "rate": 0.3333,
+    "ci95": [
+     0.0968,
+     0.7
+    ]
+   },
+   "('teaching', 'easy')": {
+    "passed": 1,
+    "n": 2,
+    "rate": 0.5,
+    "ci95": [
+     0.0945,
+     0.9055
+    ]
+   },
+   "('teaching', 'hard')": {
+    "passed": 0,
+    "n": 1,
+    "rate": 0.0,
+    "ci95": [
+     0.0,
+     0.7935
+    ]
+   },
+   "('teaching', 'medium')": {
+    "passed": 1,
+    "n": 3,
+    "rate": 0.3333,
+    "ci95": [
+     0.0615,
+     0.7923
+    ]
+   }
+  },
+  "by_check": {
+   "asks_a_question": {
+    "passed": 4,
+    "n": 6,
+    "rate": 0.6667,
+    "ci95": [
+     0.3,
+     0.9032
+    ]
+   },
+   "mentions_required": {
+    "passed": 5,
+    "n": 11,
+    "rate": 0.4545,
+    "ci95": [
+     0.2127,
+     0.7199
+    ]
+   },
+   "no_answer_leakage": {
+    "passed": 10,
+    "n": 11,
+    "rate": 0.9091,
+    "ci95": [
+     0.6226,
+     0.9838
+    ]
+   }
+  },
+  "total_scenarios": 11,
+  "provenance": {
+   "backend": "raw vLLM (OpenAI-compatible)",
+   "base_url": "http://127.0.0.1:8123",
+   "served_model": "voidcode-awq",
+   "prompt_mode": "finetuned",
+   "prompt_layer": "FINETUNED_SYSTEM_PROMPT (what the LoRA was trained on)",
+   "mode_source": "gold set (detect_mode NOT exercised)",
+   "grounding": "30 docs embedded; hits {'teach_attention_softmax_scale_001': 4, 'teach_layernorm_placement_001': 4, 'teach_kv_cache_001': 4, 'teach_lora_rank_001': 0, 'teach_grad_accum_001': 4, 'teach_mixed_precision_001': 4, 'explain_flash_attention_001': 4, 'explain_zero_stages_001': 1, 'explain_quantization_awq_001': 4, 'explain_speculative_decoding_001': 4, 'explain_rope_001': 4}; fail-open ['teach_lora_rank_001']",
+   "sampling": "per-mode from prompts.get_generation_config",
+   "thinking": "NOT reproduced - no vLLM equivalent, and Qwen2.5 has no thinking phase; the debug prompt's enumeration step is specified to run there"
+  }
+ },
+ "results": [
+  {
+   "scenario": {
+    "id": "teach_attention_softmax_scale_001",
+    "difficulty": "medium",
+    "user_message": "Teach me why attention divides by sqrt(d_k) before the softmax.",
+    "must_mention": [
+     "variance",
+     "softmax"
+    ],
+    "notes": "Must reach the variance-of-dot-product argument, not just 'for stability'.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nThe key insight is that dividing by \u221ad_k ensures the dot product attention remains approximately scale-invariant across different values of d_k. Here's the core intuition:\n\n[TEMPLATE]\n```python\n# Apply the attention mechanism\nattention_scores = (query @ key.T) / math.sqrt(d_k)\nsoftmax_attention = torch.softmax(attention_scores, dim=-1)\n```\n\n```python\n# Apply the attention mechanism\nattention_scores = (query @ key.T) / __    # Line 1\n```\n\nLine 1: We compute the dot product between query and key, then divide by \u221ad_k. The division by \u221ad_k is crucial \u2014 why?\n```python\n# Apply the attention mechanism\nattention_scores = (query @ key.T) / __    # Line 1\n```\n\nLine 1 has `query @ key.T` \u2014 matrix multiplication between query and key transpose. What does this calculate? What does the dot product measure?\n\nLet's focus on Line 1 first. Line 1 has `query @ key.T` \u2014 matrix multiplication between query and key transpose. What does this calculate? What does the dot product measure?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "variance"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_layernorm_placement_001",
+    "difficulty": "medium",
+    "user_message": "Teach me the difference between pre-norm and post-norm transformers.",
+    "must_mention": [
+     "residual",
+     "gradient"
+    ],
+    "notes": "Pre-norm keeps a clean residual path; post-norm needs warmup.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nThe key difference lies in where the normalization happens relative to the residual connection. Pre-norm goes before the residual, post-norm goes after. This changes how the layer behaves during training.\n\n[TEMPLATE]\n```python\n# Pre-Norm Transformer\nclass PreNormTransformer(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.norm = nn.LayerNorm(hidden_size)\n        self.mlp = nn.Sequential(\n            nn.Linear(hidden_size, 4 * hidden_size),\n            nn.GELU(),\n            nn.Linear(4 * hidden_size, hidden_size),\n        )\n        self.residual = nn.Sequential(\n            nn.Linear(hidden_size, hidden_size),\n            nn.ReLU(),  # or whatever activation\n        )\n\n    def forward(self, x):\n        x = self.norm(x)  # Normalize first\n        x = self.residual(x)  # Then process\n        return x\n\n# Post-Norm Transformer\nclass PostNormTransformer(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.residual = nn.Sequential(\n            nn.Linear(hidden_size, hidden_size),\n            nn.ReLU(),  # or whatever activation\n        )\n        self.norm = nn.LayerNorm(hidden_size)\n        self.mlp = nn.Sequential(\n            nn.Linear(hidden_size, 4 * hidden_size),\n            nn.GELU(),\n            nn.Linear(4 * hidden_size, hidden_size),\n        )\n\n    def forward(self, x):\n        x = self.residual(x)  # Process first\n        x = self.norm(x)  # Then normalize\n        return x\n```\n\n[GUIDE]\nLine 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize first. Line 3: For Pre-Norm, we normalize",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": false,
+      "complete_definition": true,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "gradient"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_kv_cache_001",
+    "difficulty": "easy",
+    "user_message": "Teach me what a KV cache is and why decoding needs one.",
+    "must_mention": [
+     "cache",
+     "token"
+    ],
+    "notes": "Should reach recomputation avoided per generated token.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "```python\n# Line 1\nfor i in range(len(sequence)):\n    # Line 2\n    k = transformer.layers[i].self_attention.k(...)\n\n    # Line 3\n    v = transformer.layers[i].self_attention.v(...)\n\n    # Line 4\n    attention = torch.matmul(q, k.transpose(-2, -1))\n    attention = attention / math.sqrt(d_k)\n    attention = F.softmax(attention, dim=-1)\n    attention = torch.matmul(attention, v)\n    # Line 5\n    output = transformer.layers[i].feedforward(attention)\n```\n\nLine 1: We're processing each position in the sequence.\nLine 2: Retrieve the key projection matrix for position i. The key matrix has shape (batch, kv_heads, seq_len, head_dim).\nLine 3: Retrieve the value matrix for position i. The value matrix has shape (batch, kv_heads, seq_len, head_dim).\nLine 4: Compute the dot product of Q with K^T, scale by sqrt(d_k), and apply softmax to get the attention weights.\nLine 5: Apply the feedforward network to the attended values to get the final output for position i.\n\n**Line 4:** Line 4 computes the dot product of Q with K^T. The key matrix K has shape (batch, kv_heads, seq_len, head_dim). The transpose operation makes K have shape (batch, kv_heads, head_dim, seq_len). The result of the dot product has shape (batch, kv_heads, seq_len, seq_len). After scaling by 1/sqrt(d_k) and applying softmax, we get the attention weights. Line 4 is crucial for aligning the input tokens with the context they attend to.\n\nLine 4 is the core of the self-attention mechanism. It's where the model learns to weigh the importance of each position relative to others. Line 4 is the heart of the Transformer's ability to understand context. Line 4 is where the magic happens. Line 4 is the foundation for all that follows. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the model learns to weigh the importance of each position relative to others. Line 4 is where the",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "cache"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_lora_rank_001",
+    "difficulty": "medium",
+    "user_message": "Teach me how to choose the rank r in LoRA.",
+    "must_mention": [
+     "rank",
+     "parameter"
+    ],
+    "notes": "Capacity vs parameter count; r is not free accuracy.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nFor LoRA (Low-Rank Adaptation), the choice of rank r is crucial. It controls the trade-off between model capacity and computational efficiency. The rank determines how many dimensions you're approximating for each layer.\n\n[TEMPLATE]\n```python\n# Rank selection for LoRA\nrank = ____                         # Line 1\n```\n\n[GUIDE]\nLine 1: For LoRA, what parameter controls the dimensionality reduction? Think about how many dimensions you're approximating for each layer.\n\nStart with Line 1. For LoRA, what parameter controls the dimensionality reduction? Think about how many dimensions you're approximating for each layer. What number do you choose for rank?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": true
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_grad_accum_001",
+    "difficulty": "easy",
+    "user_message": "Teach me how gradient accumulation simulates a larger batch.",
+    "must_mention": [
+     "batch",
+     "step"
+    ],
+    "notes": "Must mention that the loss needs scaling, or the effective LR changes.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nGradient accumulation doesn't increase batch size \u2014 it increases effective batch size. The key insight is that gradient accumulation works with the same batch, just spread across multiple steps.\n\n[TEMPLATE]\n```python\n# Initialize accumulators (only needed for gradient accumulation)\naccumulated_gradients = [torch.zeros_like(param) for param in model.parameters()]\n\nfor _ in range(num_steps):\n    # Forward pass\n    output = model(input)\n\n    # Backward pass\n    loss.backward()\n\n    # Accumulate gradients\n    for grad, acc_grad in zip(model.parameters(), accumulated_gradients):\n        acc_grad += grad.data\n\n    # Update weights every N steps\n    if step % accumulation_steps == 0:\n        for param, acc_grad in zip(model.parameters(), accumulated_gradients):\n            param.data -= learning_rate * acc_grad\n        # Clear accumulated gradients\n        for acc_grad in accumulated_gradients:\n            acc_grad.zero_()\n```\n\n[GUIDE]\nLine 10: After accumulating gradients, what operation reduces the accumulated gradient to the learning rate times the accumulated gradient? What does this accomplish?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "teach_mixed_precision_001",
+    "difficulty": "hard",
+    "user_message": "Teach me why mixed precision training needs loss scaling.",
+    "must_mention": [
+     "fp16",
+     "underflow"
+    ],
+    "notes": "Small gradients underflow fp16's range; scaling moves them up.",
+    "mode": "teaching",
+    "baseline_set": false
+   },
+   "response": "[EXPLAIN]\nLet's break down why loss scaling is necessary for mixed precision training. The key insight is that gradients can become too small to represent accurately in half precision.\n\n[TEMPLATE]\n```python\n# Apply gradient to model parameters\nfor param_group in optimizer.param_groups:\n    for param in param_group['params']:\n        param.grad.data -= learning_rate * param.grad.data\n```\n\n[GUIDE]\nLine 3: After the backward pass, the gradient is in param.grad.data. What's the typical range of values you see here? (Think about the range of activations and weights.)\n\nLine 4: The optimizer uses param.grad.data to update the parameters. What happens if the gradient becomes too small to represent in half precision? (Think about the precision limit of float16.)",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "asks_a_question": {
+      "applicable": true,
+      "passed": true
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 0,
+      "required": 2,
+      "missing": [
+       "fp16",
+       "underflow"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 3
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_flash_attention_001",
+    "difficulty": "hard",
+    "user_message": "Explain how FlashAttention avoids materialising the attention matrix.",
+    "must_mention": [
+     "tiling",
+     "softmax"
+    ],
+    "notes": "Online softmax with running max and sum; exact, not approximate.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "FlashAttention breaks down the attention computation into small blocks that fit into on-chip SRAM. Within each block, it performs the dot products for queries and keys. The trick is that each block can be processed independently: once the dot products are computed, FlashAttention uses an online softmax to combine partial results.\n\nThe key insight is that the block-based approach means no need to store the entire N \u00d7 N score matrix in high-bandwidth memory. Instead, FlashAttention works block-by-block, keeping each block in on-chip SRAM and writing only the final result back to memory.\n\nThis approach maintains the original FLOP count but reduces memory bandwidth requirements significantly. The exact attention mechanism remains unchanged; the reduction in memory footprint comes from how the computations are organized.\n\nThe result? For moderate sequence lengths, attention becomes memory-bandwidth-bound rather than compute-bound, leading to performance gains. FlashAttention has been shown to provide performance improvements in practice without compromising accuracy.\n\nWhat do you think about this pattern: process in blocks and combine online?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "tiling"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_zero_stages_001",
+    "difficulty": "hard",
+    "user_message": "Explain the difference between ZeRO stage 2 and stage 3.",
+    "must_mention": [
+     "gradient",
+     "parameter"
+    ],
+    "notes": "Stage 2 shards optimizer+gradients; stage 3 also shards parameters.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "ZeRO stage 2 adds gradients to the optimization process. By adding gradients, we eliminate redundant storage of gradients on each device. Each device still has its own parameter copy but shares the gradient.\n\nIn contrast, ZeRO stage 3 goes further and also shreds parameter copies. Each device gets a shard (subset) of the model parameters. The shards are combined (all-gather) to form the full model when needed.\n\nThe key distinction is:\n- **Stage 2:** Shares gradients -> No redundant gradient storage\n- **Stage 3:** Shares parameters -> No redundant parameter storage\n\nThe tradeoff is that stage 3 incurs more collective communication (all-gathers) during forward and backward passes, which can offset the memory savings.\n\nWhich stage to choose depends on the balance between memory savings and collective communication overhead. For what value of `num_gpus` would stage 3 start being worth it?\n\nWhat do you think \u2014 if you have 8 GPUs and each has 16GB, how much total do you need for parameters? How many 16GB all-gathers can you fit?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_quantization_awq_001",
+    "difficulty": "medium",
+    "user_message": "Explain what AWQ does differently from naive round-to-nearest quantization.",
+    "must_mention": [
+     "outlier",
+     "scale"
+    ],
+    "notes": "Activation-aware: protects salient weight channels via scaling.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "AWQ doesn't just round weights to nearest. It first identifies which weight channels matter most for accuracy. Then it scales those channels before quantizing, reducing the range of values each gets.\n\nThis is different from round-to-nearest, which treats all weights equally. AWQ targets only the channels that affect output most, making the approach much more efficient.\n\nIn practice, AWQ quantizes all weights to the same low precision (e.g. 8-bit), while round-to-nearest often uses different bit widths. AWQ trades off some precision for improved accuracy in critical areas.\n\nThe key insight is that a few weight channels can dominate error propagation. By focusing on those, AWQ can achieve better performance with less total precision.\n\nWhat does AWQ do first: identifies critical weight channels, scales them, then quantizes. How does this guide the quantization process?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": false,
+      "covered": 1,
+      "required": 2,
+      "missing": [
+       "outlier"
+      ]
+     }
+    },
+    "all_passed": false,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_speculative_decoding_001",
+    "difficulty": "medium",
+    "user_message": "Explain speculative decoding and when it stops helping.",
+    "must_mention": [
+     "draft",
+     "accept"
+    ],
+    "notes": "Gains depend on acceptance rate; a poor draft model is a net loss.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "The key insight is that speculative decoding doesn't sacrifice quality \u2014 the accepted tokens are exactly what the target would generate. This is achieved by carefully choosing the acceptance criteria.\n\nThe benefit comes from parallelism: while the target is processing one draft, the model can explore multiple possibilities. This is a pure throughput optimization \u2014 it doesn't change the quality of the final output.\n\nThe mechanism that determines when to stop is based on the trade-off between the number of drafts and the cost of each one. Each draft adds new possible tokens, but only those that pass all previous drafts' filters are accepted. The acceptance rate decreases exponentially with each round.\n\nIn practice, the optimal number of drafts is small (usually 2-4). Beyond that, the marginal gain in diversity doesn't justify the additional cost.\n\nWhen does speculative decoding stop helping? When the marginal increase in diversity doesn't pay for the cost of another draft. For example, if the acceptance rate drops to 1% after the third draft, adding a fourth draft would likely add very few new accepted sequences, not worth the cost.\n\nUnderstanding this trade-off is crucial for optimizing the decoding process. What do you think governs the optimal number of drafts?",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   }
+  },
+  {
+   "scenario": {
+    "id": "explain_rope_001",
+    "difficulty": "medium",
+    "user_message": "Explain rotary position embeddings and why they extrapolate better.",
+    "must_mention": [
+     "rotation",
+     "relative"
+    ],
+    "notes": "Relative position emerges from the rotation's inner product.",
+    "mode": "explain",
+    "baseline_set": false
+   },
+   "response": "Rotary position embeddings use sinusoidal positional encodings applied to rotated subspaces. For each position, the angle is computed based on its index. This makes the attention mechanism learnable while maintaining the benefits of absolute position information.\n\nThe key insight is that for positions i and j, if |i - j| is large, the angles will differ significantly. This means that the dot product between query and key vectors becomes a strong indicator of relative position, just like in RoBERTa. However, because the rotation is learned, it can generalize better across different sequence lengths.\n\nBy keeping the absolute position information, rotary embeddings retain the ability to understand the global structure of the sequence. This is crucial for tasks requiring understanding of long-range dependencies, which is why they extrapolate better.\n\nThe practical consequence is that models can handle longer sequences without needing to increase the maximum sequence length limit. This makes them particularly useful for applications requiring support for very long sequences, such as code generation or long scientific papers.\n\n### Key Takeaway: **Rotary position embeddings combine learnable absolute position information with the benefits of sinusoidal positional encodings, making them robust for extrapolation across different sequence lengths.**\n\nWhat aspect of rotary position embeddings interests you the most? Let me know if you'd like to dive deeper into the math behind the sinusoidal positional encodings or explore how the rotation is implemented.",
+   "score": {
+    "checks": {
+     "no_answer_leakage": {
+      "applicable": true,
+      "passed": true,
+      "complete_definition": false,
+      "has_blanks": false
+     },
+     "mentions_required": {
+      "applicable": true,
+      "passed": true,
+      "covered": 2,
+      "required": 2,
+      "missing": []
+     }
+    },
+    "all_passed": true,
+    "n_applicable": 2
+   }
+  }
+ ]
+}

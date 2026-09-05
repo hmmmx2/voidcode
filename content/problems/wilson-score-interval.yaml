@@ -1,0 +1,81 @@
+slug: wilson-score-interval
+title: Compute a Wilson score interval
+difficulty: medium
+categories:
+- ML
+concepts:
+- probability_expectation
+- numerical_stability
+description: "The normal approximation to a binomial proportion goes outside [0,1] at small n, which is\
+  \ how a bucket of one gets reported as a confident rate. The Wilson interval does not.\n\nInput: `successes\
+  \ n`, using z = 1.96. Output the interval as `low high`, each rounded to 4 decimal places, separated\
+  \ by a single space.\n\n    centre = (p + z^2/2n) / (1 + z^2/n)\n    half   = z * sqrt( p(1-p)/n + z^2/(4n^2)\
+  \ ) / (1 + z^2/n)\n\nWith `n = 0` return `0.0 1.0`: no observations license nothing narrower than the\
+  \ whole range."
+order_index: 44
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def wilson(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().wilson(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def wilson(self, tokens):\n        s\
+  \ = int(tokens[0]); n = int(tokens[1])\n        if n == 0:\n            return '0.0 1.0'\n        z\
+  \ = 1.96\n        p = s / n\n        denom = 1 + z * z / n\n        centre = (p + z * z / (2 * n)) /\
+  \ denom\n        half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom\n        lo = max(0.0,\
+  \ centre - half)\n        hi = min(1.0, centre + half)\n        return str(round(lo, 4)) + ' ' + str(round(hi,\
+  \ 4))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1 1
+  expected_output: 0.2065 1.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 50 100
+  expected_output: 0.4038 0.5962
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0 0
+  expected_output: 0.0 1.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0 10
+  expected_output: 0.0 0.2775
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 10 10
+  expected_output: 0.7225 1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 11 33
+  expected_output: 0.1975 0.5039
+  is_hidden: true
+hints:
+- The centre is NOT p -- it is pulled toward 0.5, and by more when n is small.
+- 1 success from 1 trial must not give [1.0, 1.0].
+- Clamp the endpoints into [0,1] after computing them.
+hint_ladder:
+  level_0: The centre is NOT p -- it is pulled toward 0.5, and by more when n is small.
+  level_1: 1 success from 1 trial must not give [1.0, 1.0].
+  level_2: Clamp the endpoints into [0,1] after computing them.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

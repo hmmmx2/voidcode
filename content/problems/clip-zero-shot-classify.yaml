@@ -1,0 +1,84 @@
+slug: clip-zero-shot-classify
+title: Zero-shot classify with cosine similarity
+difficulty: medium
+categories:
+- VLM
+concepts:
+- contrastive_pretraining
+- projection_layers
+description: 'Input: `d n_classes`, then the `d` components of the image embedding, then `n_classes` text
+  embeddings of `d` components each.
+
+
+  Return the 0-based index of the class with the highest COSINE similarity, and that similarity rounded
+  to 4 decimal places, as `index similarity`. On a tie return the lowest index.
+
+
+  Cosine, not dot product. CLIP''s training objective normalises both embeddings, so an unnormalised dot
+  product ranks by vector magnitude as well as direction — and magnitude carries no class information.
+  A zero-norm vector scores 0 against everything.'
+order_index: 63
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def classify(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().classify(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def classify(self, tokens):\n       \
+  \ d = int(tokens[0]); n = int(tokens[1])\n        vals = [float(x) for x in tokens[2:]]\n        img\
+  \ = vals[:d]\n        def cos(a, b):\n            na = math.sqrt(sum(x * x for x in a))\n          \
+  \  nb = math.sqrt(sum(x * x for x in b))\n            if na == 0 or nb == 0:\n                return\
+  \ 0.0\n            return sum(x * y for x, y in zip(a, b)) / (na * nb)\n        best_i = 0; best_s =\
+  \ None\n        for c in range(n):\n            txt = vals[d + c * d: d + (c + 1) * d]\n           \
+  \ s = cos(img, txt)\n            if best_s is None or s > best_s:\n                best_s = s; best_i\
+  \ = c\n        return str(best_i) + ' ' + str(round(best_s, 4))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 2 1 0 1 0 0 1
+  expected_output: 0 1.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 2 1 1 1 0 0 1
+  expected_output: 0 0.7071
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 2 2 1 0 100 0 0 5
+  expected_output: 0 1.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 3 1 1 1 1 1 1 1
+  expected_output: 0 1.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 2 2 0 0 1 0 0 1
+  expected_output: 0 0.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 3 1 0 -1 0 0 1 1 0
+  expected_output: 2 1.0
+  is_hidden: true
+hints:
+- cos = dot(a,b) / (|a| * |b|).
+- Normalising both sides is what makes the comparison about direction only.
+- Guard the zero-norm case rather than dividing by zero.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

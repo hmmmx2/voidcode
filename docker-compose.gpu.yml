@@ -1,0 +1,117 @@
+###############################################################################
+# VoidCode AI — GPU-Enabled Backend (Docker Compose override)
+#
+# Extends docker-compose.yml with a CUDA-accelerated vLLM API service.
+# All base services (Postgres, Redis, Judge0) remain unchanged.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml build vllm-api
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
+#
+# Prerequisites:
+#   1. NVIDIA Container Toolkit installed and configured in WSL2
+#      (sudo nvidia-ctk runtime configure --runtime=docker)
+#   2. AWQ model present at one of:
+#        ./llm/outputs/awq_model/     (default — Windows filesystem, ~30 MB/s)
+#        ~/voidcode_models/awq_model/ (recommended — WSL2 ext4, ~1 GB/s)
+#      To use the fast path, change MODEL_HOST_PATH below.
+#   3. apps/api/.env.docker present (copy from .env.docker.example and fill in)
+#
+# Network note:
+#   All services share the same Compose default network.
+#   Service hostnames (postgres, redis, judge0-server) resolve within the network.
+#   Internal ports differ from host-exposed ports:
+#     postgres  → postgres:5432  (NOT localhost:5433)
+#     redis     → redis:6379     (NOT localhost:6380)
+###############################################################################
+
+# ── Model path ────────────────────────────────────────────────────────────────
+# The AWQ model is mounted from the host at ./llm/outputs/awq_model by default.
+# For faster load times (~1 GB/s vs ~30 MB/s), copy the model to WSL2 ext4:
+#   cp -r llm/outputs/awq_model ~/voidcode_models/awq_model
+# Then change the volume mount below to: ~/voidcode_models/awq_model:/models/awq_model:ro
+
+services:
+  # ── GPU-Accelerated FastAPI + vLLM Backend ─────────────────────────────────
+  vllm-api:
+    build:
+      context: .                          # Repo root — Dockerfile references apps/ and llm/
+      dockerfile: apps/api/Dockerfile.gpu
+    image: voidcode-vllm-api:latest
+    container_name: voidcode-vllm-api
+    restart: unless-stopped
+
+    # ── GPU Access ────────────────────────────────────────────────────────────
+    # Requires NVIDIA Container Toolkit. Verified with:
+    #   docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1                    # Use one GPU (the RTX 5060 Ti)
+              capabilities: [gpu]
+
+    # ── Ports ─────────────────────────────────────────────────────────────────
+    ports:
+      - "8000:8000"
+
+    # ── Volumes ───────────────────────────────────────────────────────────────
+    volumes:
+      # AWQ model: mounted read-only — the container never writes to model files.
+      # Change the host path here or override with MODEL_HOST_PATH env var.
+      - ./llm/outputs/awq_model:/models/awq_model:ro
+      # .env.docker provides secrets (SECRET_KEY, etc.) without baking them in.
+      - ./apps/api/.env.docker:/app/.env:ro
+
+    # ── Environment Variables ─────────────────────────────────────────────────
+    environment:
+      # vLLM engine
+      - USE_VLLM=true
+      - MODEL_PATH=/models/awq_model
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=8192
+      - VLLM_QUANTIZATION=compressed-tensors
+      - VLLM_DTYPE=float16
+
+      # Database — use Docker service hostnames + internal container ports
+      # (not localhost:5433 / localhost:6380 which are host-exposed ports)
+      - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - DATABASE_URL_SYNC=postgresql://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_BASE_URL=http://judge0-server:2358
+      # Must match AUTHN_TOKEN on judge0-server, or every run comes back 401.
+      - JUDGE0_AUTH_TOKEN=${JUDGE0_AUTH_TOKEN:-}
+
+      # HuggingFace base model ID (tokenizer is loaded from MODEL_PATH if present)
+      - BASE_MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+
+      # Concurrency — 8 concurrent requests; vLLM queues + batches internally
+      - MAX_CONCURRENT_REQUESTS=8
+
+    # ── Service Dependencies ───────────────────────────────────────────────────
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # ── Resource Tuning ───────────────────────────────────────────────────────
+    # shm_size: PyTorch DataLoader uses /dev/shm for shared memory between workers.
+    # memlock: vLLM + CUDA require unlimited locked memory for large model tensors.
+    # ── Health Check ──────────────────────────────────────────────────────────
+    # Override Dockerfile's 30s interval — vLLM is stable after startup,
+    # no need to poll this frequently.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+    shm_size: "2gb"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1

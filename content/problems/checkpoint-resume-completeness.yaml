@@ -1,0 +1,86 @@
+slug: checkpoint-resume-completeness
+title: What must a checkpoint hold to resume exactly?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- checkpointing_recovery
+- optimizers_adaptive
+description: "Given the components a checkpoint contains, return which of the five required for an *exact*\n\
+  resume are missing.\n\nWrite `missing_for_exact_resume(present)` where `present` is a list of strings.\
+  \ Return a\ncomma-separated sorted string of what is absent, or `\"none\"`.\n\nThe five: `model`, `optimizer`,\
+  \ `step`, `rng`, `dataloader`.\n\n**Why each one, because \"just save the weights\" is the intuition\
+  \ to dismantle:**\n\n- **optimizer** — Adam's moments are state. Resume without them and the first few\
+  \ steps take a\n  different trajectory than the uninterrupted run. Plain SGD hides this, which is exactly\
+  \ why a\n  resume test built on SGD proves nothing: it would pass with the optimizer state dropped entirely.\n\
+  - **step** — the learning-rate schedule is a function of it. Resume at step 0 and you re-warm up.\n\
+  - **rng** — dropout masks and data shuffling both draw from it. Without it the resumed run sees\n  different\
+  \ regularisation and different batches.\n- **dataloader** — position in the epoch. Without it you replay\
+  \ data already seen, which is\n  quietly worse than skipping it: the model sees those examples twice\
+  \ in one epoch.\n\nA resume is only verified when the resumed loss curve matches the uninterrupted one\
+  \ to floating\npoint, and that check is worth building because every omission above produces a curve\
+  \ that looks\nplausible and is wrong."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 20
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def missing_for_exact_resume(self, present):\n        \"\
+    \"\"\n        :type present: List[str]\n        :rtype: str\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [x for x in sys.stdin.read().split() if x != ''-'']
+
+    print(Solution().missing_for_exact_resume(_p))
+
+    '
+reference_solution: "class Solution(object):\n    REQUIRED = ('model', 'optimizer', 'step', 'rng', 'dataloader')\n\
+  \n    def missing_for_exact_resume(self, present):\n        gaps = sorted(set(self.REQUIRED) - set(present))\n\
+  \        return ','.join(gaps) or 'none'\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: model optimizer step rng dataloader
+  expected_output: none
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: model
+  expected_output: dataloader,optimizer,rng,step
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: model optimizer
+  expected_output: dataloader,rng,step
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: '-'
+  expected_output: dataloader,model,optimizer,rng,step
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: model optimizer step rng dataloader extra
+  expected_output: none
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: model step dataloader
+  expected_output: optimizer,rng
+  is_hidden: true
+hints:
+- Set difference against the five required components.
+- Sort the output; return the string 'none' when nothing is missing.
+- Ignore anything present that is not one of the five.
+hint_ladder:
+  level_0: Set difference against the five required components.
+  level_1: Sort the output; return the string 'none' when nothing is missing.
+  level_2: Ignore anything present that is not one of the five.

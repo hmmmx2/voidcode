@@ -1,0 +1,79 @@
+slug: length-normalised-beam-score
+title: Pick the best beam under length normalisation
+difficulty: medium
+categories:
+- LLM
+concepts:
+- sampling_decoding
+description: 'Input: `alpha`, then pairs of `cumulative_logprob length` for each candidate beam.
+
+
+  Raw cumulative log-probability always favours SHORT sequences, because every extra token adds a negative
+  number. Length normalisation divides by `length ** alpha` to compensate. Return the 0-based index of
+  the highest-scoring beam; on a tie return the lowest index.
+
+
+  With `alpha = 0` this reduces to raw log-probability, and comparing the two is the point: a decoder
+  that truncates early is usually not badly trained, it is scoring without normalisation.'
+order_index: 48
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def best(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().best(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def best(self, tokens):\n        alpha = float(tokens[0])\n\
+  \        rest = tokens[1:]\n        best_i = 0; best_s = None\n        for i in range(len(rest) // 2):\n\
+  \            lp = float(rest[2 * i]); ln = float(rest[2 * i + 1])\n            s = lp / (ln ** alpha)\
+  \ if ln > 0 else lp\n            if best_s is None or s > best_s:\n                best_s = s; best_i\
+  \ = i\n        return best_i\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0.0 -2.0 2 -5.0 10
+  expected_output: '0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1.0 -2.0 2 -5.0 10
+  expected_output: '1'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0.7 -3.0 4 -3.0 4
+  expected_output: '0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 1.0 -1.0 1 -1.9 2
+  expected_output: '1'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.0 -0.5 1
+  expected_output: '0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 1.0 -10.0 20 -1.0 1
+  expected_output: '0'
+  is_hidden: true
+hints:
+- Score = logprob / (length ** alpha). Both inputs are already given.
+- alpha = 0 makes the denominator 1, recovering the raw score.
+- Logprobs are negative, so DIVIDING by a bigger denominator makes them larger.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,217 @@
+{
+  "title": "VoidCode \u2014 operational",
+  "uid": "voidcode-ops",
+  "tags": [
+    "voidcode"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Prometheus",
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Unverified identity requests/min",
+      "type": "timeseries",
+      "description": "THE DEPLOY GATE FOR INTERNAL_AUTH_ENFORCE. Every request counted here arrived with an X-User-Id that nobody signed, which is the hole A2 closed in code and which stays open in the running system until this reaches zero AND the flag is flipped. A flat zero line is the signal that flipping is safe. Flipping while this is non-zero breaks sign-in for whoever those requests belong to.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(voidcode_unverified_identity_requests_total[5m])) * 60",
+          "legendFormat": "unsigned",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          },
+          "unit": "reqpm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Enforcement state",
+      "type": "timeseries",
+      "description": "0 while unsigned requests are still accepted. Paired with the panel to its left on purpose: the pair reads as 'still permissive, and here is how much traffic would break'.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "voidcode_internal_auth_enforced",
+          "legendFormat": "1 = signed identity required",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Rate limiter fail-open events/min",
+      "type": "timeseries",
+      "description": "The limiter allows requests through when Redis is unreachable \u2014 a deliberate availability trade whose cost is that NOTHING IS LIMITED and every request still succeeds. Any non-zero value here is a window in which credential stuffing was unthrottled. It will not appear in error rates or latency.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(voidcode_ratelimit_not_enforced_total[5m])) by (limit) * 60",
+          "legendFormat": "{{limit}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          },
+          "unit": "reqpm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Recommendations by ranker",
+      "type": "timeseries",
+      "description": "model vs mastery. Expect 100% mastery: the LambdaMART ranker refuses to fit below two learners and ten examples, so everything served today is the heuristic. If a 'model' series appears, personalisation became real and the claim can change \u2014 until then it cannot.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(voidcode_recommendations_ranked_by_total[15m])) by (ranked_by)",
+          "legendFormat": "{{ranked_by}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Sandbox verdicts/min",
+      "type": "timeseries",
+      "description": "By Judge0 status. A rise in Time Limit Exceeded is either a harder problem set or a slower judge, and only the shape over time tells them apart \u2014 a spike correlated with load is the judge, a step change after a content commit is the problems.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(voidcode_sandbox_verdicts_total[5m])) by (status) * 60",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          },
+          "unit": "reqpm"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

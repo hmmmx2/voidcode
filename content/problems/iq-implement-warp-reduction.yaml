@@ -1,0 +1,99 @@
+slug: iq-implement-warp-reduction
+title: Simulate a warp shuffle reduction
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- warp_divergence
+- reduction_kernels
+description: "CUDA cannot run in this sandbox, so simulate it. Given `vals` (one float per lane, `width`\
+  \ lanes) implement the shuffle-down reduction and return **all** lane values afterwards, rounded to\
+  \ 6 decimals.\n\n`__shfl_down_sync(mask, val, offset)` returns the value held by lane `lane + offset`.\
+  \ **If `lane + offset >= width`, the lane keeps its own value** -- the read is undefined in hardware,\
+  \ and CUDA's contract is that you must not rely on it.\n\nThe reduction, run by every lane simultaneously:\n\
+  \n```\nfor offset in [width//2, width//4, ..., 1]:\n    val += shfl_down(val, offset)\n```\n\n**All\
+  \ lanes read simultaneously from the pre-step values.** Each step reads the state at the start of that\
+  \ step, not a partially-updated array -- simulating this with an in-place loop gives a different and\
+  \ wrong answer.\n\n**Only lane 0 is guaranteed the total.** Other lanes hold partial sums, which is\
+  \ why real kernels use `__shfl_down_sync` for the reduction and then read lane 0 only. Returning every\
+  \ lane is how this question checks you understand that.\n\nNo `__syncthreads()` is needed because a\
+  \ warp executes in lockstep; the `mask` names the lanes participating, which matters on Volta and later\
+  \ where threads can diverge independently.\n\nStandard library only."
+inferred_concepts: true
+review_needed: true
+order_index: 38
+examples:
+- input: vals = [1.0, 2.0, 3.0, 4.0]
+  output: '[10.0, 9.0, 7.0, 4.0]'
+  explanation: 'offset 2: [1+3, 2+4, 3, 4] = [4, 6, 3, 4] (lanes 2 and 3 read past the end and keep their
+    own). offset 1: [4+6, 6+3, 3+4, 4] = [10, 9, 7, 4]. Lane 0 has the total.'
+constraints:
+- width is a power of two, 1 <= width <= 32
+- len(vals) == width
+- A lane whose source is >= width keeps its own value.
+- Each step reads the values from the start of that step.
+- Round to 6 decimal places.
+- Standard library only.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: vals
+    value: '[1.0, 2.0, 3.0, 4.0]'
+  stdin: '[1.0, 2.0, 3.0, 4.0]'
+  expected_output: '[10.0, 9.0, 7.0, 4.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: vals
+    value: '[5.0]'
+  stdin: '[5.0]'
+  expected_output: '[5.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: vals
+    value: '[1,1,1,1,1,1,1,1]'
+  stdin: '[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]'
+  expected_output: '[8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: vals
+    value: '[1,2,4,8,16,32,64,128]'
+  stdin: '[1.0,2.0,4.0,8.0,16.0,32.0,64.0,128.0]'
+  expected_output: '[255.0, 254.0, 252.0, 248.0, 240.0, 224.0, 192.0, 128.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: vals
+    value: '[-1.5, 2.5]'
+  stdin: '[-1.5, 2.5]'
+  expected_output: '[1.0, 2.5]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def warp_reduce(self, vals):\n        \"\"\"\n        :type\
+    \ vals: List[float]  -- one per lane\n        :rtype: List[float]      -- every lane after the reduction\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    vals = json.loads(sys.stdin.read().strip())
+
+    _r = Solution().warp_reduce(vals)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def warp_reduce(self, vals):\n        width = len(vals)\n\
+  \        cur = list(vals)\n        offset = width // 2\n        while offset >= 1:\n            # Snapshot:\
+  \ every lane reads the pre-step state.\n            prev = list(cur)\n            for lane in range(width):\n\
+  \                src = lane + offset\n                if src < width:\n                    cur[lane]\
+  \ = prev[lane] + prev[src]\n            offset //= 2\n        return cur\n"

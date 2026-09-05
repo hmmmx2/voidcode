@@ -1,0 +1,876 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* ============================================================================
+   VoidCode design tokens — Tailwind v4
+   ============================================================================
+
+   WHY THIS FILE CHANGED
+
+   `tailwind.config.ts` was dead code. Under Tailwind v4 a JS config is only
+   loaded via an explicit `@config` directive, and this file had none — so every
+   semantic utility in the markup generated ZERO CSS: bg-card, bg-primary,
+   text-muted-foreground, text-foreground, border-border, ring-ring, font-mono,
+   and the tailwindcss-animate plugin. The app looked fine only because ~417
+   hardcoded hex literals were doing the real work.
+
+   Two layers, deliberately:
+
+   LAYER 1 — primitive ramps, plain :root properties OUTSIDE @theme. They emit no
+   utilities; they exist so semantic tokens have something to point at and so a
+   palette change happens in one place.
+
+   LAYER 2 — semantic tokens INSIDE @theme. In v4 the namespace decides which
+   utilities exist: --color-* generates bg-/text-/border-/ring-, --font-*
+   generates font-, --radius-* generates rounded-. Names here are therefore an
+   API, not decoration.
+
+   This commit establishes the MECHANISM and preserves the current palette
+   values. The palette itself is refined next, against the design references.
+   ============================================================================ */
+
+:root {
+  /* ── Layer 1: primitives ────────────────────────────────────────────────
+     Values below are the current app palette, consolidated from the hex census.
+     Duplicates that shared one role (#848484 / #A3A3A3 / #555555 for secondary
+     text; #0A0A0A / #040407 for page background) are NOT yet merged — that is a
+     visual decision and belongs with the design references, not here. */
+  --gray-1000: #000000;
+  --gray-975:  #040407;   /* (profile) layout background */
+  --gray-950:  #0a0a0a;   /* (homepage) layout background */
+  --gray-900:  #111114;
+  --gray-850:  #141414;
+  --gray-800:  #1a1a1a;   /* panel surface */
+  --gray-780:  #1e1e1e;   /* Monaco vs-dark background */
+  --gray-750:  #212121;
+  --gray-700:  #262626;   /* input surface */
+  --gray-650:  #2a2a2a;
+  --gray-600:  #333333;   /* border */
+  --gray-550:  #3a3a3a;
+  --gray-500:  #555555;
+  --gray-400:  #848484;
+  --gray-300:  #a3a3a3;
+  --gray-200:  #d4d4d4;
+  --gray-100:  #d9d9d9;
+  --gray-0:    #ffffff;
+
+  /* Void ramp — added for the public landing page, which sits on true black
+     rather than the app's #0a0a0a. Kept in the same primitive layer so the
+     two palettes stay one system. */
+  --gray-990:  #050506;
+  --gray-985:  #0d0d0f;
+  --gray-870:  #141416;
+
+  /* THE ONLY TWO CHROMATIC VALUES LEFT IN THE PRODUCT.
+     They are reachable through exactly one pair of tokens — `--color-verdict-*`
+     — and that pair has exactly one consumer, `Editor/TestConsole.tsx`.
+
+     `--green-700` (#2e7d32, Material Green 800) and `--amber-500` (#f59e0b)
+     used to sit here too and have been deleted along with every utility that
+     referenced them. Between them they were the app's primary, accent, focus
+     ring, success and warning; the landing page could not use any of it and
+     said so in three separate component docblocks. */
+  --green-400: #4ade80;
+  --red-500:   #ef4444;
+
+  --radius-base: 0.5rem;
+}
+
+@theme inline {
+  /* ── Layer 2: semantic tokens ───────────────────────────────────────────
+     These generate the utility classes the markup already uses. Until now they
+     resolved to nothing. */
+
+  /* surfaces */
+  --color-background: var(--gray-950);
+  --color-foreground: var(--gray-0);
+  --color-card: var(--gray-800);
+  --color-card-foreground: var(--gray-0);
+  --color-popover: var(--gray-800);
+  --color-popover-foreground: var(--gray-0);
+
+  /* THE GREEN BRAND TOKENS ARE GONE, ALONG WITH THE STATUS RAMP.
+     Deleted: --color-primary, --color-accent, --color-ring (all
+     `var(--green-700)`), their `-foreground` pairs, --color-destructive,
+     --color-success and --color-warning.
+
+     They were the reason the app and the landing page could never look like one
+     product: any component reaching for `bg-primary` or `focus-visible:ring-ring`
+     got Material Green #2e7d32, and `@theme inline` compiles the token's value
+     into the utility, so no scoped override could reach it. Three separate
+     components carried comments explaining why they refused to use them.
+
+     The app is monochrome now and every one of these had zero consumers when it
+     was removed — verified by grep across `src/`. The one state that genuinely
+     needs colour keeps it under a name too narrow to be borrowed: see
+     `--color-verdict-*` below. If you find yourself wanting `bg-primary`, the
+     answer is `bg-ink`. */
+
+  /* muted / secondary */
+  --color-secondary: var(--gray-700);
+  --color-secondary-foreground: var(--gray-300);
+  --color-muted: var(--gray-700);
+  --color-muted-foreground: var(--gray-300);
+
+  /* structure */
+  --color-border: var(--gray-600);
+  --color-input: var(--gray-700);
+
+  /* The landing demo's editor surface. Still consumed by `CodeStatic` and
+     `DemoWindow`, which must agree exactly or the static placeholder visibly
+     flashes when Monaco takes over. The *workspace* editor no longer uses this
+     — it sits on `--color-ide-code` — so the two are deliberately separate. */
+  --color-editor-bg: var(--gray-780);
+
+  /* typography.
+     NOTE: --font-mono activating is the one intentional visual change in this
+     commit. `font-mono` is used 23 times across 6 files and has been silently
+     inheriting Inter; it now resolves to JetBrains Mono, which is what those
+     call sites always meant. */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius-base) - 2px);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) + 2px);
+  --radius-xl: calc(var(--radius-base) + 6px);
+
+  /* ── Layer 3: landing page (public `/`) ─────────────────────────────────
+     A separate additive namespace, not an override.
+
+     The semantic tokens above cannot be reused on the landing page, for a
+     reason worth stating because it is easy to get wrong: --color-primary,
+     --color-accent and --color-ring all resolve to green #2e7d32, and because
+     this block is `@theme inline`, Tailwind substitutes each token's VALUE
+     into the utility — `bg-primary` compiles to `background-color: #2e7d32`,
+     not `var(--color-primary)`. A scoped `.landing { --color-primary: #fff }`
+     therefore has no effect whatsoever.
+
+     The landing page is monochrome, so it gets its own tokens and must never
+     touch bg-primary / hover:bg-accent / ring-ring. That last one rules out
+     every `Button` variant, since button.tsx puts `focus-visible:ring-ring` on
+     the shared base class. Use the landing-local `Pill` instead. */
+
+  /* surfaces — void-0 is true black, unlike the app's --color-background */
+  --color-void-0: var(--gray-1000);
+  --color-void-1: var(--gray-990);
+  --color-void-2: var(--gray-985);
+  --color-void-3: var(--gray-870);
+
+  /* type. White is scarce by design: headlines and the one primary CTA only.
+     Body copy is ink-2. That scarcity is what makes white read as emphasis. */
+  --color-ink:   var(--gray-0);
+  --color-ink-2: var(--gray-300);
+  --color-ink-3: var(--gray-400);
+
+  /* structure. Sections and cards are separated by these hairlines and never
+     by a change of background — the single biggest contributor to the page
+     reading as calm rather than busy. */
+  --color-line:        var(--gray-870);
+  --color-line-strong: var(--gray-700);
+
+  --radius-panel: 2rem;
+  --radius-cta:   2.5rem;
+
+  /* Always soft, wide and negative-spread. On pure black these are nearly
+     invisible, which is correct — they exist so the demo window and feature
+     panels lift fractionally off the void. */
+  --shadow-lift:  0 24px 70px -30px rgb(0 0 0 / 0.8);
+  --shadow-panel: 0 40px 120px -60px rgb(0 0 0 / 0.9);
+
+  --ease-void: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Display type. Sub-properties (--text-x--line-height etc.) are a v4 feature;
+     encoding leading/tracking/weight with the size keeps the scale in one place
+     instead of scattered across markup. */
+  --text-display: clamp(2.75rem, 7vw, 6.5rem);
+  --text-display--line-height: 0.95;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 300;
+
+  /* Hero headline. Distinct from --text-display because the hero is now two
+     columns: the headline gets ~600px rather than the full 1160, and
+     --text-display's 104px would wrap it to four lines and destroy the rhythm.
+     --text-display stays as-is for any full-width display type. */
+  --text-hero: clamp(2.5rem, 4.4vw, 4rem);
+  --text-hero--line-height: 1;
+  --text-hero--letter-spacing: -0.03em;
+  --text-hero--font-weight: 300;
+
+  --text-h2: clamp(2rem, 4vw, 3.5rem);
+  --text-h2--line-height: 1.05;
+  --text-h2--letter-spacing: -0.02em;
+  --text-h2--font-weight: 300;
+
+  /* SIZED IN `cqw`, NOT `vw`. The wordmark is the largest thing on the page and
+     the only element that was measured against the viewport rather than the
+     1240px `Container` every other element sits in — so the wider the monitor,
+     the further it drifted from the footer it belongs to. Measured, left edge
+     of the word vs left edge of the footer content: 16px apart at 1366, 293px
+     at 1920, and 1053px at 3440, where the word ended at x=1494 while the
+     content it sits under did not begin until x=1093. It also overflowed and
+     was clipped by the footer's `overflow: hidden` below ~1455px — 22vw times
+     the word's own width in em came to almost exactly 100vw, so the 40px of
+     left padding pushed the final E off-screen (41px lost at 1366).
+
+     `cqw` resolves against `.wordmark-frame` below, so the word now scales with
+     the container and shares its edges at every width. The coefficient is
+     measured rather than guessed: "VOIDCODE" in Inter 200 at the resting
+     -0.04em tracking is 4.4745em wide, so 100/4.4745 = 22.35cqw would touch
+     both edges exactly and 22cqw leaves ~1.5% of slack for font fallback and
+     for the trailing negative letter-space, which sits left of the final
+     glyph's ink. The 16rem ceiling is what 22cqw already resolves to at the
+     container's 1160px maximum; it exists so that a browser without container
+     queries — where `cqw` silently falls back to the small viewport — lands on
+     the same size instead of on 22% of a 3440px screen. */
+  --text-wordmark: clamp(4rem, 22cqw, 16rem);
+  --text-wordmark--line-height: 0.8;
+  --text-wordmark--letter-spacing: -0.04em;
+  --text-wordmark--font-weight: 200;
+
+  /* ── Layer 4: the workspace IDE ───────────────────────────────────────
+     THESE ARE ROLE NAMES, NOT NEW COLOURS. Every one aliases a primitive
+     that already exists above, so the palette gains names and not values.
+
+     The IDE needs a name for each surface because it INVERTS what the void
+     ramp means. Everywhere else, darker is further back. In the editor the
+     code block is the darkest surface on the screen and it sits directly on
+     top of the panel that contains it. Writing that as `bg-void-1` inside a
+     `bg-void-2` panel would be correct CSS and an unreadable instruction —
+     the next person to touch it would "fix" the inversion. */
+  --color-ide-gutter: var(--gray-1000); /* #000000 — the gaps between panels */
+  --color-ide-panel: var(--gray-985); /* #0d0d0f — panel body     (== void-2) */
+  --color-ide-bar: var(--gray-870); /* #141416 — toolbars, tabs (== void-3) */
+  --color-ide-code: var(--gray-990); /* #050506 — Monaco, <pre>  (== void-1) */
+  --color-ide-raised: var(--gray-700); /* #262626 — active row, case pill      */
+
+  /* ── The one surviving pair of colours ────────────────────────────────
+     Named `verdict-*` rather than `success`/`error` deliberately. There is
+     exactly one legitimate consumer — test-case pass/fail in
+     `Editor/TestConsole.tsx` — and a role name as broad as "success" is an
+     open invitation to a second, then a third. The narrow name is the
+     enforcement mechanism, and it is greppable: any file other than
+     TestConsole matching `verdict-` is a regression.
+
+     Colour is never the sole carrier. `components/app/Verdict.tsx` always
+     pairs these with an icon and a text label. */
+  --color-verdict-pass: var(--green-400); /* #4ade80 */
+  --color-verdict-fail: var(--red-500); /* #ef4444 */
+
+  --animate-drift: drift 19s ease-in-out infinite;
+
+  /* The prerequisite-graph animations.
+     REGISTERED HERE, NOT JUST DECLARED AS @keyframes. Tailwind v4 strips any
+     `@keyframes` block that no `--animate-*` theme variable references — the
+     first version of these was written as plain CSS rules plus keyframes and
+     was silently removed from the output entirely. Measured: the elements and
+     their inline dash attributes rendered, `.column-rule` (defined immediately
+     after them in this file) still applied, and yet
+     `getComputedStyle(edge).animationName` read `none` with zero `graph-*`
+     keyframes present in any delivered stylesheet.
+     `drift` above works precisely because it is registered. */
+  --animate-graph-edge: graph-edge-draw 620ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-graph-node: graph-node-in 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-graph-trace: graph-trace 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-graph-found: graph-found 7s ease-out infinite;
+}
+
+/* 19s shares no common multiple with any of the hero object's periods. It no
+   longer spins at all — the blades ripple instead, on two counter-propagating
+   waves at 6.6s and 10.8s that never come back into phase — and what rigid
+   motion remains is a 39s yaw, a 17s float and a 57s nod, all in
+   `MobiusFan.tsx`. So the combined loop
+   never visibly repeats. */
+@keyframes drift {
+  0%,
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(0, -2%, 0) scale(1.06); }
+}
+
+/* Film grain for the landing hero.
+   Monochrome glass gradients band visibly on 8-bit displays — the banding is the
+   single most common reason a black-and-white render looks cheap. A 3% noise
+   tile removes it.
+
+   This is a 140x140 feTurbulence tile encoded once as a data URI, not a live
+   SVG filter over live content: the browser rasterizes it a single time and
+   repeats it as a background image, so it costs one small decode rather than a
+   per-frame filter pass. `overlay` keeps blacks black — `normal` would lift
+   them to dark grey and undo the point of a true-black canvas. */
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+}
+
+/* Anchor offset for the fixed marketing nav.
+
+   Previously only `#how` carried a `scroll-mt-24`; `#tracks`, `#faq` and `#why`
+   had none and landed underneath the header. `#why` is the skip-link target, so
+   the page's one keyboard-accessibility affordance did not actually work. One
+   declaration on the scroll container fixes every anchor, including future ones,
+   and clears the floating pill at its lowest position. */
+html {
+  scroll-padding-top: 6rem;
+}
+
+/* The glass edge, shared by the nav pill and the auth form panel.
+
+   A hairline that is brighter along the top and fades at the sides — light
+   catching a curved edge. This is the detail that separates real glass from a
+   translucent grey bar, and it cannot be done with `border`, which is uniform.
+
+   The technique: paint a gradient across the whole box, then mask out
+   everything except a 1px inset frame. `mask-composite: exclude` subtracts the
+   content box from the padding box, leaving only the border ring.
+
+   ONE RULE, THREE HOSTS. `.glass-panel` was going to duplicate this block; a
+   shared selector means the surfaces cannot drift apart, which matters
+   because they appear on the same site and a 0.02 difference in edge opacity
+   between them reads as one of them being broken. Every host must be
+   `position: relative` and carry its own `border-radius`.
+
+   `.glass-edge` is the logged-in app's host, and it is a SEPARATE CLASS FROM
+   `.glass-panel` on purpose. `.glass-panel` below sets `background`
+   unconditionally, and hand-written rules in this file sit outside Tailwind's
+   layers — so at equal specificity it beats `.bg-void-0\/85`. The app's glass
+   uses the `@supports` inversion (opaque black by default, translucent film
+   only where `backdrop-filter` exists), and reusing `.glass-panel` would
+   silently override the opaque default and hand a browser without
+   `backdrop-filter` a white haze over scrolling content. So `.glass-edge`
+   contributes the hairline and nothing else; Tailwind owns the fill. */
+.glass-edge::before,
+.nav-glass::before,
+.glass-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.14),
+    rgb(255 255 255 / 0.03) 40%,
+    rgb(255 255 255 / 0.06)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* The auth form's glass panel.
+
+   Deliberately FAINTER than it wants to be. Design rule 1 of the brief is that
+   surfaces are separated by border, not fill — the whole page reads as calm
+   because fill variation is conserved. A 6% white panel would look correct in
+   isolation and wrong here: it turns the form into a floating card on a black
+   page, which is the 2019 glassmorphism cliché the landing page was written to
+   avoid. 3.5% plus the shared hairline is enough to read as a distinct surface
+   without becoming an object.
+
+   `saturate()` alongside the blur is what makes it glass rather than frosted
+   plastic: real glass concentrates the colour behind it slightly. There is
+   almost no colour on this page for it to act on, but it does lift the drifting
+   bloom in the backdrop, which is the only thing the panel has to refract.
+
+   BLUR RADIUS IS A COST. `backdrop-filter` forces the compositor to re-sample
+   everything behind the element on every frame it changes — and behind this one
+   is a live WebGL canvas plus an animated bloom. 14px is the largest radius
+   that stayed at 60fps here; going higher was measurably worse for no visual
+   gain, because the backdrop is a soft gradient with nothing sharp to blur. */
+.glass-panel {
+  position: relative;
+  background: rgb(255 255 255 / 0.035);
+}
+
+/* THE BLUR ITSELF IS A TAILWIND UTILITY, NOT DECLARED HERE.
+
+   `backdrop-filter` was originally in the rule above and was silently dropped
+   somewhere in Tailwind v4's Lightning CSS pipeline — measured: the `background`
+   from this very rule applied at 0.035 while `getComputedStyle(...).backdropFilter`
+   read `none`, and setting the identical value inline worked immediately, so the
+   browser was never the problem.
+
+   `backdrop-blur-xl backdrop-saturate-150` on the element survives the build,
+   because Tailwind generates those itself. The lesson generalises: in a v4
+   project, prefer a utility over hand-written CSS for anything the framework
+   already owns — a declaration that vanishes between source and browser is far
+   harder to diagnose than one that was never written.
+
+   No `@supports` fallback is needed either: Tailwind's utility carries its own,
+   and the 3.5% fill above already keeps the panel visible without any blur. */
+
+/* No backdrop-filter support: a slightly more opaque fill so the panel still
+   separates from the page rather than vanishing. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel {
+    background: rgb(255 255 255 / 0.055);
+  }
+}
+
+/* ── The prerequisite graph ──────────────────────────────────────
+
+   MOTION THAT EXPLAINS RATHER THAN DECORATES.
+
+   Design rule 3 says one signature motion and one quiet primitive, and that
+   everything beyond makes the page cheaper. This is a deliberate exception, on
+   the grounds that a *directed acyclic graph traversed backwards* is genuinely
+   hard to convey with a still image — the section's whole claim is that failing
+   a problem makes the tutor walk backwards to find the missing prerequisite,
+   and a static diagram cannot show a direction, let alone a reversal.
+
+   So the animation is the diagram explaining itself, and it stays restrained:
+   no bouncing, no overshoot, no easing flourish. Two things happen — the graph
+   builds left to right, then a trace runs backwards through it.
+
+   EVERY RULE HERE IS INSIDE `prefers-reduced-motion: no-preference`, and the
+   un-animated state is the FINISHED graph, not an empty one. That ordering is
+   the whole accessibility contract: a visitor who suppresses motion gets the
+   complete diagram immediately rather than a blank panel waiting for an
+   animation that will never run. `backwards` fill on each animation is what
+   holds the start state during the stagger delay without duplicating it in the
+   base rule. */
+
+/* `transform-box: fill-box` is required on any animated SVG shape. Without it a
+   transform-origin resolves against the SVG viewport rather than the shape, and
+   a node scales in from the far corner of the panel instead of from itself.
+   These are plain properties, not animations, so they survive the build as-is —
+   the animations themselves are applied with `motion-safe:animate-graph-*` at
+   the call site, which is what carries the reduced-motion gate. */
+.graph-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes graph-edge-draw {
+  from {
+    stroke-dashoffset: var(--edge-length);
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes graph-node-in {
+  from {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 0-8% the dash sits off the end; it sweeps backwards through the graph, then
+   parks invisible for the remainder so the panel is calm between traversals. */
+@keyframes graph-trace {
+  0%,
+  8% {
+    stroke-dashoffset: var(--trace-length);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  46% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  56% {
+    stroke-dashoffset: calc(var(--trace-length) * -1);
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: calc(var(--trace-length) * -1);
+    opacity: 0;
+  }
+}
+
+@keyframes graph-found {
+  0%,
+  44% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  74% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  86%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* The vertical rule between the auth columns.
+
+   Brightest at the middle and fading to nothing at both ends, so it reads as a
+   seam catching light rather than a drawn border. A uniform 1px line at this
+   length looks like a table gridline and flattens the whole composition. */
+.column-rule {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(255 255 255 / 0.13) 22%,
+    rgb(255 255 255 / 0.13) 78%,
+    transparent
+  );
+}
+
+/* Mobile menu sheet.
+
+   `showModal()` gives a focus trap, Escape, `inert` and top-layer stacking for
+   free, but the UA stylesheet centres a `<dialog>` as a small box — these
+   resets turn it into a full-bleed sheet. */
+dialog.nav-sheet {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+
+dialog.nav-sheet::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+/* The logged-in app's modal, sibling to `.nav-sheet` above.
+
+   Same problem, different answer: `.nav-sheet` resets the UA's centred box into
+   a full-bleed sheet, whereas this one WANTS to be centred and only needs the
+   UA's opaque white fill, fixed max-width and 2px inset border removed. The
+   sizing stays with the caller so one reset can serve every modal.
+
+   `<dialog>` + `showModal()` rather than a `fixed inset-0` div, because the
+   platform gives away for free what the hand-rolled version in
+   `Profile/ProfileClient.tsx` never implemented: a focus trap, Escape to
+   dismiss, the rest of the page marked inert for assistive tech, and the top
+   layer — which means no z-index arms race with the nav.
+
+   The backdrop is blurred, and that is load-bearing rather than decorative:
+   it is what gives the modal's own glass something to refract. Over a flat
+   scrim there is nothing to sample and the panel is just a lighter box. */
+dialog.app-modal {
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+
+/* DO NOT ADD `-webkit-backdrop-filter` HERE. Lightning CSS adds it itself, and
+   writing both by hand makes it drop the standard property instead: measured,
+   this rule emitted `-webkit-backdrop-filter:blur(4px)` alone, with no
+   unprefixed declaration anywhere in the bundle — which is precisely backwards,
+   since Firefox supports only the unprefixed form. The other nine
+   backdrop-filter rules in the bundle each emit both, because none of them
+   hand-writes the prefix. Third instance of this pipeline silently deleting a
+   hand-written declaration; see the note above `.footer-shell`. */
+dialog.app-modal::backdrop {
+  background: rgb(0 0 0 / 0.7);
+  backdrop-filter: blur(4px);
+}
+
+/* The sheet's contents are conditionally rendered, so mounting is the animation
+   trigger — no library, no state machine, no exit animation to coordinate. */
+.sheet-in {
+  animation: sheet-in 0.28s var(--ease-void) both;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in {
+    animation: none;
+  }
+}
+
+/* Scroll reveal. Paired with `components/marketing/motion/Reveal.tsx`, which
+   only toggles `.reveal-shown` from an IntersectionObserver — the animation
+   itself is entirely CSS, so it costs no library and no main-thread work.
+
+   NOTE: elements start invisible, so a visitor with JavaScript disabled would
+   never see them. The `<noscript>` override in the marketing layout is what
+   makes that safe; do not remove one without the other. */
+.reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  filter: blur(6px);
+  transition:
+    opacity 0.5s var(--ease-void),
+    transform 0.5s var(--ease-void),
+    filter 0.5s var(--ease-void);
+}
+
+.reveal-shown {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* Reduced motion gets a plain fade — no transform, no blur, no stagger. Not
+   "the same animation, slower". */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    transform: none;
+    filter: none;
+    transition: opacity 0.15s linear;
+    transition-delay: 0s !important;
+  }
+}
+
+/* Gradient headline.
+
+   Written as CSS rather than Tailwind's `bg-clip-text` / `text-transparent`
+   because two guards matter here that utilities cannot express — and this is
+   the <h1>, so both failure modes are "the page has no headline":
+
+   - Without the @supports gate, any engine that lacks `background-clip: text`
+     applies `color: transparent` anyway and renders the heading INVISIBLE.
+   - Without the forced-colors gate, Windows High Contrast Mode does the same.
+
+   Apply to a <span> around the first line, never to the <h1> itself, so the
+   heading always has a solid computed colour of its own. Same technique as
+   `.wordmark` below, which is the only other gradient text on the site. */
+.headline-gradient {
+  color: var(--color-ink);
+}
+
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .headline-gradient {
+    background: linear-gradient(180deg, var(--color-ink), var(--color-ink-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@media (forced-colors: active) {
+  .headline-gradient {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+/* Footer wordmark.
+
+   The base state is the finished state: a gradient-clipped word that fades from
+   18% to 2% white. Everything the scroll timeline adds is optional polish, so
+   browsers without `animation-timeline` (Safari and Firefox at time of writing)
+   get a footer that looks intentional rather than broken.
+
+   Scroll-driven animation is used here rather than the motion library because
+   this is precisely the case it was specified for — a purely decorative,
+   position-derived tween with no state. It costs no JS and no observer. */
+
+/* THE FOOTER CLIPS WITH `clip`, NOT `hidden`, AND THE WORDMARK ANIMATION
+   DEPENDS ON IT.
+
+   `overflow: hidden` makes an element a scroll container — programmatically
+   scrollable even when no scrollbar is reachable. `animation-timeline: view()`
+   binds to the subject's *nearest ancestor scroll container*, so the footer was
+   capturing the timeline and the wordmark was being measured against a box that
+   never scrolls. Measured before the fix: scrolling the last 2400px of the page
+   moved the wordmark from y=3307 to y=907 while `timeline.currentTime` sat at a
+   constant 26.0925%. The animation was not subtle — it was inert, frozen
+   mid-tween, and had been since the clip was added.
+
+   `overflow: clip` clips identically and does NOT create a scroll container,
+   which is the entire reason it exists as a separate value. The timeline then
+   resolves to the document and tracks (-151% → 17% over the same span).
+
+   THE FALLBACK IS AN `@supports` BLOCK, NOT TWO DECLARATIONS IN ONE RULE.
+
+   Written the conventional way — `overflow: hidden` followed by
+   `overflow: clip`, relying on unknown values being discarded — Lightning CSS
+   collapses the pair and emits `.footer-shell{overflow:clip}` alone. Verified
+   in the production bundle. That silently deletes the fallback, so a browser
+   without `clip` would not clip at all and the wordmark's translated overflow
+   would escape the footer. `@supports` states the same intent structurally,
+   and a conditional group rule cannot be folded away.
+
+   Browsers that stay on `hidden` clip correctly and merely leave the wordmark
+   animation inert — exactly where every browser was before this fix. */
+.footer-shell {
+  overflow: hidden;
+}
+
+@supports (overflow: clip) {
+  .footer-shell {
+    overflow: clip;
+  }
+}
+
+/* Range slider thumb.
+
+   `appearance: none` on the input removes the TRACK's native styling but not
+   the thumb's — the thumb is a shadow-DOM pseudo-element and has to be targeted
+   separately, per engine. Miss it and the handle renders in the operating
+   system's accent colour, which on Windows is blue: the last piece of
+   unbranded colour in the product, on a page that is otherwise monochrome.
+
+   The two rules CANNOT be combined into one selector list. An unrecognised
+   pseudo-element invalidates the whole list, so pairing `::-webkit-` with
+   `::-moz-` would silently drop both in both engines. */
+input[type="range"].range-ink::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-ink);
+  border: 0;
+  cursor: pointer;
+}
+
+input[type="range"].range-ink::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-ink);
+  border: 0;
+  cursor: pointer;
+}
+
+input[type="range"].range-ink:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 4px;
+}
+
+/* The query container the wordmark sizes against. This is a `Container`, so it
+   carries the same max-width and horizontal padding as every other block in the
+   footer, and `100cqw` is its *content* box — padding excluded — which is
+   exactly the span the columns above occupy. */
+.wordmark-frame {
+  container-type: inline-size;
+}
+
+.wordmark {
+  margin-top: 2rem;
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.18),
+    rgb(255 255 255 / 0.02)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  translate: 0 12%;
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .wordmark {
+      animation: wordmark-rise linear both;
+      animation-timeline: view();
+      /* `entry cover 55%` was unreachable. The wordmark is the last element in
+         the document, so at maximum scroll its bottom edge *is* the bottom of
+         the page — it never finishes entering the viewport and never gets
+         anywhere near 55% of the cover range. Measured with the timeline
+         un-frozen, the old range peaked at 17% progress: the word came to rest
+         at translate 17.6% and opacity 0.55, having never reached the 8%/1.0
+         end state the keyframe describes.
+
+         `entry 0% → entry 75%` completes with margin. The achievable fraction
+         is (word height − its own translate offset) / word height ≈ 85%, and
+         that ratio does not depend on viewport height — at maximum scroll the
+         word's bottom coincides with the document's bottom whatever the screen.
+         Measured at 1080px tall: 75% and 60% both reach progress 1.0, plain
+         `entry 100%` reaches 0.999, which is too close to rely on. */
+      animation-range: entry 0% entry 75%;
+    }
+  }
+}
+
+/* THE LETTER-SPACING TWEEN WAS REMOVED, AND NOT FOR TASTE.
+
+   It ran 0 → -0.06em, which changed the word's own width by 11% — measured at
+   320px, the rendered word is 4.7944em wide at 0 and 4.3145em at -0.06em. The
+   element is left-anchored, so that swing came out entirely at the right edge,
+   sliding it ~150px during the scroll and pushing it under the footer's
+   `overflow: hidden` at the narrow end. A wordmark that cannot be sized to fit
+   its container is a wordmark whose width depends on scroll position.
+
+   It was also the one property here that the compositor cannot handle: tweening
+   letter-spacing re-runs text layout and paint for a 250px word on every tick
+   of a scroll timeline. `translate` and `opacity` do not. */
+@keyframes wordmark-rise {
+  from {
+    translate: 0 22%;
+    opacity: 0.35;
+  }
+  to {
+    translate: 0 8%;
+    opacity: 1;
+  }
+}
+
+/* Tailwind v4 no longer defaults the border colour to gray-200; without this,
+   every `border` utility renders currentColor. */
+*,
+::after,
+::before {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark-theme scrollbar. -webkit- only, so Firefox falls back to the platform
+   scrollbar; scrollbar-color below covers it. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-muted-foreground) 30%, transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-muted-foreground) 50%, transparent);
+}
+
+* {
+  scrollbar-color: color-mix(in srgb, var(--color-muted-foreground) 30%, transparent)
+    var(--color-muted);
+}

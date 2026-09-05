@@ -1,0 +1,53 @@
+slug: attention-vs-ffn-crossover
+title: Find the length where attention FLOPs overtake everything else
+difficulty: medium
+categories:
+- LLM
+- CUDA
+concepts:
+- attention_scaled_dot
+- feedforward_blocks
+description: Write `flop_crossover(d_model, ffn_ratio, seq_len)` returning `[n_star, quad_flops, lin_flops,
+  ratio]` for one transformer layer, where `n_star` is the shortest sequence at which the score-matrix
+  term catches every term that grows linearly in `n`. The trap is that the four Q/K/V/O projections belong
+  on the linear side alongside the feed-forward block -- drop them and the crossover lands at 4*d_model
+  instead of 6*d_model.
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- NVIDIA
+prompt: Write `flop_crossover(d_model, ffn_ratio, seq_len)` returning `[n_star, quad_flops, lin_flops,
+  ratio]` for one transformer layer, where `n_star` is the shortest sequence at which the score-matrix
+  term catches every term that grows linearly in `n`. The trap is that the four Q/K/V/O projections belong
+  on the linear side alongside the feed-forward block -- drop them and the crossover lands at 4*d_model
+  instead of 6*d_model.
+approach: Count each matmul as 2 * (output elements) * (inner dimension). The score and value matmuls
+  give the n-squared term; the four projections plus the two feed-forward matrices give the n term. Setting
+  them equal cancels one factor of n and one of d, leaving a crossover that is a fixed multiple of d_model
+  and independent of seq_len.
+model_answer: "PER LAYER, sequence n, model dim d.\n  Attention:  QK^T is n×d×n, times AV n×n×d\n    \
+  \  ≈ 2 * 2n²d = 4n²d\n  Projections (Q,K,V,O): 4 * 2nd² = 8nd²\n  FFN (ratio 4): 2 * 2n*d*4d = 16nd²\n\
+  \nCompare the quadratic term against the linear ones:\n    4n²d  vs  24nd²\n    n = 6d = 6 * 4096 =\
+  \ 24576\n\nSo attention overtakes everything else at roughly **24k tokens**, not at a few hundred. Below\
+  \ that the FFN dominates, which is why 'attention is quadratic' is misleading at ordinary context lengths\
+  \ — the constant factors decide, and the crossover is d-scaled.\n\nAT 128k, PREFILL: n = 128k is 5×\
+  \ the crossover, so attention genuinely dominates — the quadratic term is ~21× the linear one.\n\nBUT\
+  \ DECODE IS A DIFFERENT REGIME. Generating one token does O(nd) work while reading the entire KV cache\
+  \ from HBM, so arithmetic intensity is roughly 1 FLOP per byte — hopelessly bandwidth bound. You are\
+  \ not compute limited at all; you are streaming the cache.\n\nSo the honest answer: attention FLOPs\
+  \ bind during prefill past ~24k, and at decode the constraint is KV cache size and memory bandwidth.\
+  \ That is why the mitigations target memory — GQA, PagedAttention, cache quantisation — and why FlashAttention\
+  \ helps by removing HBM round trips rather than by reducing arithmetic, which it does not."
+follow_ups:
+- Redo the crossover for d = 8192. Which way does it move, and why?
+- Compute arithmetic intensity for a single decode step.
+- Does FlashAttention reduce FLOPs or memory traffic?
+red_flags:
+- Answering 'quadratic' without ever comparing constants against the FFN.
+- Treating prefill and decode as the same regime.
+- Believing FlashAttention is an approximation.
+source_kind: interview_question

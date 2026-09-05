@@ -1,0 +1,99 @@
+slug: causal-mask-positions
+title: Which positions can token i attend to?
+difficulty: medium
+categories:
+- LLM
+concepts:
+- attention_masking
+- attention_scaled_dot
+description: 'Return how many positions token `i` may attend to under a causal mask with an optional sliding
+
+  window.
+
+
+  Write `visible_positions(i, seq_len, window)`.
+
+
+  Causal masking lets position `i` see positions `0..i` inclusive — itself and everything before.
+
+  A `window` of `w > 0` further restricts it to the most recent `w` positions, i.e. `i-w+1..i`
+
+  clamped at 0. A window of 0 or less means no window.
+
+
+  Return 0 if `i` is outside the sequence.
+
+
+  **The off-by-one here is the whole question, and it is load-bearing.** A mask that excludes
+
+  position `i` itself stops a token attending to its own value, and the model still trains — it just
+
+  trains worse, with no error anywhere. A mask off by one in the other direction leaks one token of
+
+  future, which is worse: validation loss improves, the model looks better than it is, and the leak
+
+  is invisible until generation, where there is no future to leak.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 22
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def visible_positions(self, i, seq_len, window):\n    \
+    \    \"\"\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().visible_positions(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def visible_positions(self, i, seq_len, window):\n \
+  \       if i >= seq_len or i < 0:\n            return 0\n        lo = 0 if window <= 0 else max(0, i\
+  \ - window + 1)\n        return i - lo + 1\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0 8 0
+  expected_output: '1'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 7 8 0
+  expected_output: '8'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 7 8 4
+  expected_output: '4'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 3 8 4
+  expected_output: '4'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 0 8 4
+  expected_output: '1'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 9 8 0
+  expected_output: '0'
+  is_hidden: true
+hints:
+- 'Inclusive on both ends: positions lo..i means i - lo + 1 of them.'
+- Window 0 or negative means unrestricted; do not treat it as a window of size 0.
+- i >= seq_len returns 0 rather than raising.
+hint_ladder:
+  level_0: 'Inclusive on both ends: positions lo..i means i - lo + 1 of them.'
+  level_1: Window 0 or negative means unrestricted; do not treat it as a window of size 0.
+  level_2: i >= seq_len returns 0 rather than raising.

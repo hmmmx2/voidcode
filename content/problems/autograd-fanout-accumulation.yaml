@@ -1,0 +1,90 @@
+slug: autograd-fanout-accumulation
+title: Backpropagate through a node used twice
+difficulty: medium
+categories:
+- DL
+concepts:
+- autograd
+- backpropagation
+description: 'You are given a small computation graph as a list of nodes in topological order. Each node
+  is either an input or an operation over earlier nodes. Return the gradient of the final node with respect
+  to every input, in node order, each rounded to 4 decimal places.
+
+
+  Supported ops: add(a, b), mul(a, b), square(a).
+
+
+  The whole problem is what happens when a node feeds more than one consumer. Its gradient is the SUM
+  of the contributions from every consumer — not the last one written, and not the first. A graph where
+  nothing branches passes with the bug present, which is exactly why this survives in real code: it does
+  not crash, it silently halves a gradient and the model trains slightly worse.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 39
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def grads(self, nodes, values):\n        \"\"\"\n     \
+    \   :type nodes: List[List]      e.g. [\"input\"] or [\"mul\", 0, 2]\n        :type values: List[float]\
+    \    value of each input node, 0.0 for non-inputs\n        :rtype: List[float]          d(last node)/d(input),\
+    \ per input node, in node order\n        \"\"\"\n"
+  driver_code: "import sys\n_tok = sys.stdin.read().split()\n_i = 0\n_n = int(_tok[_i]); _i += 1\n_nodes\
+    \ = []\nfor _ in range(_n):\n    _op = _tok[_i]; _i += 1\n    if _op == \"input\":\n        _nodes.append([\"\
+    input\"])\n    elif _op == \"square\":\n        _nodes.append([\"square\", int(_tok[_i])]); _i +=\
+    \ 1\n    else:\n        _nodes.append([_op, int(_tok[_i]), int(_tok[_i + 1])]); _i += 2\n_values =\
+    \ [float(_tok[_i + _k]) for _k in range(_n)]\nprint(\" \".join(str(_g) for _g in Solution().grads(_nodes,\
+    \ _values)))\n"
+reference_solution: "class Solution(object):\n    def grads(self, nodes, values):\n        n = len(nodes)\n\
+  \        out = list(values)\n        for i, node in enumerate(nodes):\n            op = node[0]\n  \
+  \          if op == \"add\":\n                out[i] = out[node[1]] + out[node[2]]\n            elif\
+  \ op == \"mul\":\n                out[i] = out[node[1]] * out[node[2]]\n            elif op == \"square\"\
+  :\n                out[i] = out[node[1]] ** 2\n        grad = [0.0] * n\n        grad[n - 1] = 1.0\n\
+  \        # Reverse topological order. Every consumer ADDS into its inputs, so a node feeding two\n \
+  \       # consumers ends up with the sum — the whole point of the problem.\n        for i in range(n\
+  \ - 1, -1, -1):\n            g = grad[i]\n            if g == 0.0:\n                continue\n     \
+  \       op = nodes[i][0]\n            if op == \"add\":\n                grad[nodes[i][1]] += g\n  \
+  \              grad[nodes[i][2]] += g\n            elif op == \"mul\":\n                a, b = nodes[i][1],\
+  \ nodes[i][2]\n                grad[a] += g * out[b]\n                grad[b] += g * out[a]\n      \
+  \      elif op == \"square\":\n                grad[nodes[i][1]] += g * 2.0 * out[nodes[i][1]]\n\n \
+  \       return [round(grad[i], 4) for i, node in enumerate(nodes) if node[0] == \"input\"]\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: '3 input input mul 0 1 3.0 4.0 0.0
+
+    '
+  expected_output: 4.0 3.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: '2 input add 0 0 5.0 0.0
+
+    '
+  expected_output: '2.0'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: '4 input input mul 0 1 add 2 2 2.0 3.0 0.0 0.0
+
+    '
+  expected_output: 6.0 4.0
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: '3 input square 0 mul 1 0 3.0 0.0 0.0
+
+    '
+  expected_output: '27.0'
+  is_hidden: true
+hints:
+- Run the graph forwards first and keep every intermediate value — the product rule needs the other operand's
+  value, which only exists after the forward pass.
+- Seed the last node's gradient to 1.0 and walk backwards. Every operation ADDS into its inputs' gradients;
+  it never assigns.
+- Check yourself on y = x + x. If you get 1 rather than 2 you are overwriting where you should accumulate,
+  and no graph without branching will ever show it.

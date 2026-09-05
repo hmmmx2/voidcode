@@ -1,0 +1,48 @@
+slug: softmax-versus-sigmoid-contrastive-design
+title: Why does SigLIP drop the softmax? Reason about batch size
+difficulty: hard
+categories:
+- VLM
+concepts:
+- contrastive_pretraining
+- vlm_architecture
+grading: rubric
+description: 'CLIP''s loss is a softmax cross-entropy over the in-batch similarity matrix: each image
+  is classified against every caption in the batch. SigLIP replaces it with an independent sigmoid binary
+  loss on every image-text pair.
+
+
+  Explain what the softmax couples that the sigmoid does not, and why that coupling is the thing that
+  makes CLIP''s loss batch-size hungry.
+
+
+  Then explain the systems consequence, which is the real reason this change matters: **what does the
+  softmax require of a data-parallel training run that the sigmoid does not?** Name the collective operation
+  involved.'
+hints:
+- A softmax denominator sums over every candidate in the batch.
+- If negatives live on other GPUs, what has to happen before the loss can be computed?
+- A sigmoid on one pair needs only that pair.
+hint_ladder:
+  level_0: A softmax denominator sums over every candidate in the batch.
+  level_1: If negatives live on other GPUs, what has to happen before the loss can be computed?
+  level_2: A sigmoid on one pair needs only that pair.
+rubric:
+- criterion: Identifies the softmax normalisation as coupling every pair in the batch through a shared
+    denominator, so each example's loss depends on all the others.
+  weight: 0.3
+- criterion: 'Explains the batch-size dependence: the denominator is the negative set, so quality scales
+    with batch size and small batches give a weak signal.'
+  weight: 0.25
+- criterion: Names the systems cost — the full similarity matrix must be gathered across data-parallel
+    ranks (an all-gather of embeddings), and memory grows with the square of the global batch.
+  weight: 0.25
+- criterion: States that the sigmoid loss is per-pair and independent, so it needs no global normalisation
+    and trains stably at smaller batches.
+  weight: 0.15
+- criterion: Notes a trade-off rather than declaring one strictly better — for example that positives
+    and negatives become imbalanced and need a bias/temperature correction.
+  weight: 0.05
+inferred_concepts: false
+review_needed: false
+source_kind: problem

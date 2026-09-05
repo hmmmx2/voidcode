@@ -1,0 +1,83 @@
+slug: warmup-steps-from-tokens
+title: Convert a token budget into optimizer steps
+difficulty: easy
+categories:
+- DL
+concepts:
+- lr_scheduling
+- gradient_accumulation
+description: 'Input: `total_tokens_billions batch_size seq_len grad_accum warmup_pct`.
+
+
+  One optimizer step consumes `batch_size * seq_len * grad_accum` tokens. Return `total_steps warmup_steps`,
+  both floored to integers, with warmup being `warmup_pct` percent of the total.
+
+
+  Gradient accumulation is the part people drop: it multiplies the tokens per STEP, so accumulating over
+  8 micro-batches means 8x fewer optimizer steps for the same data. A schedule computed without it warms
+  up eight times too slowly and decays to zero long before the run ends.'
+order_index: 85
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def steps(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().steps(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def steps(self, tokens):\n        tot = float(tokens[0])\
+  \ * 1e9\n        b = float(tokens[1]); s = float(tokens[2])\n        acc = float(tokens[3]); pct = float(tokens[4])\n\
+  \        per = b * s * acc\n        if per <= 0:\n            return '0 0'\n        total = int(tot\
+  \ // per)\n        return str(total) + ' ' + str(int(total * pct / 100))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 300 32 2048 8 1
+  expected_output: 572204 5722
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 300 32 2048 1 1
+  expected_output: 4577636 45776
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 1 1024 1 10
+  expected_output: 976562 97656
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 300 32 2048 8 0
+  expected_output: 572204 0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 300 0 2048 8 1
+  expected_output: 0 0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 10 64 512 4 5
+  expected_output: 76293 3814
+  is_hidden: true
+hints:
+- tokens per step = batch * seq * accum -- all three.
+- total_steps = total_tokens / tokens_per_step.
+- warmup_steps is a percentage of total_steps, floored.
+hint_ladder:
+  level_0: tokens per step = batch * seq * accum -- all three.
+  level_1: total_steps = total_tokens / tokens_per_step.
+  level_2: warmup_steps is a percentage of total_steps, floored.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

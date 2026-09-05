@@ -1,0 +1,85 @@
+slug: gradient-checkpoint-segments
+title: How many segments minimise checkpointed memory?
+difficulty: hard
+categories:
+- Systems
+- DL
+concepts:
+- gradient_checkpointing
+- memory_accounting
+description: 'Input: `n_layers`.
+
+
+  Gradient checkpointing stores activations at segment boundaries and recomputes the rest during the backward
+  pass. With `n` layers split into `s` equal segments, peak activation memory is proportional to `s +
+  n/s` — the boundaries you keep, plus the deepest segment you must recompute.
+
+
+  Return the integer `s` in `[1, n]` that minimises `s + ceil(n/s)`. On a tie return the SMALLER s. Also
+  return the resulting cost, as `s cost`.
+
+
+  The continuous optimum is sqrt(n), which is where the familiar "sqrt(n) memory" result comes from —
+  but the integer answer is not always round(sqrt(n)), and that is the point of computing it rather than
+  quoting it.'
+order_index: 52
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def segments(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().segments(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def segments(self, tokens):\n        n = int(tokens[0])\n\
+  \        if n <= 0:\n            return '0 0'\n        best_s = 1; best_c = None\n        for s in range(1,\
+  \ n + 1):\n            c = s + -(-n // s)\n            if best_c is None or c < best_c:\n          \
+  \      best_c = c; best_s = s\n        return str(best_s) + ' ' + str(best_c)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: '16'
+  expected_output: 4 8
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: '100'
+  expected_output: 10 20
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: '1'
+  expected_output: 1 2
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: '32'
+  expected_output: 4 12
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: '7'
+  expected_output: 2 6
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: '48'
+  expected_output: 6 14
+  is_hidden: true
+hints:
+- Just evaluate s + ceil(n/s) for every s in 1..n; n is small here.
+- ceil(n/s) is -(-n // s) in integer arithmetic.
+- Check your answer against sqrt(n) -- close, but not always equal.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

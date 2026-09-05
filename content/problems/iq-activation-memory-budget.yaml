@@ -1,0 +1,208 @@
+slug: iq-activation-memory-budget
+title: Size a mixed-precision training memory budget
+difficulty: hard
+categories:
+- DL
+- CUDA
+concepts:
+- mixed_precision
+- memory_accounting
+description: "Return the training memory breakdown, in GB, for a mixed-precision run with AdamW.\n\n```\n\
+  class Solution(object):\n    def memory_gb(self, n_params, n_layers, d_model, batch, seq,\n        \
+  \          tensors_per_layer, checkpointing):\n        # -> [weights, grads, master, optimizer, activations,\
+  \ total]\n```\n\n**Define `GB = 10**9` bytes** (decimal, not GiB) so the arithmetic is checkable by\
+  \ hand.\n\n**Fixed costs**, independent of batch and sequence length:\n\n```\nweights   = n_params *\
+  \ 2   # bf16 copy used for the matmuls\ngrads     = n_params * 2   # bf16 gradients\nmaster    = n_params\
+  \ * 4   # fp32 master copy the optimizer updates\noptimizer = n_params * 8   # two fp32 moments, 4 bytes\
+  \ each\n```\n\nThat is 16 bytes per parameter, so the bf16 weights are one eighth of the fixed bill.\
+  \ Reporting only the weights is the mistake this is built to catch.\n\n**Activations.** Let `tokens\
+  \ = batch * seq`. One saved d-wide bf16 tensor costs `tokens * d_model * 2` bytes. A layer saves `tensors_per_layer`\
+  \ of them (count the `d_ff`-wide FFN intermediate as its own multiple of a d-wide tensor — the caller\
+  \ has already folded that into `tensors_per_layer`).\n\n```\none      = tokens * d_model * 2\nif not\
+  \ checkpointing:  activations = n_layers * tensors_per_layer * one\nif checkpointing:      activations\
+  \ = (n_layers + tensors_per_layer) * one\n```\n\nThe checkpointing rule is exactly that: keep one tensor\
+  \ at each of the `n_layers` layer boundaries, plus enough room to rematerialize a single layer's `tensors_per_layer`\
+  \ tensors during its backward pass. Note it still grows with depth — a solution that assumes checkpointing\
+  \ removes the depth factor entirely gets this wrong.\n\n**Total** is the sum of all five. Return the\
+  \ six values in GB, in the order above; the driver rounds each to 6 decimal places.\n\nStandard library\
+  \ only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 10
+examples:
+- input: n_params=7000000000, n_layers=32, d_model=4096, batch=8, seq=2048, tensors_per_layer=10, checkpointing=False
+  output: '[14.0, 14.0, 28.0, 56.0, 42.949673, 154.949673]'
+  explanation: Fixed cost is 7e9 x 16 bytes = 112 GB, already past an 80GB card before a single activation
+    is stored. Activations add another 42.9 GB, giving 155 GB against 80 — sharding is a precondition
+    here, not an optimization.
+- input: same but checkpointing=True
+  output: '[14.0, 14.0, 28.0, 56.0, 5.637145, 117.637145]'
+  explanation: The activation multiplier drops from 32*10 = 320 d-wide tensors to 32 + 10 = 42, cutting
+    42.9 GB to 5.6 GB. The fixed 112 GB does not move, which is why checkpointing alone never rescues
+    this configuration.
+constraints:
+- 1 <= n_params <= 10^12
+- 1 <= n_layers <= 200, 1 <= d_model <= 2^16
+- 1 <= batch * seq <= 10^7
+- 1 <= tensors_per_layer <= 64
+- GB means 10^9 bytes.
+- Round every returned value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: n_params
+    value: '7000000000'
+  - name: n_layers
+    value: '32'
+  - name: d_model
+    value: '4096'
+  - name: batch
+    value: '8'
+  - name: seq
+    value: '2048'
+  - name: tensors_per_layer
+    value: '10'
+  - name: checkpointing
+    value: '0'
+  stdin: '7000000000
+
+    32
+
+    4096
+
+    8
+
+    2048
+
+    10
+
+    0'
+  expected_output: '[14.0, 14.0, 28.0, 56.0, 42.949673, 154.949673]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: checkpointing
+    value: '1'
+  stdin: '7000000000
+
+    32
+
+    4096
+
+    8
+
+    2048
+
+    10
+
+    1'
+  expected_output: '[14.0, 14.0, 28.0, 56.0, 5.637145, 117.637145]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: seq
+    value: '8192'
+  stdin: '7000000000
+
+    32
+
+    4096
+
+    8
+
+    8192
+
+    10
+
+    0'
+  expected_output: '[14.0, 14.0, 28.0, 56.0, 171.798692, 283.798692]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: n_params
+    value: '125000000'
+  - name: checkpointing
+    value: '1'
+  stdin: '125000000
+
+    12
+
+    768
+
+    32
+
+    512
+
+    16
+
+    1'
+  expected_output: '[0.25, 0.25, 0.5, 1.0, 0.704643, 2.704643]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: n_params
+    value: '1300000000'
+  stdin: '1300000000
+
+    24
+
+    2048
+
+    4
+
+    1024
+
+    12
+
+    0'
+  expected_output: '[2.6, 2.6, 5.2, 10.4, 4.831838, 25.631838]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def memory_gb(self, n_params, n_layers, d_model, batch,\
+    \ seq,\n                  tensors_per_layer, checkpointing):\n        \"\"\"\n        :type n_params:\
+    \ int\n        :type n_layers: int\n        :type d_model: int\n        :type batch: int\n       \
+    \ :type seq: int\n        :type tensors_per_layer: int\n        :type checkpointing: bool\n      \
+    \  :rtype: List[float]\n            [weights, grads, master, optimizer, activations, total] in GB\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    n_params = int(_in[0])
+
+    n_layers = int(_in[1])
+
+    d_model = int(_in[2])
+
+    batch = int(_in[3])
+
+    seq = int(_in[4])
+
+    tensors_per_layer = int(_in[5])
+
+    checkpointing = bool(int(_in[6]))
+
+    _r = Solution().memory_gb(n_params, n_layers, d_model, batch, seq, tensors_per_layer, checkpointing)
+
+    print([round(x, 6) for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def memory_gb(self, n_params, n_layers, d_model, batch,\
+  \ seq,\n                  tensors_per_layer, checkpointing):\n        GB = 10 ** 9\n        weights\
+  \ = n_params * 2       # bf16\n        grads = n_params * 2         # bf16\n        master = n_params\
+  \ * 4        # fp32 master copy\n        optimizer = n_params * 8     # two fp32 moments\n\n       \
+  \ tokens = batch * seq\n        one = tokens * d_model * 2   # one d-wide bf16 tensor\n        if checkpointing:\n\
+  \            activations = (n_layers + tensors_per_layer) * one\n        else:\n            activations\
+  \ = n_layers * tensors_per_layer * one\n\n        total = weights + grads + master + optimizer + activations\n\
+  \        return [weights / float(GB), grads / float(GB), master / float(GB),\n                optimizer\
+  \ / float(GB), activations / float(GB), total / float(GB)]\n"

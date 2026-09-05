@@ -1,0 +1,126 @@
+slug: iq-implement-grad-clip
+title: Clip gradients by global norm
+difficulty: easy
+categories:
+- DL
+- PyTorch
+concepts:
+- normalization_layers
+- backpropagation
+description: 'Given a list of gradient tensors (each a flat list of floats) and a `max_norm`, clip them
+  **by global norm** and return the result, each value rounded to 6 decimals.
+
+
+  The global norm is the L2 norm over *every* element of *every* tensor, as if they were one long vector:
+
+
+  `total = sqrt(sum(g*g for tensor in grads for g in tensor))`
+
+
+  If `total <= max_norm`, return the gradients unchanged. Otherwise scale **every** tensor by the same
+  factor `max_norm / total`.
+
+
+  **One scale factor for all of them is the whole point.** Clipping each tensor to its own norm, or clamping
+  element-wise, changes the direction of the update — you are no longer descending the gradient, you are
+  descending something else that happens to be shorter. Scaling by a single scalar preserves direction
+  exactly and only shortens the step.
+
+
+  Return `[]` for an empty input, and treat a total norm of exactly 0 as nothing to do.'
+inferred_concepts: true
+review_needed: true
+order_index: 3
+examples:
+- input: grads = [[3.0, 4.0]], max_norm = 5.0
+  output: '[[3.0, 4.0]]'
+  explanation: The norm is exactly 5.0, which is not above the limit, so nothing changes.
+- input: grads = [[3.0, 4.0]], max_norm = 1.0
+  output: '[[0.6, 0.8]]'
+  explanation: Norm 5.0 scaled by 1/5 — same direction, length 1.
+constraints:
+- 0 <= number of tensors <= 100
+- max_norm > 0
+- Scale ALL tensors by one factor, or not at all.
+- Round to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: grads
+    value: '[[3.0, 4.0]]'
+  - name: max_norm
+    value: '5.0'
+  stdin: '[[3.0, 4.0]]
+
+    5.0'
+  expected_output: '[[3.0, 4.0]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: grads
+    value: '[[3.0, 4.0]]'
+  - name: max_norm
+    value: '1.0'
+  stdin: '[[3.0, 4.0]]
+
+    1.0'
+  expected_output: '[[0.6, 0.8]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: grads
+    value: '[[3.0], [4.0], [12.0]]'
+  stdin: '[[3.0], [4.0], [12.0]]
+
+    6.5'
+  expected_output: '[[1.5], [2.0], [6.0]]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: grads
+    value: '[[0.0, 0.0]]'
+  stdin: '[[0.0, 0.0]]
+
+    1.0'
+  expected_output: '[[0.0, 0.0]]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: grads
+    value: '[]'
+  stdin: '[]
+
+    1.0'
+  expected_output: '[]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def clip_grad_norm(self, grads, max_norm):\n\
+    \        \"\"\"\n        :type grads: List[List[float]]\n        :rtype: List[List[float]]\n     \
+    \   \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    grads = json.loads(_in[0])
+
+    max_norm = float(_in[1])
+
+    _r = Solution().clip_grad_norm(grads, max_norm)
+
+    print([[round(x, 6) for x in t] for t in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def clip_grad_norm(self, grads, max_norm):\n\
+  \        total = math.sqrt(sum(g * g for t in grads for g in t))\n        if total <= max_norm or total\
+  \ == 0.0:\n            return [list(t) for t in grads]\n        scale = max_norm / total\n        return\
+  \ [[g * scale for g in t] for t in grads]\n"

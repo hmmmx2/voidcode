@@ -1,0 +1,80 @@
+slug: vlm-projection-design
+title: Attach a vision encoder to a language model, and defend the choices
+difficulty: hard
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- projection_layers
+grading: rubric
+description: 'Describe how you would attach a pretrained vision encoder to a pretrained language model,
+  and
+
+  justify each decision.
+
+
+  Cover: what the projection layer is and why it is needed at all; what is frozen and what trains,
+
+  in what order; how image tokens enter the sequence; and what happens to the KV cache and the
+
+  context budget once they do.
+
+
+  **Why this is rubric-graded.** There is no single correct architecture. LLaVA''s two-layer MLP,
+
+  Flamingo''s cross-attention resampler and Qwen-VL''s learned queries are all defensible, and they
+
+  trade differently. An answer is judged on whether the reasoning holds together, not on matching
+
+  one of them.
+
+
+  **The detail most answers miss.** Image tokens are *expensive in context*. A 336x336 image at
+
+  patch 14 is 576 tokens before any text — so a page of screenshots can consume more context than
+
+  the conversation, and every one of those tokens also occupies KV cache for the rest of the
+
+  session. That is the constraint driving resamplers and learned queries: they exist to compress
+
+  576 patch embeddings into 32 or 64 tokens, and the quality cost of that compression is the real
+
+  design question.
+
+
+  **The detail with a security consequence.** An image is the largest prompt-injection surface a
+
+  tutor has. Text a learner types is visible to them; an instruction painted in pale grey on a
+
+  screenshot is not, and a model that reads it will follow it. Any answer that treats image content
+
+  as trusted input is incomplete regardless of how good the architecture is.'
+hints:
+- Start from why the embedding spaces do not already match — the encoder was trained against a different
+  objective.
+- 'Freezing order matters: what breaks if you unfreeze the language model first?'
+- Count the tokens. 336x336 at patch 14 is 576 before any text.
+hint_ladder:
+  level_0: Start from why the embedding spaces do not already match — the encoder was trained against
+    a different objective.
+  level_1: 'Freezing order matters: what breaks if you unfreeze the language model first?'
+  level_2: Count the tokens. 336x336 at patch 14 is 576 before any text.
+rubric:
+- criterion: Explains the projection as a learned map between two independently-trained embedding spaces,
+    not merely as a shape fix.
+  weight: 0.2
+- criterion: 'Staged training: projection first with both towers frozen, then selective unfreezing, with
+    a reason — typically that an untrained projection sends noise into a working language model and damages
+    it.'
+  weight: 0.2
+- criterion: 'Token budget: quantifies image tokens and connects them to context length and KV cache growth,
+    rather than treating images as free.'
+  weight: 0.25
+- criterion: Names a compression strategy (resampler, learned queries, pooling) and states what is lost,
+    rather than presenting it as free.
+  weight: 0.2
+- criterion: Treats image-derived content as untrusted input, with a concrete mitigation.
+  weight: 0.15
+inferred_concepts: false
+review_needed: false
+source_kind: problem

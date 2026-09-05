@@ -1,0 +1,48 @@
+slug: kv-cache-memory
+title: Size the KV cache and count concurrent requests
+difficulty: hard
+categories:
+- CUDA
+- LLM
+concepts:
+- kv_cache
+description: 'Write `kv_capacity(layers, kv_heads, head_dim, dtype_bytes, seq_len, free_bytes)` returning
+  the cache bytes per token, the bytes one full-length request holds, and how many such requests fit in
+  the free memory. Two traps: the factor of 2 for K and V, and keying the width on KV heads rather than
+  query heads so grouped-query and multi-query models come out right.'
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+- OpenAI
+- Anthropic
+prompt: 'Write `kv_capacity(layers, kv_heads, head_dim, dtype_bytes, seq_len, free_bytes)` returning the
+  cache bytes per token, the bytes one full-length request holds, and how many such requests fit in the
+  free memory. Two traps: the factor of 2 for K and V, and keying the width on KV heads rather than query
+  heads so grouped-query and multi-query models come out right.'
+approach: 'Per token the cache holds one key and one value, in every layer, of width kv_heads * head_dim,
+  at dtype_bytes each. Multiply by sequence length for a request that reserves its full context, then
+  floor-divide the free memory: a request that only half fits does not fit.'
+model_answer: "WEIGHTS. 7e9 × 2 B = 14 GB, leaving ~60 GB after activations and workspace.\n\nKV CACHE\
+  \ PER TOKEN (multi-head, all 32 heads kept):\n    2 (K and V) × layers × d × 2 bytes\n    = 2 × 32 ×\
+  \ 4096 × 2 = 524,288 B ≈ **512 KB/token**\n\nPER REQUEST at 8192 tokens:\n    512 KB × 8192 ≈ **4 GB**\n\
+  \    60 GB / 4 GB ≈ **15 concurrent requests**\n\nSo the KV cache, not the weights, is what binds —\
+  \ 60 GB of cache against 14 GB of weights.\n\nWITH GQA AT 8 KV HEADS. K and V shrink by 32/8 = 4×:\n\
+  \    128 KB/token, 1 GB per request  ->  **~60 concurrent requests**\nA 4× throughput change from an\
+  \ architectural decision made at training time, which is why GQA is worth a small quality cost and is\
+  \ now standard.\n\nTHE OTHER HALF: FRAGMENTATION. Reserving max sequence length per request means a\
+  \ 200-token conversation still holds its full 4 GB (or 1 GB). PagedAttention allocates the cache in\
+  \ fixed blocks with an indirection table, so memory is consumed in proportion to tokens actually generated\
+  \ and non-contiguous blocks are fine. The reported gain is a large multiple in served throughput, entirely\
+  \ from removing waste rather than from any change to the maths."
+follow_ups:
+- Redo it with an int8-quantised cache. What breaks?
+- Why does GQA cost quality at all, if it only changes K and V?
+- Where does prefix caching help, and where does it not?
+red_flags:
+- Assuming weights are the binding constraint at inference.
+- Forgetting the cache scales with sequence length × batch size.
+- Missing that reserving max length wastes most of the cache.
+source_kind: interview_question

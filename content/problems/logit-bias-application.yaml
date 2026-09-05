@@ -1,0 +1,88 @@
+slug: logit-bias-application
+title: Apply a logit bias and see what it does to the tail
+difficulty: medium
+categories:
+- LLM
+concepts:
+- sampling_decoding
+- numerical_stability
+description: 'Input: `bias_index bias_value`, then the logits.
+
+
+  Add `bias_value` to the logit at `bias_index`, softmax the result, and return the probability of that
+  token rounded to 4 decimal places.
+
+
+  A bias of -100 is the conventional way to ban a token, and it works because softmax is exponential:
+  -100 in logit space is a factor of e^-100, which underflows to a probability indistinguishable from
+  zero. Use the max-subtraction trick or a large positive bias will overflow before it is normalised.
+
+
+  An out-of-range `bias_index` applies no bias rather than raising.'
+order_index: 82
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def bias(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().bias(_p))
+
+    '
+reference_solution: "import math\n\nclass Solution(object):\n    def bias(self, tokens):\n        i =\
+  \ int(tokens[0]); b = float(tokens[1])\n        logits = [float(x) for x in tokens[2:]]\n        if\
+  \ not logits:\n            return 0.0\n        if 0 <= i < len(logits):\n            logits[i] += b\n\
+  \        m = max(logits)\n        exps = [math.exp(v - m) for v in logits]\n        tot = sum(exps)\n\
+  \        if not (0 <= i < len(logits)) or tot == 0:\n            return 0.0\n        return round(exps[i]\
+  \ / tot, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0 0 1.0 1.0
+  expected_output: '0.5'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 0 -100 1.0 1.0
+  expected_output: '0.0'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0 100 1.0 1.0
+  expected_output: '1.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 5 10 1.0 1.0
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 0 0.0 0.0 0.0 0.0
+  expected_output: '0.25'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0 2 0.0 2.0
+  expected_output: '0.5'
+  is_hidden: true
+hints:
+- Subtract the max logit before exponentiating.
+- The bias is applied in LOGIT space, before the softmax, not to the probability.
+- +100 should give a probability of essentially 1.0, not inf.
+hint_ladder:
+  level_0: Subtract the max logit before exponentiating.
+  level_1: The bias is applied in LOGIT space, before the softmax, not to the probability.
+  level_2: +100 should give a probability of essentially 1.0, not inf.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

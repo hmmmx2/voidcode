@@ -1,0 +1,177 @@
+###############################################################################
+# VoidCode AI — Production Multi-Replica (Docker Compose override)
+#
+# Three GPU replicas behind an Nginx least-connections load balancer.
+# Designed for 150-student scale on a 3-GPU cloud instance (RunPod / GCP / AWS).
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.prod.yml \
+#     up -d
+#
+# Requirements:
+#   - 3 NVIDIA GPUs (A10G 24 GB recommended, A100 40 GB ideal)
+#   - Each replica loads ~5.26 GB model + ~8 GB KV cache = ~14 GB per GPU
+#   - NVIDIA Container Toolkit installed
+#
+# Capacity estimate (Qwen 2.5 7B AWQ, A10G):
+#   - ~8–12 requests/s per replica with continuous batching
+#   - 3 replicas → ~24–36 requests/s → supports ~150 students @ ~1 req/5 s
+#
+# Secrets:
+#   All replicas mount the same ./apps/api/.env.docker (shared secrets).
+#   Copy .env.docker.example → .env.docker and fill in real values before deploy.
+###############################################################################
+
+services:
+  # ── Nginx Load Balancer ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: voidcode-lb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - vllm-api-1
+      - vllm-api-2
+      - vllm-api-3
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── GPU Replica 1 ────────────────────────────────────────────────────────────
+  vllm-api-1:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.gpu
+    image: voidcode-vllm-api:latest
+    container_name: voidcode-vllm-api-1
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]           # First GPU
+              capabilities: [gpu]
+    volumes:
+      - ./llm/outputs/awq_model:/models/awq_model:ro
+      - ./apps/api/.env.docker:/app/.env:ro
+    environment:
+      - USE_VLLM=true
+      - MODEL_PATH=/models/awq_model
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=8192
+      - VLLM_QUANTIZATION=compressed-tensors
+      - VLLM_DTYPE=float16
+      - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - DATABASE_URL_SYNC=postgresql://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_BASE_URL=http://judge0-server:2358
+      # Must match AUTHN_TOKEN on judge0-server, or every run comes back 401.
+      - JUDGE0_AUTH_TOKEN=${JUDGE0_AUTH_TOKEN:-}
+      - BASE_MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+      - MAX_CONCURRENT_REQUESTS=8
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    shm_size: "2gb"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  # ── GPU Replica 2 ────────────────────────────────────────────────────────────
+  vllm-api-2:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.gpu
+    image: voidcode-vllm-api:latest
+    container_name: voidcode-vllm-api-2
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]           # Second GPU
+              capabilities: [gpu]
+    volumes:
+      - ./llm/outputs/awq_model:/models/awq_model:ro
+      - ./apps/api/.env.docker:/app/.env:ro
+    environment:
+      - USE_VLLM=true
+      - MODEL_PATH=/models/awq_model
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=8192
+      - VLLM_QUANTIZATION=compressed-tensors
+      - VLLM_DTYPE=float16
+      - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - DATABASE_URL_SYNC=postgresql://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_BASE_URL=http://judge0-server:2358
+      # Must match AUTHN_TOKEN on judge0-server, or every run comes back 401.
+      - JUDGE0_AUTH_TOKEN=${JUDGE0_AUTH_TOKEN:-}
+      - BASE_MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+      - MAX_CONCURRENT_REQUESTS=8
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    shm_size: "2gb"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  # ── GPU Replica 3 ────────────────────────────────────────────────────────────
+  vllm-api-3:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.gpu
+    image: voidcode-vllm-api:latest
+    container_name: voidcode-vllm-api-3
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["2"]           # Third GPU
+              capabilities: [gpu]
+    volumes:
+      - ./llm/outputs/awq_model:/models/awq_model:ro
+      - ./apps/api/.env.docker:/app/.env:ro
+    environment:
+      - USE_VLLM=true
+      - MODEL_PATH=/models/awq_model
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=8192
+      - VLLM_QUANTIZATION=compressed-tensors
+      - VLLM_DTYPE=float16
+      - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - DATABASE_URL_SYNC=postgresql://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_BASE_URL=http://judge0-server:2358
+      # Must match AUTHN_TOKEN on judge0-server, or every run comes back 401.
+      - JUDGE0_AUTH_TOKEN=${JUDGE0_AUTH_TOKEN:-}
+      - BASE_MODEL_ID=Qwen/Qwen2.5-7B-Instruct
+      - MAX_CONCURRENT_REQUESTS=8
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    shm_size: "2gb"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1

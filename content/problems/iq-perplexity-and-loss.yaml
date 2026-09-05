@@ -1,0 +1,162 @@
+slug: iq-perplexity-and-loss
+title: Turn log-likelihoods into perplexity and bits-per-byte
+difficulty: medium
+categories:
+- LLM
+concepts:
+- sampling_decoding
+- loss_functions
+description: 'A language-model eval reports a loss and a perplexity, and those two numbers are one quantity
+  in different clothes. Compute both, plus the version that survives a change of tokeniser.
+
+
+  `eval_metrics(self, logprobs, n_bytes) -> list`
+
+
+  `logprobs[i]` is `log p(x_i | x_<i)` in **nats** (natural log, so every entry is `<= 0`). `n_bytes`
+  is the number of UTF-8 bytes the same text occupies.
+
+
+  Return `[loss_nats, perplexity, bits_per_byte]`, each rounded to 6 decimals:
+
+
+  ```
+
+  total         = -sum(logprobs)                 # total negative log-likelihood, nats
+
+  loss_nats     = total / len(logprobs)          # per TOKEN
+
+  perplexity    = exp(loss_nats)
+
+  bits_per_byte = total / (n_bytes * log(2))     # per BYTE, in bits
+
+  ```
+
+
+  **Base.** `exp` applies to a loss in nats; `2**L` applies to a loss in bits. `L` nats equals `L / log(2)`
+  bits, and the two conventions agree only when the base matches the unit. Applying `2**L` to a loss in
+  nats produces a number that looks entirely reasonable and is wrong.
+
+
+  **Normaliser.** Perplexity is per token; bits-per-byte is per byte. Divide the *total* by `n_bytes`
+  -- not the per-token loss, which is already divided by a different denominator. The two differ by exactly
+  the tokeniser''s bytes-per-token ratio, and that ratio is the whole reason bits-per-byte exists: a model
+  with a larger vocabulary spends fewer tokens on the same text, so each token carries more information
+  and perplexity rises with no change in modelling quality, while bits-per-byte is unmoved because the
+  byte count is a property of the text, not of the tokeniser.
+
+
+  **Reading the number.** Perplexity is an effective branching factor -- the model is as uncertain as
+  if picking uniformly among that many tokens. A uniform model over a vocabulary of size `V` scores exactly
+  `V`, which gives the standard sanity check: an untrained run on a 32k vocabulary should start near `loss
+  = log(32000) = 10.37` nats. One hidden case is exactly that check.
+
+
+  `len(logprobs) >= 1` and `n_bytes >= 1`, so neither denominator is zero.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 25
+examples:
+- input: logprobs = [-2.5, -2.5], n_bytes = 8
+  output: '[2.5, 12.182494, 0.901684]'
+  explanation: Loss is 2.5 nats, so perplexity is e^2.5 = 12.18 -- as uncertain as a uniform choice among
+    about 12 tokens. The 5 nats of total surprise spread over 8 bytes is 5/(8*ln 2) = 0.9 bits per byte.
+- input: logprobs = [-0.6931471805599453], n_bytes = 1
+  output: '[0.693147, 2.0, 1.0]'
+  explanation: One token at probability 1/2 costs ln 2 nats, which is exactly 1 bit, and it covers exactly
+    1 byte -- so perplexity is exactly 2 and bits-per-byte exactly 1.
+constraints:
+- 1 <= len(logprobs) <= 10^5
+- logprobs[i] <= 0 (natural log, nats)
+- 1 <= n_bytes <= 10^7
+- bits_per_byte normalises the TOTAL by bytes, not the per-token loss.
+- Round each returned value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: logprobs
+    value: '[-2.5, -2.5]'
+  - name: n_bytes
+    value: '8'
+  stdin: '[-2.5, -2.5]
+
+    8'
+  expected_output: '[2.5, 12.182494, 0.901684]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: logprobs
+    value: '[-0.6931471805599453]'
+  - name: n_bytes
+    value: '1'
+  stdin: '[-0.6931471805599453]
+
+    1'
+  expected_output: '[0.693147, 2.0, 1.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: logprobs
+    value: '[-1.0, -2.0, -3.0]'
+  - name: n_bytes
+    value: '12'
+  stdin: '[-1.0, -2.0, -3.0]
+
+    12'
+  expected_output: '[2.0, 7.389056, 0.721348]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: logprobs
+    value: '[-10.373491, -10.373491, -10.373491, -10.373491]'
+  - name: n_bytes
+    value: '16'
+  stdin: '[-10.373491, -10.373491, -10.373491, -10.373491]
+
+    16'
+  expected_output: '[10.373491, 31999.994183, 3.741446]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: logprobs
+    value: '[-0.1, -0.2, -0.3, -0.4, -5.0]'
+  - name: n_bytes
+    value: '23'
+  stdin: '[-0.1, -0.2, -0.3, -0.4, -5.0]
+
+    23'
+  expected_output: '[1.2, 3.320117, 0.376355]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def eval_metrics(self, logprobs, n_bytes):\n\
+    \        \"\"\"\n        :type logprobs: List[float]\n        :type n_bytes: int\n        :rtype:\
+    \ List[float]  -- [loss_nats, perplexity, bits_per_byte]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    logprobs = json.loads(_in[0])
+
+    n_bytes = int(_in[1])
+
+    _r = Solution().eval_metrics(logprobs, n_bytes)
+
+    print([round(x, 6) for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def eval_metrics(self, logprobs, n_bytes):\n\
+  \        total = -sum(logprobs)\n        loss = total / len(logprobs)\n        ppl = math.exp(loss)\n\
+  \        bpb = total / (n_bytes * math.log(2.0))\n        return [loss, ppl, bpb]\n"

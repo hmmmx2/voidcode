@@ -1,0 +1,46 @@
+slug: constrained-decoding-design
+title: The model must return valid JSON every time. Design it.
+difficulty: medium
+categories:
+- LLM
+- Systems
+concepts:
+- sampling_decoding
+- tokenization
+grading: rubric
+description: 'Your API needs strictly valid JSON matching a schema from every generation. Prompting for
+  it works about 95% of the time, which is not enough.
+
+
+  Explain how constrained decoding makes it 100%, at the level of what happens at each sampling step.
+
+
+  Then the subtlety that catches people: **constraining the tokens does not constrain the meaning.** Give
+  an example of output that is schema-valid and useless, and say what you would do about it.'
+hints:
+- At each step the model gives a distribution over the whole vocabulary.
+- A grammar can say which next tokens keep the output parseable.
+- Valid JSON can still contain a confidently wrong value.
+hint_ladder:
+  level_0: At each step the model gives a distribution over the whole vocabulary.
+  level_1: A grammar can say which next tokens keep the output parseable.
+  level_2: Valid JSON can still contain a confidently wrong value.
+rubric:
+- criterion: 'Explains masking: at each step, tokens that would break the grammar have their logits set
+    to -inf before sampling, so invalid output is unreachable.'
+  weight: 0.3
+- criterion: Notes the tokenizer complication -- grammar states are over characters while sampling is
+    over tokens, and a token can straddle a boundary.
+  weight: 0.2
+- criterion: Gives a concrete schema-valid-but-wrong example and distinguishes syntactic validity from
+    semantic correctness.
+  weight: 0.25
+- criterion: Proposes validation beyond the schema -- range checks, cross-field consistency, or a retry
+    on a semantic check.
+  weight: 0.15
+- criterion: Mentions that heavy constraint can degrade quality by pushing the model off its preferred
+    distribution.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,79 @@
+slug: f-beta-score
+title: F-beta, and which error it forgives
+difficulty: medium
+categories:
+- ML
+concepts:
+- classification_metrics
+description: "Input: `beta tp fp fn`.\n\n    precision = tp / (tp + fp)\n    recall    = tp / (tp + fn)\n\
+  \    F_beta    = (1 + beta^2) * P * R / (beta^2 * P + R)\n\nReturn F_beta rounded to 4 decimal places,\
+  \ and `0.0` whenever the denominator is 0 or `tp` is 0 — a classifier that found nothing has no F score,\
+  \ and returning 0 is more honest than a division error.\n\n`beta > 1` weights recall, `beta < 1` weights\
+  \ precision. For a tutor that flags a learner's bug, decide which you would rather have before you pick\
+  \ beta."
+order_index: 51
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def fbeta(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().fbeta(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def fbeta(self, tokens):\n        b = float(tokens[0]);\
+  \ tp = int(tokens[1])\n        fp = int(tokens[2]); fn = int(tokens[3])\n        if tp == 0:\n     \
+  \       return 0.0\n        p = tp / (tp + fp)\n        r = tp / (tp + fn)\n        denom = b * b *\
+  \ p + r\n        if denom == 0:\n            return 0.0\n        return round((1 + b * b) * p * r /\
+  \ denom, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1.0 10 0 0
+  expected_output: '1.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1.0 5 5 5
+  expected_output: '0.5'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 2.0 5 5 5
+  expected_output: '0.5'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0.5 5 5 5
+  expected_output: '0.5'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1.0 0 5 5
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2.0 10 0 10
+  expected_output: '0.5556'
+  is_hidden: true
+hints:
+- beta = 1 gives the harmonic mean of precision and recall.
+- beta = 2 weights recall 4x, because the weight is beta SQUARED.
+- tp = 0 makes both precision and recall 0, and the formula 0/0.
+hint_ladder:
+  level_0: beta = 1 gives the harmonic mean of precision and recall.
+  level_1: beta = 2 weights recall 4x, because the weight is beta SQUARED.
+  level_2: tp = 0 makes both precision and recall 0, and the formula 0/0.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

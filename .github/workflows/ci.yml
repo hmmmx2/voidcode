@@ -1,0 +1,193 @@
+# CI for VoidCode AI.
+#
+# There was none before this. That mattered more than usual: the API tests added
+# alongside this workflow guard a grading path that was, until recently, letting
+# a client supply its own expected outputs. Tests that nothing runs do not
+# protect anything past the next refactor.
+#
+# WHAT THIS DELIBERATELY DOES NOT DO
+#
+# It does not install torch, transformers, vLLM or SGLang, and it does not run
+# the Spark pipeline. Those need CUDA, tens of gigabytes of wheels, or a built
+# warehouse — none available to a hosted runner, and none needed to check the
+# things that break silently. The suites here are the ones whose failure is
+# invisible until a user hits it.
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  # Callable from release.yml, so a tag cannot publish an image from a commit whose
+  # tests never ran. Without this trigger, `uses: ./.github/workflows/ci.yml` fails at
+  # runtime with "workflow is not reusable" — the release workflow parses fine and
+  # breaks only when it is first tagged.
+  workflow_call:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API tests
+    runs-on: ubuntu-latest
+
+    services:
+      # The API models use `postgresql.UUID` and JSON columns, which SQLite
+      # cannot compile. Shimming them would mean testing different column types
+      # than production ships — exactly the class of difference that lets a bug
+      # through. So: a real Postgres. Without it the DB-backed tests skip rather
+      # than fail, which is why the guard below asserts they actually ran.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: alwin
+          POSTGRES_PASSWORD: alwin_dev
+          POSTGRES_DB: alwin_tutor
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U alwin -d alwin_tutor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
+      DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install API dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Not requirements.txt: it pins torch, which is ~2.5 GB and is not
+          # needed by any router the tests exercise. The API test suite builds
+          # its app from the routers directly and never imports `main`.
+          pip install \
+            "fastapi>=0.109.0" "uvicorn[standard]" "pydantic>=2.5.0" \
+            "sqlalchemy[asyncio]>=2.0.0" asyncpg alembic psycopg2-binary \
+            redis httpx python-dotenv \
+            argon2-cffi email-validator
+          pip install -r apps/api/requirements-dev.txt
+
+      - name: Run migrations
+        working-directory: apps/api
+        run: alembic upgrade head
+
+      - name: Run API tests
+        run: pytest apps/api/tests -v
+
+      - name: Assert the Postgres-backed tests actually ran
+        # Without this, losing the database turns every integration test into a
+        # skip and the job still reports green — the failure mode where CI looks
+        # healthiest at the moment it has stopped checking anything.
+        run: |
+          if pytest apps/api/tests -q -m requires_postgres --collect-only >/dev/null 2>&1; then
+            SKIPPED=$(pytest apps/api/tests -q 2>&1 | grep -oE '[0-9]+ skipped' || true)
+            if [ -n "$SKIPPED" ]; then
+              echo "::error::Postgres-backed tests were skipped ($SKIPPED). The database service is not reachable."
+              exit 1
+            fi
+          fi
+
+  ml-tree:
+    name: ML tree tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # numpy and PyYAML only. `tests/` covers the memory guard, the packing
+        # helper and the taxonomy loader — none of which needs Spark or torch.
+        run: pip install pytest pytest-asyncio pytest-cov ruff numpy pyyaml lightgbm scikit-learn
+
+      - name: Validate the concept taxonomy
+        # Its own CLI: acyclicity, referential integrity, cardinality bounds and
+        # tag-rule ordering. Cheap, and it fails loudly on a malformed edit.
+        run: python -m features.taxonomy
+
+      - name: Lint
+        # ruff.toml has existed for a while and CI never ran it, so 37 findings had
+        # accumulated — including a test file that was not valid UTF-8 and two `zip()`
+        # calls with no `strict=`, one of them in cosine_similarity where a silent
+        # truncation would return a plausible similarity for incomparable vectors.
+        #
+        # Placed BEFORE the tests: a lint failure is a two-second answer and there is no
+        # reason to spend a minute on tests to discover it.
+        run: ruff check .
+
+      - name: The shipped catalogue loads
+        # `tests/` exercises every loader rule against tmp_path fixtures, and two tests call
+        # load_raw() on the real tree — but nothing asserted that the 200 shipped items pass
+        # the contract. A malformed item would surface as an unrelated test failing, or not
+        # at all. One second.
+        run: python -c "from features.content import load_items; print(len(load_items()), 'items')"
+
+      - name: Every reference solution reproduces its expected outputs
+        # THESE TWO SCRIPTS ALREADY PASSED AND GUARDED NOTHING. Both existed, both exit
+        # non-zero on failure, and neither was invoked by any CI job or Makefile target —
+        # they were named only in docs/METRICS.md. 125 items, 699 cases, ~33s.
+        #
+        # A wrong expected_output is worse than a missing problem: it tells a learner their
+        # correct answer is wrong, with a green tick next to the reference. That is the one
+        # content defect that cannot be caught by review, because reviewing it means running it.
+        #
+        # Local interpreter, not Judge0 — the sandbox needs a live service. That gap is why
+        # the BANNED_IMPORTS check matters: numpy passes here and dies in Judge0's image.
+        run: cd apps/api && python -m scripts.verify_problems && python -m scripts.verify_interview_problems
+
+      - name: Run tests with coverage
+        # THE FLOOR IS THE MEASURED VALUE, NOT AN ASPIRATION. 41% on the day it was
+        # added, so the gate is set at 40 and ratchets upward as modules land. A floor
+        # set to 80 here would fail immediately, get lowered or commented out within a
+        # week, and then stop protecting anything.
+        #
+        # The blended figure is dominated by code CI cannot run: the Spark jobs, the IRT
+        # fit and ranking/split all need $VC_DATA and sit at 0%. What CI can reach is at
+        # 93-100% (ranking 93, recommend 96, retrieval 97, mastery 100). Raising the
+        # floor much above 41 therefore requires a warehouse in CI, not more tests.
+        run: pytest tests -v --cov=features --cov=ranking --cov-report=term --cov-fail-under=40
+
+  web:
+    name: Web typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        # This is the enforcement mechanism for the frontend half of the
+        # grading fix. There is no JS test runner in this repo, and adding one
+        # for two assertions would not pay for itself — but `expectedOutput`
+        # became `string | null` and `submitCode` lost its `testCases`
+        # parameter, so tsc is what finds every consumer that still assumes
+        # otherwise.
+        run: pnpm --filter @voidcode/web typecheck
+
+      - name: Build
+        run: pnpm --filter @voidcode/web build

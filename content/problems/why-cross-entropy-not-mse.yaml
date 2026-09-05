@@ -1,0 +1,48 @@
+slug: why-cross-entropy-not-mse
+title: Return dL/dz for softmax under two losses
+difficulty: medium
+categories:
+- ML
+- DL
+concepts:
+- numerical_stability
+- loss_functions
+description: Write `logit_grad(logits, label, loss)` returning the gradient of the loss with respect to
+  the logits for a softmax head scored either by cross-entropy or by squared error. One of them collapses
+  to a single subtraction because the log cancels the Jacobian; the other keeps every term of `diag(p)
+  - p p^T`, and returning `p - y` for both is the trap.
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- Meta
+- OpenAI
+- NVIDIA
+prompt: Write `logit_grad(logits, label, loss)` returning the gradient of the loss with respect to the
+  logits for a softmax head scored either by cross-entropy or by squared error. One of them collapses
+  to a single subtraction because the log cancels the Jacobian; the other keeps every term of `diag(p)
+  - p p^T`, and returning `p - y` for both is the trap.
+approach: Build `p` once, then contract `dL/dp` with the softmax Jacobian `p_i(delta_ij - p_j)`. For one
+  loss the contraction telescopes into a difference; for the other it leaves a per-coordinate factor of
+  `p_j` and a weighted-sum correction term. Both answers must sum to zero across coordinates.
+model_answer: "Let p = softmax(z), y one-hot. The Jacobian is\n\n    dp_i/dz_j = p_i(delta_ij - p_j) \
+  \  i.e.  diag(p) - p p^T\n\nCROSS-ENTROPY.  L = -sum_i y_i log p_i\n    dL/dp_i = -y_i / p_i\n    dL/dz_j\
+  \ = sum_i (-y_i/p_i) * p_i(delta_ij - p_j)\n            = sum_i -y_i(delta_ij - p_j)\n            =\
+  \ -y_j + p_j * sum_i y_i\n            = p_j - y_j          (sum_i y_i = 1)\n\nThe 1/p_i from the log\
+  \ cancels the p_i in the Jacobian exactly. The result is linear in the error and bounded in [-1, 1].\n\
+  \nMSE.  L = sum_i (p_i - y_i)^2\n    dL/dp_i = 2(p_i - y_i)\n    dL/dz_j = 2 sum_i (p_i - y_i) p_i(delta_ij\
+  \ - p_j)\n\nNothing cancels — every term keeps a factor of p_i. Take the confidently-wrong case, p_true\
+  \ -> 0. Cross-entropy gives |dL/dz| -> 1, a full-strength correction. MSE gives a gradient of order\
+  \ p_true -> 0, so the update vanishes exactly where it is most needed and the model stays confidently\
+  \ wrong.\n\nSo: cross-entropy. The probabilistic argument agrees — it is the negative log-likelihood\
+  \ of a categorical, so minimising it is maximum likelihood — but the gradient is why it matters in practice."
+follow_ups:
+- Derive the Jacobian diag(p) - p p^T from p_i = e^{z_i}/sum_k e^{z_k}.
+- Show the binary case reduces to sigmoid with dL/dz = p - y.
+- Softmax is shift-invariant. What does that imply about the Jacobian's rank?
+red_flags:
+- Asserting cross-entropy is better without producing either gradient.
+- Quoting dL/dz = p - y from memory but unable to show the p_i terms cancel.
+- Confusing this vanishing gradient with the one caused by network depth.
+source_kind: interview_question

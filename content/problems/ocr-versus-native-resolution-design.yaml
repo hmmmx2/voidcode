@@ -1,0 +1,48 @@
+slug: ocr-versus-native-resolution-design
+title: Should the tutor OCR the screenshot first?
+difficulty: medium
+categories:
+- VLM
+- Systems
+concepts:
+- image_preprocessing
+- vlm_architecture
+grading: rubric
+description: 'A proposal: run OCR on uploaded screenshots and pass the extracted text to a text-only model,
+  instead of paying for a vision encoder.
+
+
+  Argue both sides on cost, latency, accuracy and failure mode. Be concrete about what OCR loses that
+  the pixels carry.
+
+
+  Then reach a decision for THIS product specifically: the images are mostly code, stack traces and loss
+  curves. Note that the revised plan already recommends telling learners to paste text rather than screenshot
+  it — engage with that rather than around it.'
+hints:
+- OCR is cheap and deterministic; a vision encoder is neither.
+- What does a loss curve contain that its OCR output does not?
+- Two-dimensional layout -- indentation, table alignment -- is structure OCR flattens.
+hint_ladder:
+  level_0: OCR is cheap and deterministic; a vision encoder is neither.
+  level_1: What does a loss curve contain that its OCR output does not?
+  level_2: Two-dimensional layout -- indentation, table alignment -- is structure OCR flattens.
+rubric:
+- criterion: 'Names what OCR discards: spatial layout, indentation, plots and diagrams, highlighting and
+    any non-textual signal.'
+  weight: 0.3
+- criterion: Weighs cost and latency honestly -- OCR is far cheaper and lower latency, and for pure text
+    screenshots loses very little.
+  weight: 0.25
+- criterion: 'Splits the decision by content type rather than answering globally: code and stack traces
+    suit OCR, loss curves and diagrams do not.'
+  weight: 0.25
+- criterion: Engages with the plan's advice that pasting text is cheaper and more accurate than screenshotting,
+    and says when that guidance does not apply.
+  weight: 0.15
+- criterion: Mentions that OCR errors are silent -- a misread character produces plausible wrong code
+    rather than a failure.
+  weight: 0.05
+inferred_concepts: false
+review_needed: false
+source_kind: problem

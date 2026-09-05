@@ -1,0 +1,86 @@
+slug: transformer-block-flops
+title: Where do a block's FLOPs actually go?
+difficulty: medium
+categories:
+- LLM
+concepts:
+- transformer_block
+- multi_head_attention
+description: "Return the forward FLOPs of one transformer block and the fraction spent on the attention\n\
+  score-and-apply matmuls.\n\nWrite `block_flops(seq_len, d_model, d_ff)` returning `\"<total> <fraction>\"\
+  `, the fraction rounded\nto 4 decimal places.\n\nCount a matmul of (m x k) by (k x n) as `2*m*k*n`.\
+  \ Three components:\n\n  projections   Q, K, V and O, each `2 * T * d * d`\n  scores        `QK^T` and\
+  \ `PV`, each `2 * T * T * d`\n  feed-forward  up and down, each `2 * T * d * d_ff`\n\nIgnore norms,\
+  \ softmax and biases — they are O(T*d) and vanish against these.\n\n**Why the fraction, not just the\
+  \ total.** Attention is the only term quadratic in `T`; everything\nelse is linear. At short context\
+  \ the block is dominated by the FFN and attention is a rounding\nerror, so \"attention is expensive\"\
+  \ is simply false there. The crossover is what matters, and it\narrives later than people expect — with\
+  \ `d_model` 3584 and `d_ff` 18944, attention does not reach\nhalf the FLOPs until several thousand tokens.\n\
+  \nThat is also why FlashAttention is an IO win rather than a FLOP win: it does not reduce this\ncount\
+  \ at all. It avoids materialising the `T x T` score matrix in HBM, which is a memory-traffic\nargument,\
+  \ and conflating the two is the most common way this gets explained wrongly."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 23
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def block_flops(self, seq_len, d_model, d_ff):\n      \
+    \  \"\"\"\n        :rtype: str  # \"<total> <fraction rounded to 4dp>\"\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().block_flops(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def block_flops(self, seq_len, d_model, d_ff):\n   \
+  \     T, d = seq_len, d_model\n        proj = 4 * 2 * T * d * d\n        score = 2 * 2 * T * T * d\n\
+  \        ffn = 2 * 2 * T * d * d_ff\n        total = proj + score + ffn\n        return '%d %s' % (total,\
+  \ round(score / total, 4))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 512 3584 18944
+  expected_output: 195421011968 0.0192
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 8192 3584 18944
+  expected_output: 4028679323648 0.2388
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 128 3584 18944
+  expected_output: 48150609920 0.0049
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 32768 3584 18944
+  expected_output: 27659589386240 0.5565
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 1024 4096 11008
+  expected_output: 339302416384 0.0506
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 1 64 256
+  expected_output: 98560 0.0026
+  is_hidden: true
+hints:
+- Every matmul is 2*m*k*n. Count six of them.
+- Only the score terms are quadratic in seq_len.
+- Return total and fraction separated by a single space.
+hint_ladder:
+  level_0: Every matmul is 2*m*k*n. Count six of them.
+  level_1: Only the score terms are quadratic in seq_len.
+  level_2: Return total and fraction separated by a single space.

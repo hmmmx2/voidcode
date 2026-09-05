@@ -1,0 +1,87 @@
+slug: chinchilla-optimal-tokens
+title: Compute-optimal tokens for a parameter budget
+difficulty: medium
+categories:
+- LLM
+- ML
+concepts:
+- memory_accounting
+description: 'Input: `n_params_billions tokens_billions`.
+
+
+  The compute-optimal heuristic is about 20 tokens per parameter. Return the optimal token count in billions,
+  the ratio you actually have, and a one-word verdict `undertrained`, `optimal` or `overtrained`, as `optimal_b
+  ratio verdict`.
+
+
+  Ratio is rounded to 1 decimal place; `optimal` means the ratio is within 20% of 20.
+
+
+  The heuristic answers "best loss for a fixed TRAINING budget" and says nothing about inference cost
+  — which is why production models are deliberately overtrained: you pay training once and inference forever.'
+order_index: 78
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def opt(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().opt(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def opt(self, tokens):\n        n = float(tokens[0]);\
+  \ t = float(tokens[1])\n        if n <= 0:\n            return '0.0 0.0 undertrained'\n        opt =\
+  \ 20 * n\n        ratio = round(t / n, 1)\n        if ratio < 16:\n            v = 'undertrained'\n\
+  \        elif ratio > 24:\n            v = 'overtrained'\n        else:\n            v = 'optimal'\n\
+  \        return str(round(opt, 1)) + ' ' + str(ratio) + ' ' + v\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 7 140
+  expected_output: 140.0 20.0 optimal
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 7 2000
+  expected_output: 140.0 285.7 overtrained
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 70 300
+  expected_output: 1400.0 4.3 undertrained
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 7 100
+  expected_output: 140.0 14.3 undertrained
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 100
+  expected_output: 0.0 0.0 undertrained
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 7 160
+  expected_output: 140.0 22.9 optimal
+  is_hidden: true
+hints:
+- optimal_b = 20 * n_params_billions.
+- ratio = tokens_billions / n_params_billions.
+- Within 20% of 20 means 16 <= ratio <= 24.
+hint_ladder:
+  level_0: optimal_b = 20 * n_params_billions.
+  level_1: ratio = tokens_billions / n_params_billions.
+  level_2: Within 20% of 20 means 16 <= ratio <= 24.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

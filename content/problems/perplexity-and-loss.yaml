@@ -1,0 +1,53 @@
+slug: perplexity-and-loss
+title: Turn log-likelihoods into perplexity and bits-per-byte
+difficulty: medium
+categories:
+- LLM
+concepts:
+- sampling_decoding
+- loss_functions
+description: 'Write `eval_metrics(logprobs, n_bytes)` returning `[loss_nats, perplexity, bits_per_byte]`
+  from the natural-log probabilities a model assigned to each observed token. Two bases and two normalisers
+  are in play: perplexity exponentiates the per-token mean in nats, while bits-per-byte divides the *total*
+  by `n_bytes` and converts to bits -- swapping either is a silent, plausible-looking error the hidden
+  cases are built to expose.'
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- Meta
+prompt: 'Write `eval_metrics(logprobs, n_bytes)` returning `[loss_nats, perplexity, bits_per_byte]` from
+  the natural-log probabilities a model assigned to each observed token. Two bases and two normalisers
+  are in play: perplexity exponentiates the per-token mean in nats, while bits-per-byte divides the *total*
+  by `n_bytes` and converts to bits -- swapping either is a silent, plausible-looking error the hidden
+  cases are built to expose.'
+approach: Sum the negative log-probabilities once and reuse that total. Divide by the token count for
+  the per-token loss and exponentiate it for perplexity; divide the same total by the byte count and by
+  ln 2 for bits-per-byte. A single pass is enough, and no value should be derived from an already-normalised
+  one.
+model_answer: "Per-token cross-entropy in nats:\n    L = -(1/N) sum_i log p(x_i | x_<i)\n\nPerplexity\
+  \ is its exponential:\n    PPL = exp(L)     (nats)\n    PPL = 2^L        (if L is in bits)\n\nAT L =\
+  \ 2.5:  PPL = e^2.5 = **12.18**\n\nINTERPRETATION. Perplexity is an effective branching factor: the\
+  \ model is as uncertain as if choosing uniformly among ~12 equally likely tokens at each step. A uniform\
+  \ model over vocabulary V has PPL = V exactly, which gives the useful sanity check — an untrained model\
+  \ on a 32k vocabulary starts near 32,000, i.e. L = log(32000) = 10.4 nats. If a run does not start near\
+  \ that, the loss is not what you think it is.\n\nWHY COMPARISONS BREAK. Perplexity is per *token*, and\
+  \ tokens are defined by the tokeniser. A model with a larger vocabulary encodes the same text in fewer\
+  \ tokens, so each carries more information and perplexity rises — with no change in modelling quality.\
+  \ Comparing across tokenisers is therefore meaningless, which is why bits-per-byte — normalise by UTF-8\
+  \ bytes rather than tokens — is the tokeniser-independent alternative.\n\nTwo further caveats: perplexity\
+  \ is corpus-dependent, so it is only comparable on identical evaluation data; and it says nothing about\
+  \ downstream usefulness. Lower perplexity does not imply better instruction following, which is why\
+  \ it stopped being the headline metric for chat models."
+follow_ups:
+- Convert 2.5 nats to bits, and to bits-per-byte at 4 bytes/token.
+- What perplexity should an untrained model have on a 50k vocabulary?
+- Why does perplexity fall when you shorten the context window?
+red_flags:
+- Mixing bases — applying 2^L to a loss reported in nats.
+- Comparing perplexity across models with different tokenisers.
+- Treating lower perplexity as proof of better downstream behaviour.
+source_kind: interview_question

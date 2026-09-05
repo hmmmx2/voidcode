@@ -1,0 +1,50 @@
+slug: eigenvalues-of-the-hessian
+title: Score a learning rate against the curvature spectrum
+difficulty: hard
+categories:
+- ML
+- DL
+concepts:
+- tensors_and_shapes
+description: Write `gd_analysis(eigs, eta, eps)` for gradient descent on a quadratic whose Hessian has
+  the given eigenvalues. Return the worst-case contraction per step at the supplied `eta`, the step size
+  at which convergence fails, the optimal step size, and how many optimal steps reach error `eps`. The
+  trap is that the sharpest direction sets the ceiling while the flattest sets the rate, so one bound
+  is a max and the other is a min, and equal eigenvalues make the step count a special case.
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- Google DeepMind
+- Anthropic
+prompt: Write `gd_analysis(eigs, eta, eps)` for gradient descent on a quadratic whose Hessian has the
+  given eigenvalues. Return the worst-case contraction per step at the supplied `eta`, the step size at
+  which convergence fails, the optimal step size, and how many optimal steps reach error `eps`. The trap
+  is that the sharpest direction sets the ceiling while the flattest sets the rate, so one bound is a
+  max and the other is a min, and equal eigenvalues make the step count a special case.
+approach: 'Diagonalise: in the eigenbasis every coordinate obeys the same scalar recursion with its own
+  eigenvalue, so the whole answer is three one-line facts about `|1 - eta*lambda|`. Get the contraction
+  from the extreme eigenvalues, then invert the geometric decay for the step count and guard the degenerate
+  spectrum.'
+model_answer: "Take L(w) = ½ w^T H w, H symmetric PSD with eigenvalues lambda_i. Gradient descent is w\
+  \ <- w - eta H w.\n\nIn the eigenbasis each coordinate evolves independently:\n    w_i^(t+1) = (1 -\
+  \ eta*lambda_i) w_i^(t)\n    w_i^(t)   = (1 - eta*lambda_i)^t w_i^(0)\n\nCONVERGENCE. Need |1 - eta*lambda_i|\
+  \ < 1 for all i:\n    0 < eta < 2 / lambda_max\nThe sharpest direction alone sets the ceiling. Above\
+  \ it, that coordinate grows geometrically and diverges no matter how well-behaved every other direction\
+  \ is.\n\nRATE. The slowest coordinate is lambda_min. With the optimal\n    eta* = 2 / (lambda_max +\
+  \ lambda_min)\nthe worst-case contraction per step is\n    (kappa - 1)/(kappa + 1),   kappa = lambda_max/lambda_min\n\
+  so reaching error eps takes O(kappa * log(1/eps)) steps. The cost is set by the condition number, not\
+  \ by the magnitude of the curvature.\n\nThat is the squeeze: raise eta and the sharp direction diverges,\
+  \ lower it and the flat direction crawls. Momentum improves this to O(sqrt(kappa) log(1/eps)), which\
+  \ is why it helps so much on badly conditioned problems; Adam preconditions per-coordinate, which helps\
+  \ when the bad conditioning happens to be axis-aligned."
+follow_ups:
+- Derive eta* = 2/(lambda_max + lambda_min) by minimising max_i |1 - eta*lambda_i|.
+- Where does momentum's sqrt(kappa) come from?
+- What is the 'edge of stability', and how does it break the fixed-H assumption?
+red_flags:
+- Talking about local minima when the question is about conditioning.
+- Giving eta < 1/lambda_max — off by the factor of 2, which means it was never derived.
+- Claiming Adam fixes conditioning in general when it only rescales axis-aligned curvature.
+source_kind: interview_question

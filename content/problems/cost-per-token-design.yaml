@@ -1,0 +1,46 @@
+slug: cost-per-token-design
+title: Work out what a tutor conversation actually costs to serve
+difficulty: medium
+categories:
+- Systems
+concepts:
+- serving_latency
+- continuous_batching
+- quantization_basics
+grading: rubric
+description: 'Build the unit economics for self-hosted inference. Take a GPU at a known hourly rate, a
+  measured throughput in tokens per second, and derive cost per 1,000 output tokens.
+
+
+  Then extend it to a realistic tutor conversation, where prompts are long (code plus history) and replies
+  are short.
+
+
+  The part most estimates get wrong: **prefill and decode have different costs per token and different
+  batching behaviour.** Explain why a single blended number misleads, and in which direction.'
+hints:
+- 'Utilisation is the multiplier: an idle GPU costs the same as a busy one.'
+- Batching improves decode throughput far more than prefill.
+- A long prompt with a short reply is mostly prefill.
+hint_ladder:
+  level_0: 'Utilisation is the multiplier: an idle GPU costs the same as a busy one.'
+  level_1: Batching improves decode throughput far more than prefill.
+  level_2: A long prompt with a short reply is mostly prefill.
+rubric:
+- criterion: 'Builds the base calculation: hourly cost divided by tokens per hour, with the utilisation
+    assumption stated rather than assumed to be 100%.'
+  weight: 0.25
+- criterion: Separates prefill from decode and explains they have different per-token costs and different
+    responses to batching.
+  weight: 0.3
+- criterion: Applies it to the tutor's actual shape -- long prompt, short reply -- and concludes prefill
+    dominates, so a decode-derived blended rate understates cost.
+  weight: 0.25
+- criterion: 'Names a lever with its trade: quantization, shorter context, prefix caching, or a smaller
+    model.'
+  weight: 0.15
+- criterion: Compares against an API price to say when self-hosting is even worth it.
+  weight: 0.05
+inferred_concepts: false
+review_needed: false
+source_kind: problem

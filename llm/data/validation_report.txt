@@ -1,0 +1,96 @@
+================================================================================
+VOIDCODE AI TRAINING DATA VALIDATION REPORT
+================================================================================
+
+SUMMARY
+----------------------------------------
+Total examples loaded: 2000
+JSON parsing errors: 0
+Structure errors: 0
+Format errors: 0
+Quality warnings: 622
+Exact duplicates: 0
+Near duplicates: 3015
+Duplicate IDs: 0
+
+PASS RATE: 100.0% (2000/2000)
+
+MODE DISTRIBUTION (v5.0)
+----------------------------------------
+  teaching: 900 (45.0%)
+  debug: 600 (30.0%)
+  explain: 300 (15.0%)
+  followup: 200 (10.0%)
+
+DIFFICULTY DISTRIBUTION
+----------------------------------------
+  hard: 771 (38.5%)
+  easy: 766 (38.3%)
+  medium: 463 (23.1%)
+
+PROBLEM VARIETY
+----------------------------------------
+  Unique problems: 13
+  Top 10 problems:
+    - longest_substring: 157
+    - merge_k_sorted_lists: 157
+    - word_ladder: 157
+    - trapping_rain_water: 156
+    - max_subarray: 155
+    - climbing_stairs: 154
+    - valid_parentheses: 154
+    - two_sum: 154
+    - lru_cache: 154
+    - number_of_islands: 153
+
+NEAR DUPLICATES FOUND (>85% similar)
+----------------------------------------
+  Example 0 ~ Example 1049 (89.1% similar)
+    IDs: debug_number_of_islands_202 ~ debug_number_of_islands_358
+  Example 0 ~ Example 1061 (88.4% similar)
+    IDs: debug_number_of_islands_202 ~ debug_number_of_islands_046
+  Example 1 ~ Example 1040 (86.4% similar)
+    IDs: teaching_climbing_stairs_211 ~ teaching_climbing_stairs_679
+  Example 1 ~ Example 1312 (86.7% similar)
+    IDs: teaching_climbing_stairs_211 ~ teaching_climbing_stairs_627
+  Example 1 ~ Example 1650 (86.2% similar)
+    IDs: teaching_climbing_stairs_211 ~ teaching_climbing_stairs_705
+  Example 1 ~ Example 1661 (87.2% similar)
+    IDs: teaching_climbing_stairs_211 ~ teaching_climbing_stairs_523
+  Example 1 ~ Example 1971 (86.9% similar)
+    IDs: teaching_climbing_stairs_211 ~ teaching_climbing_stairs_731
+  Example 2 ~ Example 1649 (91.3% similar)
+    IDs: teaching_longest_substring_539 ~ teaching_longest_substring_253
+  Example 3 ~ Example 633 (88.4% similar)
+    IDs: debug_merge_k_sorted_lists_009 ~ debug_merge_k_sorted_lists_243
+  Example 3 ~ Example 934 (93.2% similar)
+    IDs: debug_merge_k_sorted_lists_009 ~ debug_merge_k_sorted_lists_295
+  ... and 3005 more
+
+FORMAT COMPLIANCE BY MODE (v5.0)
+----------------------------------------
+  TEACHING (900 examples):
+    [EXPLAIN]/[TEMPLATE]/[GUIDE]: 900/900 (100.0%)
+    Has blanks: 900/900 (100.0%)
+  DEBUG (600 examples):
+    Has 🔴/🟢 markers: 600/600 (100.0%)
+  EXPLAIN (300 examples):
+    Has **A)/**B) structure: 300/300 (100.0%)
+  FOLLOWUP (200 examples):
+    Concise (<500 chars): 200/200 (100.0%)
+
+BEHAVIOR SIMULATION RESULTS
+----------------------------------------
+  Fully compliant samples: 20/20
+  Average blank count: 6.1
+  Average response length: 702 chars
+
+RECOMMENDATIONS
+----------------------------------------
+  1. Remove duplicate examples (cleaned file generated)
+  4. Consider adding more problem variety (currently 13)
+  Data quality is GOOD - ready for training!
+
+================================================================================
+END OF REPORT
+================================================================================

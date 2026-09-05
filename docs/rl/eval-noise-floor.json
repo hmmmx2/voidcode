@@ -1,0 +1,31 @@
+{
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "problems": 60,
+  "eval_group": 8,
+  "run_a": {
+    "problems": 60,
+    "solved_any": 6,
+    "solve_rate": 0.1,
+    "mean_case_fraction": 0.0944,
+    "case_fraction_se": 0.0107,
+    "greedy_solved": 4,
+    "greedy_case_fraction": 0.1231
+  },
+  "run_b": {
+    "problems": 60,
+    "solved_any": 6,
+    "solve_rate": 0.1,
+    "mean_case_fraction": 0.0944,
+    "case_fraction_se": 0.0107,
+    "greedy_solved": 4,
+    "greedy_case_fraction": 0.1231
+  },
+  "abs_diff": {
+    "solve_rate": 0.0,
+    "mean_case_fraction": 0.0,
+    "greedy_case_fraction": 0.0
+  },
+  "greedy_deterministic": true,
+  "common_random_numbers_working": true,
+  "detection_threshold": 0.0214
+}

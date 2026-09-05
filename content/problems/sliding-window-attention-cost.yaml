@@ -1,0 +1,82 @@
+slug: sliding-window-attention-cost
+title: What sliding-window attention actually saves
+difficulty: medium
+categories:
+- LLM
+concepts:
+- attention_variants
+- flash_attention
+description: 'Input: `seq_len window`.
+
+
+  Full causal attention scores `n(n+1)/2` pairs. A causal sliding window of size `w` scores at most `w`
+  previous positions per query, so position i scores `min(i + 1, w)` pairs.
+
+
+  Return `full windowed saved_pct`, the first two as integers and the percentage saved rounded to 1 decimal
+  place.
+
+
+  A window at least as large as the sequence saves nothing, and the arithmetic should show exactly 0.0
+  rather than a small negative number.'
+order_index: 59
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def cost(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().cost(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def cost(self, tokens):\n        n = int(tokens[0]);\
+  \ w = int(tokens[1])\n        if n <= 0:\n            return '0 0 0.0'\n        full = n * (n + 1) //\
+  \ 2\n        win = sum(min(i + 1, w) for i in range(n))\n        pct = round((full - win) / full * 100,\
+  \ 1)\n        return str(full) + ' ' + str(win) + ' ' + str(pct)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 8 4
+  expected_output: 36 26 27.8
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 8 8
+  expected_output: 36 36 0.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1024 128
+  expected_output: 524800 122944 76.6
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 4 1
+  expected_output: 10 4 60.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 8 100
+  expected_output: 36 36 0.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 1
+  expected_output: 3 2 33.3
+  is_hidden: true
+hints:
+- Sum min(i+1, w) for i in 0..n-1; the early positions cannot fill the window.
+- Full causal is n(n+1)/2, not n^2 -- the mask removes half.
+- saved_pct = (full - windowed) / full * 100.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

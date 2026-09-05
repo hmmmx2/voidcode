@@ -1,0 +1,83 @@
+slug: linear-lr-scaling-rule
+title: Scale the learning rate with the batch size
+difficulty: medium
+categories:
+- DL
+concepts:
+- lr_scheduling
+- optimizers_sgd
+description: 'Input: `base_lr base_batch new_batch warmup_epochs`.
+
+
+  The linear scaling rule multiplies the learning rate by the same factor as the batch size: `new_lr =
+  base_lr * new_batch / base_batch`. Return `new_lr needs_warmup`, with the rate rounded to 6 decimal
+  places and `needs_warmup` as `1` or `0`.
+
+
+  Warmup is needed when the scaling factor exceeds 2 — the regime where the rule starts to break because
+  early updates are large relative to how well the gradient is estimated. Report `0` for warmup when `warmup_epochs`
+  is already greater than 0, since it is then already handled.
+
+
+  The rule is an empirical finding with a known breakdown at very large batches, not a law.'
+order_index: 55
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def scale(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().scale(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def scale(self, tokens):\n        lr = float(tokens[0]);\
+  \ b0 = float(tokens[1])\n        b1 = float(tokens[2]); we = float(tokens[3])\n        if b0 == 0:\n\
+  \            return '0.0 0'\n        factor = b1 / b0\n        need = 1 if (factor > 2 and we == 0)\
+  \ else 0\n        return str(round(lr * factor, 6)) + ' ' + str(need)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 0.1 256 256 0
+  expected_output: 0.1 0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 0.1 256 1024 0
+  expected_output: 0.4 1
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0.1 256 1024 5
+  expected_output: 0.4 0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0.1 256 128 0
+  expected_output: 0.05 0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.1 256 512 0
+  expected_output: 0.2 0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 0.1 0 512 0
+  expected_output: 0.0 0
+  is_hidden: true
+hints:
+- The factor is new_batch / base_batch; the rate scales by exactly that.
+- needs_warmup is 1 only when the factor > 2 AND warmup_epochs == 0.
+- A factor below 1 (smaller batch) never needs warmup.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

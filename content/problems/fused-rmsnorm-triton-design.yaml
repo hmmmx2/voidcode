@@ -1,0 +1,74 @@
+slug: fused-rmsnorm-triton-design
+title: Design a fused RMSNorm kernel, and justify the fusion
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- triton_basics
+- kernel_fusion
+grading: rubric
+description: 'Describe how you would write a fused RMSNorm kernel in Triton, and argue whether the fusion
+  is
+
+  worth doing for this workload.
+
+
+  Cover the block/program decomposition, what lives in SRAM versus HBM, how the reduction is done,
+
+  and how the backward pass is handled. Then answer the harder question: **when is this fusion not
+
+  worth it?**
+
+
+  **Why this is graded by rubric and not by execution.** Running a Triton kernel needs a GPU, and
+
+  sandboxing untrusted device code is a materially harder problem than the CPU sandbox — it is
+
+  untrusted code with device access, not a scale problem. That capability is deliberately descoped,
+
+  so this asks you to reason about the kernel rather than to run one.
+
+
+  **The negative result is part of the answer, and it is measured.** This project wrote and
+
+  benchmarked exactly this kernel: the fused cross-entropy was kept at 1.21x faster and 25% less
+
+  memory, while **the fused RMSNorm came out 47% SLOWER than the PyTorch eager version and was
+
+  rejected.** RMSNorm is memory-bandwidth-bound and already close to optimal in eager mode; there is
+
+  very little arithmetic to fuse and the kernel launch plus a hand-written reduction did not beat
+
+  cuBLAS-adjacent tuned code.
+
+
+  An answer that explains how to fuse it without addressing whether it should be fused is incomplete.
+
+  An answer that predicts the fusion loses, and says why, is the strongest one available.'
+hints:
+- 'Think about arithmetic intensity: how many FLOPs per byte moved does RMSNorm actually have?'
+- The backward pass needs the same reduction. Does recomputing it beat storing it?
+- Compare against torch.compile output, not just eager — that is the real baseline.
+hint_ladder:
+  level_0: 'Think about arithmetic intensity: how many FLOPs per byte moved does RMSNorm actually have?'
+  level_1: The backward pass needs the same reduction. Does recomputing it beat storing it?
+  level_2: Compare against torch.compile output, not just eager — that is the real baseline.
+rubric:
+- criterion: 'Decomposition: one program per row/token, reduction across the hidden dimension, with a
+    sensible BLOCK_SIZE and a note on why it is a power of two.'
+  weight: 0.2
+- criterion: 'Memory hierarchy: loads the row into SRAM once, performs the sum-of-squares reduction there,
+    and avoids a second HBM round trip for the normalisation.'
+  weight: 0.2
+- criterion: Backward pass addressed at all — most answers stop at forward. Credit for recognising the
+    reduction is needed again and reasoning about recompute vs store.
+  weight: 0.2
+- criterion: 'Arithmetic intensity: identifies RMSNorm as memory-bandwidth-bound, with few FLOPs per byte,
+    so fusion has little arithmetic to hide behind the traffic.'
+  weight: 0.25
+- criterion: Reaches a defensible verdict on whether to ship it, and names a condition that would change
+    the answer (larger hidden size, fusing into an adjacent op, a different baseline than eager).
+  weight: 0.15
+inferred_concepts: false
+review_needed: false
+source_kind: problem

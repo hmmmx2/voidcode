@@ -1,0 +1,236 @@
+slug: iq-count-transformer-params
+title: Count the parameters of a transformer config
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- linear_layers
+description: "Return the parameter count of a decoder-only transformer, broken into its parts.\n\n```\n\
+  class Solution(object):\n    def param_count(self, d_model, n_layers, d_ff, vocab,\n               \
+  \     n_heads, n_kv_heads, tied, gated):\n        # -> [attn_per_layer, ffn_per_layer, embedding, total]\n\
+  ```\n\n**Attention block, per layer.** With `head_dim = d_model // n_heads` and `kv_dim = n_kv_heads\
+  \ * head_dim`:\n\n```\nQ: d_model * d_model\nK: d_model * kv_dim\nV: d_model * kv_dim\nO: d_model *\
+  \ d_model\nattn_per_layer = 2*d_model^2 + 2*d_model*kv_dim\n```\n\nWhen `n_kv_heads == n_heads` this\
+  \ collapses to `4*d_model^2`. Grouped-query attention shrinks **only K and V** — Q still projects to\
+  \ the full `d_model`, and O still maps `d_model` back to `d_model`. Dropping O and writing `3*d_model^2`\
+  \ is the classic miscount.\n\n**FFN block, per layer.**\n\n```\ngated == 0 (ReLU/GELU MLP): up d_model*d_ff,\
+  \ down d_ff*d_model  -> 2*d_model*d_ff\ngated == 1 (SwiGLU-style):  gate + up + down               \
+  \     -> 3*d_model*d_ff\n```\n\n**Embeddings.** `vocab * d_model` when `tied` is true (input table reused\
+  \ as the output head), `2 * vocab * d_model` when untied.\n\n**Total.** `n_layers * (attn_per_layer\
+  \ + ffn_per_layer) + embedding`.\n\n**Ignore** biases, normalization scales/offsets, and positional\
+  \ tables — they are well under 0.1% here. Every returned value is an exact integer; use integer arithmetic\
+  \ (`//`) and return `int`s, not floats.\n\nStandard library only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 9
+examples:
+- input: d_model=4096, n_layers=32, d_ff=16384, vocab=32000, n_heads=32, n_kv_heads=32, tied=1, gated=0
+  output: '[67108864, 134217728, 131072000, 6573522944]'
+  explanation: 4096^2 = 16,777,216. Attention is 4 of them = 67.1M; the FFN is 8 of them = 134.2M — so
+    two thirds of every layer sits in the MLP, not in attention. 201.3M per layer times 32 layers is 6.44B,
+    plus a 131M tied embedding table gives a '7B' model.
+- input: same but n_kv_heads=8
+  output: '[41943040, 134217728, 131072000, 5768216576]'
+  explanation: head_dim = 128, kv_dim = 1024. K and V drop to 4.19M each while Q and O stay at 16.8M each,
+    so attention falls from 67.1M to 41.9M and the whole model loses 0.8B parameters.
+constraints:
+- 1 <= d_model <= 2^16, and d_model % n_heads == 0
+- 1 <= n_kv_heads <= n_heads
+- 1 <= n_layers <= 200, 1 <= vocab <= 10^6
+- tied and gated are 0 or 1
+- Ignore biases, norm parameters and positional tables.
+- Return exact integers, not floats.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: d_model
+    value: '4096'
+  - name: n_layers
+    value: '32'
+  - name: d_ff
+    value: '16384'
+  - name: vocab
+    value: '32000'
+  - name: n_heads
+    value: '32'
+  - name: n_kv_heads
+    value: '32'
+  - name: tied
+    value: '1'
+  - name: gated
+    value: '0'
+  stdin: '4096
+
+    32
+
+    16384
+
+    32000
+
+    32
+
+    32
+
+    1
+
+    0'
+  expected_output: '[67108864, 134217728, 131072000, 6573522944]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: d_model
+    value: '4096'
+  - name: n_layers
+    value: '32'
+  - name: d_ff
+    value: '16384'
+  - name: vocab
+    value: '32000'
+  - name: n_heads
+    value: '32'
+  - name: n_kv_heads
+    value: '8'
+  - name: tied
+    value: '1'
+  - name: gated
+    value: '0'
+  stdin: '4096
+
+    32
+
+    16384
+
+    32000
+
+    32
+
+    8
+
+    1
+
+    0'
+  expected_output: '[41943040, 134217728, 131072000, 5768216576]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: d_ff
+    value: '11008'
+  - name: tied
+    value: '0'
+  - name: gated
+    value: '1'
+  stdin: '4096
+
+    32
+
+    11008
+
+    32000
+
+    32
+
+    32
+
+    0
+
+    1'
+  expected_output: '[67108864, 135266304, 262144000, 6738149376]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: d_model
+    value: '1024'
+  - name: n_layers
+    value: '12'
+  - name: vocab
+    value: '32000'
+  stdin: '1024
+
+    12
+
+    4096
+
+    32000
+
+    16
+
+    16
+
+    1
+
+    0'
+  expected_output: '[4194304, 8388608, 32768000, 183762944]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: n_kv_heads
+    value: '1'
+  - name: vocab
+    value: '50257'
+  - name: tied
+    value: '0'
+  stdin: '2048
+
+    24
+
+    8192
+
+    50257
+
+    16
+
+    1
+
+    0
+
+    0'
+  expected_output: '[8912896, 33554432, 205852672, 1225068544]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def param_count(self, d_model, n_layers, d_ff, vocab,\n\
+    \                    n_heads, n_kv_heads, tied, gated):\n        \"\"\"\n        :type d_model: int\n\
+    \        :type n_layers: int\n        :type d_ff: int\n        :type vocab: int\n        :type n_heads:\
+    \ int\n        :type n_kv_heads: int\n        :type tied: bool\n        :type gated: bool\n      \
+    \  :rtype: List[int]  -- [attn_per_layer, ffn_per_layer, embedding, total]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    d_model = int(_in[0])
+
+    n_layers = int(_in[1])
+
+    d_ff = int(_in[2])
+
+    vocab = int(_in[3])
+
+    n_heads = int(_in[4])
+
+    n_kv_heads = int(_in[5])
+
+    tied = bool(int(_in[6]))
+
+    gated = bool(int(_in[7]))
+
+    _r = Solution().param_count(d_model, n_layers, d_ff, vocab, n_heads, n_kv_heads, tied, gated)
+
+    print(_r)
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def param_count(self, d_model, n_layers, d_ff, vocab,\n\
+  \                    n_heads, n_kv_heads, tied, gated):\n        head_dim = d_model // n_heads\n   \
+  \     kv_dim = n_kv_heads * head_dim\n        # Q and O are always full width; only K and V follow the\
+  \ KV-head count.\n        attn = 2 * d_model * d_model + 2 * d_model * kv_dim\n        ffn = (3 if gated\
+  \ else 2) * d_model * d_ff\n        embedding = vocab * d_model if tied else 2 * vocab * d_model\n \
+  \       total = n_layers * (attn + ffn) + embedding\n        return [attn, ffn, embedding, total]\n"

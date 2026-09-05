@@ -1,0 +1,85 @@
+slug: early-stopping-decision
+title: Decide when to stop from a validation curve
+difficulty: medium
+categories:
+- ML
+concepts:
+- regularization
+description: 'Input: `patience min_delta`, then the validation loss at each epoch in order.
+
+
+  Stop at the first epoch where the loss has failed to improve by more than `min_delta` over the best
+  value so far, for `patience` consecutive epochs. Return `stop_epoch best_epoch` as 0-based indices;
+  if it never triggers, return `-1 best_epoch`.
+
+
+  The distinction that matters: you stop at the patience epoch, but the model you keep is from `best_epoch`.
+  Reporting the stopping epoch''s loss as the result is a common and quiet mistake — it is by construction
+  worse than the checkpoint you actually saved.'
+order_index: 56
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def stop(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().stop(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def stop(self, tokens):\n        pat = int(tokens[0]);\
+  \ md = float(tokens[1])\n        losses = [float(x) for x in tokens[2:]]\n        if not losses:\n \
+  \           return '-1 -1'\n        best = losses[0]; best_i = 0; bad = 0\n        for i in range(1,\
+  \ len(losses)):\n            if losses[i] < best - md:\n                best = losses[i]; best_i = i;\
+  \ bad = 0\n            else:\n                bad += 1\n                if bad >= pat:\n           \
+  \         return str(i) + ' ' + str(best_i)\n        return '-1 ' + str(best_i)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 0.0 1.0 0.9 0.8 0.7
+  expected_output: -1 3
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 0.0 1.0 0.9 0.95 0.96
+  expected_output: 3 1
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1 0.0 1.0 1.0
+  expected_output: 1 0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 3 0.05 1.0 0.99 0.98 0.97
+  expected_output: 3 0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 2 0.0 1.0
+  expected_output: -1 0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 0.0 1.0 0.5 0.6 0.4 0.7 0.8
+  expected_output: 5 3
+  is_hidden: true
+hints:
+- An improvement must beat best - min_delta, not just best.
+- The counter resets on any real improvement.
+- best_epoch is where the minimum occurred, not where you stopped.
+hint_ladder:
+  level_0: An improvement must beat best - min_delta, not just best.
+  level_1: The counter resets on any real improvement.
+  level_2: best_epoch is where the minimum occurred, not where you stopped.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

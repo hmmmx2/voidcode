@@ -1,0 +1,811 @@
+# VoidCode AI — Programming Concept Taxonomy
+#
+# Spec §4.2. 80 concepts. This file is the single source of truth for the taxonomy;
+# spec §9 also lists a copy under features/, which would be a drift hazard — see
+# docs/OPEN_QUESTIONS.md Q-005. Do not duplicate it.
+#
+# Used by:
+#   - Phase 2 feature pipeline  (per-learner per-concept mastery vectors)
+#   - Phase 3 candidate generation (prerequisite-graph walk) and ranking features
+#   - Phase 3 course assembly (module ordering follows the prerequisite DAG)
+#
+# `prerequisites` forms a DAG. features/taxonomy.py asserts it is acyclic and that
+# every referenced id exists; that assertion is a test, not a comment.
+#
+# `tag_mappings` projects Codeforces' 38 official problem tags onto this taxonomy.
+# A single coarse tag such as "dp" spans a wide difficulty range, so each rule is
+# additionally gated on the problem's Codeforces rating (800–3500). This is a
+# deliberate modelling choice: rating bands act as a proxy for sub-concept
+# specificity, because the tag alone cannot distinguish a 1D dp warm-up from a
+# bitmask dp. Documented in docs/RANKING_DESIGN.md.
+
+version: 1
+source_tag_vocabulary: codeforces/problemset.problems (38 tags, fetched 2026-07-26)
+max_concepts_per_problem: 4
+
+categories:
+  - id: foundations
+    name: Language and Program Foundations
+  - id: data_structures
+    name: Data Structures
+  - id: techniques
+    name: Algorithmic Techniques
+  - id: recursion_dp
+    name: Recursion and Dynamic Programming
+  - id: graphs
+    name: Graphs and Trees
+  - id: math
+    name: Mathematics
+  - id: strings
+    name: Strings
+  - id: geometry
+    name: Geometry
+
+  # ── ML / DL / systems, added for V1 ─────────────────────────────────────────
+  # The taxonomy held 88 concepts and none of them were ML, so the platform's
+  # headline area had no backbone: ranking had nothing to rank against, and course
+  # assembly had no prerequisite order to follow. These seven categories map onto
+  # the five areas the revised plan names (Python for ML/DL, LLM, VLM, CUDA and
+  # kernels, ML systems design).
+  - id: ml_foundations
+    name: Python and Tensors for ML
+  - id: deep_learning
+    name: Deep Learning Fundamentals
+  - id: transformers
+    name: Transformer Architecture
+  - id: training_systems
+    name: Training at Scale
+  - id: gpu_kernels
+    name: GPU Programming and Kernels
+  - id: vision_language
+    name: Vision and Multimodal
+  - id: inference_systems
+    name: Inference and Serving
+
+concepts:
+  # ── foundations ─────────────────────────────────────────────────────────────
+  - id: variables_and_types
+    name: Variables and Primitive Types
+    category: foundations
+    prerequisites: []
+  - id: control_flow
+    name: Conditionals and Loops
+    category: foundations
+    prerequisites: [variables_and_types]
+  - id: io_and_parsing
+    name: Input Reading and Output Formatting
+    category: foundations
+    prerequisites: [variables_and_types]
+  - id: functions_and_scope
+    name: Functions, Parameters and Scope
+    category: foundations
+    prerequisites: [control_flow]
+  - id: arrays_and_indexing
+    name: Arrays and Indexing
+    category: foundations
+    prerequisites: [control_flow]
+  - id: strings_basics
+    name: String Representation and Indexing
+    category: foundations
+    prerequisites: [arrays_and_indexing]
+  - id: complexity_analysis
+    name: Time and Space Complexity
+    category: foundations
+    prerequisites: [functions_and_scope]
+
+  # ── data structures ─────────────────────────────────────────────────────────
+  - id: dynamic_arrays
+    name: Dynamic Arrays and Vectors
+    category: data_structures
+    prerequisites: [arrays_and_indexing]
+  - id: hash_maps
+    name: Hash Maps and Dictionaries
+    category: data_structures
+    prerequisites: [arrays_and_indexing]
+  - id: sets
+    name: Sets and Membership Testing
+    category: data_structures
+    prerequisites: [hash_maps]
+  - id: stacks
+    name: Stacks and LIFO Patterns
+    category: data_structures
+    prerequisites: [dynamic_arrays]
+  - id: queues_and_deques
+    name: Queues and Double-Ended Queues
+    category: data_structures
+    prerequisites: [dynamic_arrays]
+  - id: heaps_priority_queues
+    name: Heaps and Priority Queues
+    category: data_structures
+    prerequisites: [arrays_and_indexing, complexity_analysis]
+  - id: linked_lists
+    name: Linked Lists and Pointer Manipulation
+    category: data_structures
+    prerequisites: [functions_and_scope]
+  - id: binary_search_trees
+    name: Binary Search Trees
+    category: data_structures
+    prerequisites: [linked_lists, recursion_basics]
+  - id: fenwick_tree
+    name: Fenwick / Binary Indexed Tree
+    category: data_structures
+    prerequisites: [prefix_sums]
+  - id: segment_tree
+    name: Segment Trees
+    category: data_structures
+    prerequisites: [fenwick_tree, recursion_basics]
+  - id: disjoint_set_union
+    name: Disjoint Set Union / Union-Find
+    category: data_structures
+    prerequisites: [arrays_and_indexing]
+  - id: sparse_table
+    name: Sparse Tables and Idempotent Range Queries
+    category: data_structures
+    prerequisites: [prefix_sums, complexity_analysis]
+
+  # ── techniques ──────────────────────────────────────────────────────────────
+  - id: sorting_basics
+    name: Sorting Algorithms and Library Sorts
+    category: techniques
+    prerequisites: [arrays_and_indexing, complexity_analysis]
+  - id: custom_comparators
+    name: Custom Comparators and Multi-Key Ordering
+    category: techniques
+    prerequisites: [sorting_basics]
+  - id: binary_search
+    name: Binary Search over a Sorted Array
+    category: techniques
+    prerequisites: [sorting_basics]
+  - id: binary_search_on_answer
+    name: Binary Search on the Answer
+    category: techniques
+    prerequisites: [binary_search]
+  - id: ternary_search
+    name: Ternary Search on Unimodal Functions
+    category: techniques
+    prerequisites: [binary_search]
+  - id: two_pointers
+    name: Two Pointers
+    category: techniques
+    prerequisites: [arrays_and_indexing]
+  - id: sliding_window
+    name: Sliding Window
+    category: techniques
+    prerequisites: [two_pointers]
+  - id: prefix_sums
+    name: Prefix Sums and Cumulative Arrays
+    category: techniques
+    prerequisites: [arrays_and_indexing]
+  - id: difference_arrays
+    name: Difference Arrays and Range Updates
+    category: techniques
+    prerequisites: [prefix_sums]
+  - id: greedy_exchange_argument
+    name: Greedy Choice and Exchange Arguments
+    category: techniques
+    prerequisites: [sorting_basics]
+  - id: brute_force_enumeration
+    name: Exhaustive Enumeration
+    category: techniques
+    prerequisites: [control_flow]
+  - id: bit_manipulation
+    name: Bitwise Operations and Masks
+    category: techniques
+    prerequisites: [variables_and_types]
+  - id: meet_in_the_middle
+    name: Meet in the Middle
+    category: techniques
+    prerequisites: [brute_force_enumeration, bit_manipulation]
+  - id: constructive_reasoning
+    name: Constructive Algorithms and Invariants
+    category: techniques
+    prerequisites: [brute_force_enumeration]
+  - id: implementation_simulation
+    name: Direct Simulation and Careful Implementation
+    category: techniques
+    prerequisites: [control_flow, arrays_and_indexing]
+  - id: interactive_protocols
+    name: Interactive Problems and Query Budgets
+    category: techniques
+    prerequisites: [io_and_parsing]
+
+  # ── recursion and dynamic programming ───────────────────────────────────────
+  - id: recursion_basics
+    name: Recursion and Base Cases
+    category: recursion_dp
+    prerequisites: [functions_and_scope]
+  - id: backtracking
+    name: Backtracking and Pruning
+    category: recursion_dp
+    prerequisites: [recursion_basics]
+  - id: divide_and_conquer
+    name: Divide and Conquer
+    category: recursion_dp
+    prerequisites: [recursion_basics]
+  - id: memoisation
+    name: Recursion with Memoisation
+    category: recursion_dp
+    prerequisites: [recursion_basics, hash_maps]
+  - id: dp_one_dimensional
+    name: One-Dimensional Dynamic Programming
+    category: recursion_dp
+    prerequisites: [memoisation]
+  - id: dp_on_sequences
+    name: Dynamic Programming on Sequences
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional]
+  - id: dp_knapsack
+    name: Knapsack and Subset-Sum Dynamic Programming
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional]
+  - id: dp_on_grids
+    name: Dynamic Programming on Grids
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional]
+  - id: dp_bitmask
+    name: Bitmask Dynamic Programming
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional, bit_manipulation]
+  - id: dp_on_trees
+    name: Dynamic Programming on Trees
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional, tree_traversal]
+  - id: dp_digit
+    name: Digit Dynamic Programming
+    category: recursion_dp
+    prerequisites: [dp_one_dimensional, arithmetic_and_modulo]
+
+  # ── graphs and trees ────────────────────────────────────────────────────────
+  - id: graph_representation
+    name: Graph Representation and Adjacency Structures
+    category: graphs
+    prerequisites: [dynamic_arrays, hash_maps]
+  - id: depth_first_search
+    name: Depth-First Search
+    category: graphs
+    prerequisites: [graph_representation, recursion_basics]
+  - id: breadth_first_search
+    name: Breadth-First Search
+    category: graphs
+    prerequisites: [graph_representation, queues_and_deques]
+  - id: tree_traversal
+    name: Tree Traversal and Rooting
+    category: graphs
+    prerequisites: [depth_first_search]
+  - id: shortest_paths_unweighted
+    name: Shortest Paths in Unweighted Graphs
+    category: graphs
+    prerequisites: [breadth_first_search]
+  - id: dijkstra
+    name: Dijkstra's Algorithm
+    category: graphs
+    prerequisites: [shortest_paths_unweighted, heaps_priority_queues]
+  - id: bellman_ford_floyd
+    name: Bellman-Ford and Floyd-Warshall
+    category: graphs
+    prerequisites: [shortest_paths_unweighted]
+  - id: topological_sort
+    name: Topological Sorting of a DAG
+    category: graphs
+    prerequisites: [depth_first_search]
+  - id: minimum_spanning_tree
+    name: Minimum Spanning Trees
+    category: graphs
+    prerequisites: [disjoint_set_union, sorting_basics]
+  - id: lowest_common_ancestor
+    name: Lowest Common Ancestor and Binary Lifting
+    category: graphs
+    prerequisites: [tree_traversal, sparse_table]
+  - id: strongly_connected_components
+    name: Strongly Connected Components
+    category: graphs
+    prerequisites: [depth_first_search]
+  - id: max_flow
+    name: Maximum Flow
+    category: graphs
+    prerequisites: [breadth_first_search, graph_representation]
+  - id: bipartite_matching
+    name: Bipartite Matching
+    category: graphs
+    prerequisites: [max_flow]
+  - id: two_sat
+    name: 2-Satisfiability
+    category: graphs
+    prerequisites: [strongly_connected_components]
+
+  # ── mathematics ─────────────────────────────────────────────────────────────
+  - id: arithmetic_and_modulo
+    name: Integer Arithmetic and Modular Reduction
+    category: math
+    prerequisites: [variables_and_types]
+  - id: number_theory_gcd
+    name: GCD, LCM and the Euclidean Algorithm
+    category: math
+    prerequisites: [arithmetic_and_modulo]
+  - id: primes_and_sieve
+    name: Primality and the Sieve of Eratosthenes
+    category: math
+    prerequisites: [number_theory_gcd]
+  - id: modular_exponentiation
+    name: Modular Exponentiation and Inverses
+    category: math
+    prerequisites: [arithmetic_and_modulo, recursion_basics]
+  - id: combinatorics
+    name: Counting, Permutations and Binomials
+    category: math
+    prerequisites: [arithmetic_and_modulo]
+  - id: probability_expectation
+    name: Probability and Expected Value
+    category: math
+    prerequisites: [combinatorics]
+  - id: matrix_operations
+    name: Matrix Representation and Multiplication
+    category: math
+    prerequisites: [arrays_and_indexing]
+  - id: matrix_exponentiation
+    name: Matrix Exponentiation for Linear Recurrences
+    category: math
+    prerequisites: [matrix_operations, modular_exponentiation]
+  - id: game_theory_nim
+    name: Impartial Games, Nim and Grundy Numbers
+    category: math
+    prerequisites: [bit_manipulation, combinatorics]
+  - id: chinese_remainder
+    name: Chinese Remainder Theorem
+    category: math
+    prerequisites: [number_theory_gcd, modular_exponentiation]
+  - id: fft_convolution
+    name: Fast Fourier Transform and Convolution
+    category: math
+    prerequisites: [combinatorics, divide_and_conquer]
+
+  # ── strings ─────────────────────────────────────────────────────────────────
+  - id: string_manipulation
+    name: String Building, Slicing and Transformation
+    category: strings
+    prerequisites: [strings_basics]
+  - id: string_hashing
+    name: Polynomial String Hashing
+    category: strings
+    prerequisites: [strings_basics, arithmetic_and_modulo]
+  - id: kmp_prefix_function
+    name: KMP and the Prefix Function
+    category: strings
+    prerequisites: [strings_basics]
+  - id: trie
+    name: Tries and Prefix Trees
+    category: strings
+    prerequisites: [strings_basics, graph_representation]
+  - id: suffix_structures
+    name: Suffix Arrays and Suffix Automata
+    category: strings
+    prerequisites: [kmp_prefix_function]
+  - id: expression_parsing
+    name: Expression Parsing and Evaluation
+    category: strings
+    prerequisites: [stacks, strings_basics]
+
+  # ── geometry ────────────────────────────────────────────────────────────────
+  - id: geometry_primitives
+    name: Points, Vectors and Cross Products
+    category: geometry
+    prerequisites: [arithmetic_and_modulo]
+  - id: convex_hull
+    name: Convex Hull
+    category: geometry
+    prerequisites: [geometry_primitives, sorting_basics]
+  - id: line_sweep
+    name: Line Sweep and Interval Events
+    category: geometry
+    prerequisites: [sorting_basics, geometry_primitives]
+
+  # ── ml_foundations ──────────────────────────────────────────────────────────
+  # Roots at `functions_and_scope` rather than at nothing: a learner who cannot
+  # write a function cannot write a training loop, and the prerequisite graph is
+  # what course assembly walks. Cross-category edges are the point, not a smell.
+  - id: tensors_and_shapes
+    name: Tensors, Shapes and Broadcasting
+    category: ml_foundations
+    prerequisites: [arrays_and_indexing, functions_and_scope]
+  - id: vectorization
+    name: Vectorized Operations and Avoiding Python Loops
+    category: ml_foundations
+    prerequisites: [tensors_and_shapes]
+  - id: classification_metrics
+    name: Precision, Recall and Reading a Confusion Matrix
+    category: ml_foundations
+    # Added because the taxonomy had no home for it and a real item was mis-filed as a result:
+    # `compute-metrics-from-confusion` ("Score a classifier from four raw counts") carried
+    # `kernel_fusion`, a GPU concept, because migration inferred tags by keyword-matching slugs and
+    # "compute" matched. The tag review surfaced it.
+    #
+    # Prerequisite is arithmetic only. Precision and recall are ratios of four counts — the difficulty
+    # is knowing WHICH ratio answers which question, not computing it, so listing tensors or arrays
+    # here would overstate what a learner needs first.
+    prerequisites: [arithmetic_and_modulo]
+  - id: numerical_stability
+    name: Numerical Stability, Overflow and Log-Space
+    category: ml_foundations
+    prerequisites: [tensors_and_shapes]
+  - id: autograd
+    name: Automatic Differentiation and Computation Graphs
+    category: ml_foundations
+    prerequisites: [tensors_and_shapes, recursion_basics]
+  - id: dataloading
+    name: Datasets, Batching and Collation
+    category: ml_foundations
+    prerequisites: [tensors_and_shapes]
+  - id: einsum_notation
+    name: Einstein Summation and Tensor Contraction
+    category: ml_foundations
+    prerequisites: [vectorization]
+
+  # ── deep_learning ───────────────────────────────────────────────────────────
+  - id: linear_layers
+    name: Linear Layers and Matrix Multiplication
+    category: deep_learning
+    prerequisites: [tensors_and_shapes]
+  - id: activations
+    name: Activation Functions
+    category: deep_learning
+    prerequisites: [linear_layers]
+  - id: loss_functions
+    name: Loss Functions and Cross-Entropy
+    category: deep_learning
+    prerequisites: [linear_layers, numerical_stability]
+  - id: backpropagation
+    name: Backpropagation and the Chain Rule
+    category: deep_learning
+    prerequisites: [autograd, loss_functions]
+  - id: optimizers_sgd
+    name: SGD, Momentum and Learning Rates
+    category: deep_learning
+    prerequisites: [backpropagation]
+  - id: optimizers_adaptive
+    name: Adam, AdamW and Adaptive Methods
+    category: deep_learning
+    prerequisites: [optimizers_sgd]
+  - id: normalization_layers
+    name: BatchNorm, LayerNorm and RMSNorm
+    category: deep_learning
+    prerequisites: [linear_layers, numerical_stability]
+  - id: regularization
+    name: Dropout, Weight Decay and Overfitting
+    category: deep_learning
+    prerequisites: [optimizers_sgd]
+  - id: initialization
+    name: Weight Initialization Schemes
+    category: deep_learning
+    prerequisites: [linear_layers]
+  - id: lr_scheduling
+    name: Learning Rate Schedules and Warmup
+    category: deep_learning
+    prerequisites: [optimizers_adaptive]
+  - id: gradient_clipping
+    name: Gradient Clipping and Exploding Gradients
+    category: deep_learning
+    prerequisites: [backpropagation]
+
+  # ── transformers ────────────────────────────────────────────────────────────
+  - id: tokenization
+    name: Tokenization and Byte-Pair Encoding
+    category: transformers
+    prerequisites: [hash_maps, strings_basics]
+  - id: embeddings
+    name: Token Embeddings and the Vocabulary Matrix
+    category: transformers
+    prerequisites: [linear_layers, tokenization]
+  - id: attention_scaled_dot
+    name: Scaled Dot-Product Attention
+    category: transformers
+    prerequisites: [einsum_notation, numerical_stability, linear_layers]
+  - id: multi_head_attention
+    name: Multi-Head Attention
+    category: transformers
+    prerequisites: [attention_scaled_dot]
+  - id: attention_masking
+    name: Causal and Padding Masks
+    category: transformers
+    prerequisites: [attention_scaled_dot]
+  - id: positional_encoding
+    name: Positional Encodings and RoPE
+    category: transformers
+    prerequisites: [attention_scaled_dot]
+  - id: attention_variants
+    name: MQA, GQA and Sliding-Window Attention
+    category: transformers
+    prerequisites: [multi_head_attention]
+  - id: flash_attention
+    name: FlashAttention and IO-Aware Attention
+    category: transformers
+    prerequisites: [multi_head_attention, memory_hierarchy]
+  - id: feedforward_blocks
+    name: Feed-Forward Blocks, GLU and SwiGLU
+    category: transformers
+    prerequisites: [linear_layers, activations]
+  - id: transformer_block
+    name: Assembling a Transformer Block
+    category: transformers
+    prerequisites: [multi_head_attention, feedforward_blocks, normalization_layers]
+  - id: kv_cache
+    name: KV Caching and Autoregressive Decoding
+    category: transformers
+    prerequisites: [attention_masking, transformer_block]
+  - id: sampling_decoding
+    name: Greedy, Temperature, Top-k and Top-p Decoding
+    category: transformers
+    prerequisites: [transformer_block]
+  - id: moe_routing
+    name: Mixture of Experts and Token Routing
+    category: transformers
+    prerequisites: [feedforward_blocks]
+
+  # ── training_systems ────────────────────────────────────────────────────────
+  - id: mixed_precision
+    name: FP16, BF16 and Mixed-Precision Training
+    category: training_systems
+    prerequisites: [numerical_stability, optimizers_adaptive]
+  - id: gradient_checkpointing
+    name: Gradient Checkpointing and Recompute
+    category: training_systems
+    prerequisites: [backpropagation]
+  - id: gradient_accumulation
+    name: Gradient Accumulation and Effective Batch Size
+    category: training_systems
+    prerequisites: [optimizers_sgd]
+  - id: memory_accounting
+    name: Where Training Memory Actually Goes
+    category: training_systems
+    prerequisites: [mixed_precision, gradient_checkpointing]
+  - id: data_parallel
+    name: Data Parallelism and All-Reduce
+    category: training_systems
+    prerequisites: [gradient_accumulation]
+  - id: zero_sharding
+    name: ZeRO Stages and Optimizer State Sharding
+    category: training_systems
+    prerequisites: [data_parallel, memory_accounting]
+  - id: tensor_parallel
+    name: Tensor Parallelism
+    category: training_systems
+    prerequisites: [data_parallel, einsum_notation]
+  - id: pipeline_parallel
+    name: Pipeline Parallelism and Bubbles
+    category: training_systems
+    prerequisites: [data_parallel]
+  - id: collective_ops
+    name: Collective Communication and Interconnect Limits
+    category: training_systems
+    prerequisites: [data_parallel]
+  - id: checkpointing_recovery
+    name: Sharded Checkpointing and Fault Tolerance
+    category: training_systems
+    prerequisites: [zero_sharding]
+  - id: peft_lora
+    name: LoRA and Parameter-Efficient Fine-Tuning
+    category: training_systems
+    prerequisites: [linear_layers, memory_accounting]
+  - id: rlhf_grpo
+    name: RLHF, PPO and GRPO
+    category: training_systems
+    prerequisites: [sampling_decoding, optimizers_adaptive]
+
+  # ── gpu_kernels ─────────────────────────────────────────────────────────────
+  - id: gpu_execution_model
+    name: Threads, Warps, Blocks and Grids
+    category: gpu_kernels
+    prerequisites: [control_flow, arrays_and_indexing]
+  - id: memory_hierarchy
+    name: Global, Shared and Register Memory
+    category: gpu_kernels
+    prerequisites: [gpu_execution_model]
+  - id: memory_coalescing
+    name: Coalesced Memory Access
+    category: gpu_kernels
+    prerequisites: [memory_hierarchy]
+  - id: occupancy
+    name: Occupancy and Latency Hiding
+    category: gpu_kernels
+    prerequisites: [gpu_execution_model]
+  - id: warp_divergence
+    name: Warp Divergence and Branching Cost
+    category: gpu_kernels
+    prerequisites: [gpu_execution_model]
+  - id: reduction_kernels
+    name: Parallel Reductions and Scans
+    category: gpu_kernels
+    prerequisites: [memory_hierarchy, warp_divergence]
+  - id: tiled_matmul
+    name: Tiled Matrix Multiplication
+    category: gpu_kernels
+    prerequisites: [memory_coalescing, reduction_kernels]
+  - id: kernel_fusion
+    name: Kernel Fusion and Memory-Bound Operations
+    category: gpu_kernels
+    prerequisites: [memory_hierarchy, occupancy]
+  - id: triton_basics
+    name: Writing Kernels in Triton
+    category: gpu_kernels
+    prerequisites: [kernel_fusion, tiled_matmul]
+  - id: roofline_analysis
+    name: Arithmetic Intensity and the Roofline Model
+    category: gpu_kernels
+    prerequisites: [memory_coalescing, occupancy]
+
+  # ── vision_language ─────────────────────────────────────────────────────────
+  - id: convolutions
+    name: Convolutions and Receptive Fields
+    category: vision_language
+    prerequisites: [linear_layers]
+  - id: vision_transformer
+    name: Vision Transformers and Patch Embedding
+    category: vision_language
+    prerequisites: [transformer_block, convolutions]
+  - id: image_preprocessing
+    name: Image Normalization, Resizing and Augmentation
+    category: vision_language
+    prerequisites: [tensors_and_shapes]
+  - id: contrastive_pretraining
+    name: CLIP and Contrastive Image-Text Pretraining
+    category: vision_language
+    prerequisites: [vision_transformer, loss_functions]
+  - id: projection_layers
+    name: Projecting Vision Features into the LM
+    category: vision_language
+    prerequisites: [contrastive_pretraining, embeddings]
+  - id: vlm_architecture
+    name: Assembling a Vision-Language Model
+    category: vision_language
+    prerequisites: [projection_layers, kv_cache]
+
+  # ── inference_systems ───────────────────────────────────────────────────────
+  - id: quantization_basics
+    name: INT8, INT4 and Quantization Error
+    category: inference_systems
+    prerequisites: [numerical_stability, memory_accounting]
+  - id: quantization_schemes
+    name: GPTQ, AWQ and Calibration
+    category: inference_systems
+    prerequisites: [quantization_basics]
+  - id: continuous_batching
+    name: Continuous Batching and Throughput
+    category: inference_systems
+    prerequisites: [kv_cache]
+  - id: paged_attention
+    name: PagedAttention and KV Memory Fragmentation
+    category: inference_systems
+    prerequisites: [kv_cache, memory_hierarchy]
+  - id: speculative_decoding
+    name: Speculative and Assisted Decoding
+    category: inference_systems
+    prerequisites: [sampling_decoding]
+  - id: serving_latency
+    name: Latency, Throughput and Batch-Size Trade-offs
+    category: inference_systems
+    prerequisites: [continuous_batching]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Codeforces tag -> concept projection.
+#
+# Rules are evaluated in order; the first rule whose `max_rating` is >= the
+# problem's rating wins. Problems with no rating (unrated / gym) fall through to
+# `unrated_concepts`. All 38 official tags are covered; `*special` is a marker
+# rather than a concept and maps to nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+tag_mappings:
+  implementation:
+    - {max_rating: 1200, concepts: [implementation_simulation, arrays_and_indexing]}
+    - {max_rating: 1700, concepts: [implementation_simulation, string_manipulation]}
+    - {max_rating: 9999, concepts: [implementation_simulation]}
+  math:
+    - {max_rating: 1200, concepts: [arithmetic_and_modulo]}
+    - {max_rating: 1800, concepts: [number_theory_gcd, combinatorics]}
+    - {max_rating: 9999, concepts: [combinatorics, modular_exponentiation]}
+  greedy:
+    - {max_rating: 1400, concepts: [greedy_exchange_argument, sorting_basics]}
+    - {max_rating: 9999, concepts: [greedy_exchange_argument, custom_comparators]}
+  dp:
+    - {max_rating: 1300, concepts: [dp_one_dimensional]}
+    - {max_rating: 1800, concepts: [dp_on_sequences, dp_knapsack]}
+    - {max_rating: 2200, concepts: [dp_on_grids, dp_bitmask]}
+    # Advanced dp stays sequence/bitmask flavoured. Tree dp is reached through the
+    # `trees` tag, which is the reliable signal for it; routing every >2200 dp
+    # problem to dp_on_trees inflated that concept to 1,427 problems.
+    - {max_rating: 9999, concepts: [dp_on_sequences, dp_bitmask]}
+  data structures:
+    - {max_rating: 1400, concepts: [dynamic_arrays, hash_maps]}
+    - {max_rating: 1900, concepts: [heaps_priority_queues, prefix_sums]}
+    - {max_rating: 2300, concepts: [fenwick_tree, segment_tree]}
+    - {max_rating: 9999, concepts: [segment_tree, sparse_table]}
+  # Harder brute-force problems are about bounding the search space, not about
+  # meet-in-the-middle. Mapping them to meet_in_the_middle mislabelled 1,325 of
+  # 11,311 catalog problems on the first pass; that concept is now reachable only
+  # from its own dedicated tag.
+  brute force:
+    - {max_rating: 1300, concepts: [brute_force_enumeration]}
+    - {max_rating: 9999, concepts: [brute_force_enumeration, complexity_analysis]}
+  constructive algorithms:
+    - {max_rating: 9999, concepts: [constructive_reasoning]}
+  sortings:
+    - {max_rating: 1400, concepts: [sorting_basics]}
+    - {max_rating: 9999, concepts: [sorting_basics, custom_comparators]}
+  binary search:
+    - {max_rating: 1500, concepts: [binary_search]}
+    - {max_rating: 9999, concepts: [binary_search_on_answer]}
+  dfs and similar:
+    - {max_rating: 1500, concepts: [depth_first_search, graph_representation]}
+    - {max_rating: 2000, concepts: [depth_first_search, tree_traversal]}
+    - {max_rating: 9999, concepts: [strongly_connected_components, dp_on_trees]}
+  graphs:
+    - {max_rating: 1500, concepts: [graph_representation, breadth_first_search]}
+    - {max_rating: 2100, concepts: [dijkstra, topological_sort]}
+    - {max_rating: 9999, concepts: [minimum_spanning_tree, strongly_connected_components]}
+  trees:
+    - {max_rating: 1600, concepts: [tree_traversal]}
+    - {max_rating: 2200, concepts: [dp_on_trees]}
+    - {max_rating: 9999, concepts: [lowest_common_ancestor, dp_on_trees]}
+  strings:
+    - {max_rating: 1400, concepts: [strings_basics, string_manipulation]}
+    - {max_rating: 2000, concepts: [string_manipulation, kmp_prefix_function]}
+    - {max_rating: 9999, concepts: [string_hashing, kmp_prefix_function]}
+  number theory:
+    - {max_rating: 1600, concepts: [number_theory_gcd, primes_and_sieve]}
+    - {max_rating: 9999, concepts: [modular_exponentiation, chinese_remainder]}
+  combinatorics:
+    - {max_rating: 1800, concepts: [combinatorics]}
+    - {max_rating: 9999, concepts: [combinatorics, probability_expectation]}
+  bitmasks:
+    - {max_rating: 1600, concepts: [bit_manipulation]}
+    - {max_rating: 9999, concepts: [dp_bitmask, bit_manipulation]}
+  two pointers:
+    - {max_rating: 9999, concepts: [two_pointers, sliding_window]}
+  geometry:
+    - {max_rating: 1800, concepts: [geometry_primitives]}
+    - {max_rating: 9999, concepts: [convex_hull, line_sweep]}
+  probabilities:
+    - {max_rating: 9999, concepts: [probability_expectation]}
+  shortest paths:
+    - {max_rating: 1900, concepts: [shortest_paths_unweighted, dijkstra]}
+    - {max_rating: 9999, concepts: [dijkstra, bellman_ford_floyd]}
+  dsu:
+    - {max_rating: 9999, concepts: [disjoint_set_union]}
+  divide and conquer:
+    - {max_rating: 9999, concepts: [divide_and_conquer]}
+  hashing:
+    - {max_rating: 9999, concepts: [string_hashing, hash_maps]}
+  games:
+    - {max_rating: 9999, concepts: [game_theory_nim]}
+  flows:
+    - {max_rating: 9999, concepts: [max_flow]}
+  graph matchings:
+    - {max_rating: 9999, concepts: [bipartite_matching]}
+  matrices:
+    - {max_rating: 2000, concepts: [matrix_operations]}
+    - {max_rating: 9999, concepts: [matrix_exponentiation]}
+  fft:
+    - {max_rating: 9999, concepts: [fft_convolution]}
+  chinese remainder theorem:
+    - {max_rating: 9999, concepts: [chinese_remainder]}
+  meet-in-the-middle:
+    - {max_rating: 9999, concepts: [meet_in_the_middle]}
+  ternary search:
+    - {max_rating: 9999, concepts: [ternary_search]}
+  string suffix structures:
+    - {max_rating: 9999, concepts: [suffix_structures, trie]}
+  expression parsing:
+    - {max_rating: 9999, concepts: [expression_parsing, stacks]}
+  interactive:
+    - {max_rating: 9999, concepts: [interactive_protocols]}
+  2-sat:
+    - {max_rating: 9999, concepts: [two_sat]}
+  schedules:
+    - {max_rating: 9999, concepts: [greedy_exchange_argument, sorting_basics]}
+  communication:
+    - {max_rating: 9999, concepts: [interactive_protocols]}
+  "*special":
+    - {max_rating: 9999, concepts: []}
+
+# Problems carrying no usable tag, or no rating, still need at least one concept
+# or they vanish from the mastery vector entirely.
+unrated_concepts: [implementation_simulation]
+untagged_concepts: [implementation_simulation]

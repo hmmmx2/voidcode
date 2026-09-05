@@ -1,0 +1,45 @@
+slug: count-transformer-params
+title: Count the parameters of a transformer config
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- linear_layers
+description: Write a parameter counter for a decoder-only transformer, given a KV-head count and a gated-FFN
+  flag. The trap is the output projection, and the fact that K and V shrink with the KV-head count while
+  Q and O never do.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- Meta
+- OpenAI
+- NVIDIA
+prompt: Write a parameter counter for a decoder-only transformer, given a KV-head count and a gated-FFN
+  flag. The trap is the output projection, and the fact that K and V shrink with the KV-head count while
+  Q and O never do.
+approach: Build the per-layer attention cost and the per-layer FFN cost separately, then multiply by depth
+  and add the embedding table once (or twice, when untied). Attention is 2*d^2 for Q and O plus 2*d*kv_dim
+  for K and V; the FFN is 2 or 3 matrices of d by d_ff depending on gating.
+model_answer: "PER LAYER, d = 4096.\n  Attention: Q, K, V, O each d×d\n      4 d² = 4 * 4096² = 67.1M\n\
+  \  FFN (ratio 4): up d×4d, down 4d×d\n      8 d² = 134.2M\n  LayerNorms: 2 * 2d = 16K — negligible,\
+  \ but say so rather than\n      silently dropping it.\n  Total ≈ 12 d² = 201.3M per layer\n\nALL LAYERS.\
+  \  32 * 201.3M = 6.44B\nEMBEDDINGS.  32000 * 4096 = 131M, tied so counted once.\nTOTAL ≈ 6.57B  — a\
+  \ '7B' model.\n\nWHERE THE MASS SITS. The FFN is 8d² of the 12d², so **two thirds of the parameters\
+  \ are in the MLP, not attention**. That surprises people who think of transformers as attention machines,\
+  \ and it is why MoE replaces the FFN rather than attention — that is where the parameters to make conditional\
+  \ actually are.\n\nThe 12d² per layer rule is worth memorising: parameters ≈ 12 * d² * n_layers, ignoring\
+  \ embeddings. It lets you size any model in your head.\n\nNote embeddings are only 2% here but would\
+  \ be 20%+ at d_model = 1024 with the same vocab, which is why small models tie embeddings and large\
+  \ ones increasingly do not bother."
+follow_ups:
+- Redo it with GQA at 8 KV heads. How much do K and V shrink?
+- How much memory to train this in mixed precision with Adam?
+- Untie the embeddings. What changes, and when is that worth it?
+red_flags:
+- Forgetting the output projection, giving 3d² for attention instead of 4d².
+- Believing attention holds most of the parameters.
+- Counting tied embeddings twice.
+source_kind: interview_question

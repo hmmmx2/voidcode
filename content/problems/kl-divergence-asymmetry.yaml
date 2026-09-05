@@ -1,0 +1,60 @@
+slug: kl-divergence-asymmetry
+title: Compute both directions of KL with the zero cases right
+difficulty: hard
+categories:
+- ML
+- LLM
+concepts:
+- loss_functions
+description: 'Write `kl_pair(p, q)` returning `[KL(p||q), KL(q||p)]` in nats for two discrete distributions.
+  The trap is the zeros: a zero in the weighting distribution contributes nothing at all, while a zero
+  in the other one makes that whole direction infinite — and which distribution plays which role swaps
+  between the two answers.'
+inferred_concepts: true
+review_needed: true
+domain: maths
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- Google DeepMind
+prompt: 'Write `kl_pair(p, q)` returning `[KL(p||q), KL(q||p)]` in nats for two discrete distributions.
+  The trap is the zeros: a zero in the weighting distribution contributes nothing at all, while a zero
+  in the other one makes that whole direction infinite — and which distribution plays which role swaps
+  between the two answers.'
+approach: Write one helper that computes `KL(a||b)` with `a` as the weighting distribution, then call
+  it twice with the arguments swapped. Everything hinges on ordering the two zero tests correctly inside
+  the loop, since one of them must win when both entries are zero.
+model_answer: 'FORWARD.  KL(p||q) = E_p[log p/q] = integral p log(p/q)
+
+
+  The weight is p. Where p > 0 and q -> 0, log(p/q) -> +inf against non-zero weight, so the integral diverges.
+  Any mode of p that q fails to cover costs infinitely, so the minimiser stretches q across the whole
+  support of p. Mass-covering. Over-covering (q > 0 where p = 0) is zero weight times a finite integrand
+  — free.
+
+
+  REVERSE.  KL(q||p) = E_q[log q/p] = integral q log(q/p)
+
+
+  The weight is q. Where p > 0 but q = 0 the integrand is 0*log 0 = 0: no penalty whatsoever for dropping
+  a mode. But where q > 0 and p -> 0 the penalty is infinite, so q must stay under p''s support. Mode-seeking,
+  and it concentrates.
+
+
+  WHERE EACH SHOWS UP. Maximum likelihood minimises forward KL from the data distribution — which is why
+  MLE-trained models hedge and cover. Variational inference minimises reverse KL — which is why a VI posterior
+  comes out too narrow. RLHF''s penalty is also reverse, since expectations are under the policy being
+  trained, the only thing you can sample from, and that contributes to mode collapse.
+
+
+  Neither is a metric: both are asymmetric and neither satisfies the triangle inequality.'
+follow_ups:
+- Why is forward KL intractable in variational inference?
+- Show KL(p||q) >= 0 with equality iff p = q.
+- Both diverge when supports are disjoint. What do you use instead?
+red_flags:
+- Calling KL a distance, or assuming symmetry.
+- Not knowing which direction maximum likelihood minimises.
+- Missing that 0*log 0 = 0 is exactly what lets reverse KL drop a mode for free.
+source_kind: interview_question

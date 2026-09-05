@@ -1,0 +1,47 @@
+slug: context-length-extension-design
+title: Extend a 4k model to 32k context. What breaks first?
+difficulty: hard
+categories:
+- LLM
+concepts:
+- positional_encoding
+- attention_variants
+- kv_cache
+grading: rubric
+description: 'You need a model trained at 4k context to handle 32k.
+
+
+  Explain why simply feeding it 32k tokens fails, what position encodings have to do with it, and how
+  interpolation-based extension works.
+
+
+  Then do the resource arithmetic that decides feasibility: **at 8x the context, what happens to attention
+  cost and to the KV cache?** They do not scale the same way, and which one binds depends on whether you
+  are prefilling or decoding.'
+hints:
+- The model has never seen position indices beyond its training length.
+- Interpolation rescales positions into the range the model knows.
+- Attention is quadratic in sequence length; the KV cache is linear.
+hint_ladder:
+  level_0: The model has never seen position indices beyond its training length.
+  level_1: Interpolation rescales positions into the range the model knows.
+  level_2: Attention is quadratic in sequence length; the KV cache is linear.
+rubric:
+- criterion: Explains that positions beyond the training length are out of distribution, so attention
+    degrades rather than merely being imprecise.
+  weight: 0.25
+- criterion: 'Describes position interpolation: compress position indices into the trained range, usually
+    with brief fine-tuning to adapt.'
+  weight: 0.25
+- criterion: Gets the scaling right -- attention compute grows ~64x at 8x context, KV cache grows 8x --
+    and says which binds in prefill versus decode.
+  weight: 0.3
+- criterion: 'Notes that extension trades resolution: interpolated positions are closer together, so fine
+    positional distinctions weaken.'
+  weight: 0.1
+- criterion: Mentions an alternative such as NTK-aware scaling or continued pretraining at length, with
+    its cost.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

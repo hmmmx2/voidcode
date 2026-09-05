@@ -1,0 +1,293 @@
+slug: subword-units-bpe
+title: Neural Machine Translation of Rare Words with Subword Units
+difficulty: easy
+categories:
+- LLM
+concepts:
+- tokenization
+description: TODO
+inferred_concepts: true
+review_needed: true
+authors: Sennrich, Haddow, Birch
+year: 2016
+venue: ACL
+arxiv_id: '1508.07909'
+pdf_url: https://arxiv.org/pdf/1508.07909
+order_index: 2
+abstract: Translation systems had a fixed vocabulary and replaced everything outside it with a single
+  UNK token, which meant rare and unseen words were simply lost. This paper borrows a 1994 data-compression
+  algorithm, byte-pair encoding, and repurposes it to build a subword vocabulary — so any word can be
+  spelled out of pieces the model already knows. Every modern tokeniser is a descendant.
+related_problem_slugs:
+- bpe-merge
+key_equations:
+- label: The merge rule
+  latex: (a, b) \leftarrow \arg\max_{(x,y)} \; \mathrm{count}(x, y)
+  note: The entire algorithm. Repeatedly merge the most frequent adjacent pair, and stop after a chosen
+    number of merges.
+- label: Vocabulary size
+  latex: '|V| = |V_{\mathrm{base}}| + n_{\mathrm{merges}}'
+  note: Each merge adds exactly one symbol, so the vocabulary size is a dial you set rather than a number
+    you discover.
+sections:
+  architecture: '## The problem it solves
+
+
+    Before this, a translation model had a fixed vocabulary — say 50,000 words — and
+
+    everything else became `UNK`. That is catastrophic for morphologically rich
+
+    languages, for names, for numbers, and for any word coined after the training
+
+    data was collected. A German compound noun that appears twice in the corpus is
+
+    unlearnable, even though its parts appear thousands of times.
+
+
+    The obvious fix is character-level modelling, where the vocabulary is tiny and
+
+    nothing is ever unknown. But sequences become five to ten times longer, and with
+
+    attention costing `O(n^2)` that is a brutal trade.
+
+
+    ## The idea
+
+
+    Sit between the two. Start from characters, then repeatedly merge the most
+
+    frequent adjacent pair into a new symbol. Frequent words end up as single
+
+    tokens; rare words decompose into pieces; nothing is ever `UNK`.
+
+
+    The vocabulary is **learned from the corpus**, not designed. Give it 32,000
+
+    merges and it will spend them wherever the data is dense.
+
+
+    ## The training procedure
+
+
+    ```
+
+    1. Split every word into characters, with an end-of-word marker.
+
+    2. Count every adjacent symbol pair across the corpus.
+
+    3. Merge the most frequent pair into one symbol.
+
+    4. Repeat for n merges.
+
+    ```
+
+
+    The end-of-word marker matters more than it looks: without it, `est` in `estate`
+
+    and `est` in `largest` are the same symbol, and the model cannot tell a prefix
+
+    from a suffix.
+
+
+    **Implement one merge step:** `bpe-merge` in the problem catalogue grades
+
+    exactly this — counting pairs, picking the most frequent, and replacing
+
+    non-overlapping occurrences left to right.
+
+
+    ## What it became
+
+
+    Modern tokenisers are this algorithm with two changes. **Byte-level BPE**
+
+    (GPT-2) starts from the 256 possible bytes rather than Unicode characters, so
+
+    there is no out-of-vocabulary character either — any byte sequence on earth is
+
+    representable. And **WordPiece** picks the merge that most increases corpus
+
+    likelihood rather than the most frequent one, which is a slightly different
+
+    objective and a very similar algorithm.
+
+
+    The `Ġ` you see in GPT-2 tokens is the end-of-word marker from this paper,
+
+    wearing a different costume.
+
+    '
+  implementation: "## One merge step\n\n```python\npairs = Counter()\nfor word, freq in vocab.items():\n\
+    \    symbols = word.split()\n    for i in range(len(symbols) - 1):\n        pairs[(symbols[i], symbols[i\
+    \ + 1])] += freq\n\nbest = max(pairs, key=pairs.get)\n```\n\nThen replace every non-overlapping occurrence\
+    \ of `best` with the merged symbol.\n\n## The traps\n\n**Overlapping occurrences.** Merging `(a, a)`\
+    \ in `a a a` must produce `aa a`,\nnot `aa a` *and* `a aa`. Scan left to right and skip the next symbol\
+    \ after a\nmatch. Getting this wrong produces a vocabulary that is subtly wrong in a way no\ntest\
+    \ on short words will catch.\n\n**Ties.** Two pairs with equal counts must resolve deterministically\
+    \ or the\ntokeniser is not reproducible — and a tokeniser that differs between runs makes\nevery trained\
+    \ checkpoint incompatible with its own training data. Break ties on\nthe pair itself, not on dictionary\
+    \ order.\n\n**Frequency weighting.** Pairs are counted over the corpus with word frequencies,\nnot\
+    \ over the unique word list. Counting each distinct word once makes rare words\nas influential as\
+    \ common ones, which inverts the entire point.\n\n**Applying merges in learned order.** At encode\
+    \ time, merges must be applied in\nthe order they were learned, not by frequency in the current word.\
+    \ The merge\nlist is an ordered program, not a set.\n\n## Encoding is the slow half\n\nTraining is\
+    \ done once. Encoding happens for every token of every request, and a\nnaive implementation rescans\
+    \ the whole word after every merge — `O(n^2)` per\nword. Real tokenisers keep a priority queue of\
+    \ candidate merges, which is why\n`tiktoken` is written in Rust and not Python.\n"
+  systems: '## Vocabulary size is a real trade
+
+
+    Every token in the vocabulary costs `d_model` parameters in the embedding table
+
+    and the same again in the output projection. At `d_model = 4096`, going from
+
+    32k to 128k tokens adds roughly 800M parameters — before any transformer layer
+
+    exists.
+
+
+    What you buy is shorter sequences. A larger vocabulary means fewer tokens per
+
+    document, which means less attention compute and more text inside a fixed
+
+    context window.
+
+
+    **So vocabulary size trades parameters against sequence length**, and the right
+
+    answer depends on the corpus. It has drifted upward over time because context
+
+    length became the binding constraint.
+
+
+    ## The multilingual bill
+
+
+    The merges are learned from the training corpus, so a corpus dominated by
+
+    English spends its merge budget on English. Other languages fall back to shorter
+
+    pieces — sometimes to individual bytes.
+
+
+    The consequences are concrete and not merely aesthetic:
+
+
+    - The same content costs several times more tokens in some scripts.
+
+    - That means a proportionally **shorter effective context window**.
+
+    - And since APIs bill per token, **it costs more money for the same text.**
+
+
+    This is a systems decision with a fairness consequence attached, and it is made
+
+    once, before training, by whoever assembles the corpus.
+
+
+    ## What tokenisation costs the model
+
+
+    The model never sees characters. That is why counting letters in a word is hard,
+
+    and why arithmetic is hard when `1234` splits as `123` + `4` while `5678` splits
+
+    as `567` + `8` — the digit positions do not line up, so column-wise addition is
+
+    not expressible over those units.
+
+
+    Several recent models tokenise digits individually for exactly this reason. It
+
+    measurably improves arithmetic with no architectural change at all.
+
+    '
+  mathematics: '## Why frequency is the right greedy criterion
+
+
+    BPE is a greedy compression algorithm. Each merge replaces the most frequent
+
+    adjacent pair with a single symbol, which reduces total sequence length by
+
+    exactly the count of that pair:
+
+
+    ```math
+
+    \Delta L = -\mathrm{count}(a, b)
+
+    ```
+
+
+    Choosing the argmax of the count is therefore the locally optimal move for
+
+    minimising corpus length under a one-symbol vocabulary increase. It is greedy,
+
+    not optimal — the sequence of merges that minimises final length after `n` steps
+
+    may not start with the most frequent pair — but the greedy choice is within a
+
+    constant factor and runs in near-linear time.
+
+
+    ## The connection to compression
+
+
+    This is Gage''s 1994 byte-pair encoding, unmodified. The insight of the paper is
+
+    not the algorithm; it is noticing that a compression scheme produces exactly the
+
+    vocabulary a translation model wants — one where common sequences are cheap and
+
+    rare sequences are still representable.
+
+
+    That is the same objective a language model has. Minimising bits per character
+
+    and maximising likelihood are the same problem viewed from two directions:
+
+
+    ```math
+
+    \mathrm{bits} = -\log_2 P(x)
+
+    ```
+
+
+    A tokeniser that compresses the corpus well is one that gives the model fewer,
+
+    more predictable symbols.
+
+
+    ## WordPiece, and why the difference matters
+
+
+    WordPiece picks the merge maximising the corpus likelihood gain rather than raw
+
+    frequency:
+
+
+    ```math
+
+    \mathrm{score}(a, b) = \frac{\mathrm{count}(a,b)}{\mathrm{count}(a)\,\mathrm{count}(b)}
+
+    ```
+
+
+    The denominator is what changes the behaviour. A pair of two very common symbols
+
+    has a high raw count but explains little — the pieces were already predictable
+
+    on their own. Dividing by the marginals favours pairs that are frequent
+
+    *together* relative to how often they appear apart, which is pointwise mutual
+
+    information in disguise.
+
+
+    In practice both produce workable vocabularies, and the choice matters far less
+
+    than the corpus you learn from.
+
+    '
+source_kind: paper

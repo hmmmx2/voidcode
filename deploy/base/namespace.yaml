@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voidcode
+  labels:
+    # Enforced Pod Security Standards. `restricted` is the strictest of the three and
+    # it is what makes the securityContext blocks below load-bearing rather than
+    # advisory: with `enforce` set, a pod that asks for privilege escalation or root
+    # is REJECTED at admission instead of quietly getting it.
+    #
+    # Judge0 cannot satisfy this — it needs `privileged: true` for isolate — which is
+    # exactly why it lives in its own namespace. See judge0/.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

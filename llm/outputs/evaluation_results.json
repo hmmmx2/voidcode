@@ -1,0 +1,73 @@
+{
+  "total": 14,
+  "by_difficulty": {
+    "easy": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ],
+    "medium": [
+      true,
+      true,
+      true,
+      false,
+      false,
+      true
+    ],
+    "hard": [
+      true,
+      false
+    ]
+  },
+  "by_mode": {
+    "teaching": {
+      "total": 4,
+      "compliant": 4
+    },
+    "debug": {
+      "total": 4,
+      "compliant": 4
+    },
+    "explain": {
+      "total": 4,
+      "compliant": 0
+    },
+    "followup": {
+      "total": 2,
+      "compliant": 2
+    }
+  },
+  "teaching": {
+    "total": 4,
+    "has_explain": 4,
+    "has_template": 4,
+    "has_guide": 4,
+    "has_blanks": 4,
+    "has_question": 4,
+    "fully_compliant": 4
+  },
+  "debug": {
+    "total": 4,
+    "has_problem": 4,
+    "has_think": 4,
+    "no_scaffolding": 4,
+    "fully_compliant": 4
+  },
+  "explain": {
+    "total": 4,
+    "has_code_block": 3,
+    "no_old_format": 4,
+    "no_scaffolding": 4,
+    "is_concise": 1,
+    "fully_compliant": 0
+  },
+  "followup": {
+    "total": 2,
+    "has_content": 2,
+    "no_scaffolding": 2,
+    "fully_compliant": 2
+  }
+}

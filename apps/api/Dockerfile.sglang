@@ -1,0 +1,75 @@
+# apps/api/Dockerfile.sglang
+# ──────────────────────────────────────────────────────────────────────────────
+# VoidCode AI — Lightweight FastAPI Container (SGLang path)
+#
+# This container runs ONLY the FastAPI backend.
+# The model is served by a separate sglang-server container via HTTP.
+#
+# Benefits vs Dockerfile.gpu:
+#   - No CUDA/PyTorch in this container (~200 MB vs ~10 GB image)
+#   - Faster builds, faster restarts (model reload doesn't affect API)
+#   - FastAPI can be scaled independently from the GPU server
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.sglang.yml up -d
+#
+# Architecture:
+#   [FastAPI :8000] ──HTTP──> [SGLang Server :30000]
+#   FastAPI: mode detection, system prompt injection, routing
+#   SGLang:  model inference, RadixAttention KV cache, token streaming
+# ──────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.12-slim
+
+# ── System setup ──────────────────────────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Isolated virtualenv
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# ── Python dependencies ───────────────────────────────────────────────────────
+# Lightweight: FastAPI + openai client + DB + Redis only.
+# No torch / transformers / vLLM — those live in the sglang-server container.
+COPY apps/api/requirements.sglang.txt ./requirements.sglang.txt
+RUN pip install --no-cache-dir --timeout 300 -r requirements.sglang.txt
+
+# ── Application code ──────────────────────────────────────────────────────────
+COPY apps/api/src/ ./apps/api/src/
+COPY llm/scripts/prompts.py ./llm/scripts/prompts.py
+
+# See the same block in Dockerfile.gpu. The API imports from `features/` at request time and none of
+# it was in the image, so retrieval grounding and the recommender both degraded silently in-container
+# while working on the host. data/concepts.yaml is what features/taxonomy.py loads.
+COPY features/ ./features/
+COPY data/concepts.yaml ./data/concepts.yaml
+
+# ── Environment defaults ──────────────────────────────────────────────────────
+ENV USE_SGLANG=true
+ENV SGLANG_BASE_URL=http://sglang-server:30000/v1
+ENV SGLANG_MODEL_NAME=default
+ENV PYTHONPATH=/app
+ENV HF_HUB_DISABLE_TELEMETRY=1
+
+# ── Port ──────────────────────────────────────────────────────────────────────
+EXPOSE 8000
+
+# ── Health check ──────────────────────────────────────────────────────────────
+# start-period=60s: FastAPI starts fast, but waits for SGLang to be ready.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# ── Entrypoint ────────────────────────────────────────────────────────────────
+# Single worker — concurrency managed by asyncio + SGLang's internal batching.
+CMD ["uvicorn", "apps.api.src.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--loop", "uvloop", \
+     "--log-level", "info"]

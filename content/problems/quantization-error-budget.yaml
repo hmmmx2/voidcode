@@ -1,0 +1,86 @@
+slug: quantization-error-budget
+title: Will INT8 hold this weight range?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- quantization_basics
+- numerical_stability
+description: "Given the minimum and maximum weight in a tensor and a target integer width, return the\
+  \ maximum\nabsolute quantization error introduced by uniform affine quantization.\n\nWrite `fits_int8(w_min,\
+  \ w_max, bits, tolerance)` returning `True` if that error is within\n`tolerance`, else `False`.\n\n\
+  Uniform affine quantization maps the range `[w_min, w_max]` onto `2**bits` levels. The step is\n\n \
+  \   scale = (w_max - w_min) / (2**bits - 1)\n\nand round-to-nearest puts any weight within `scale /\
+  \ 2` of a representable level, so the worst\ncase error is `scale / 2`.\n\n**Outliers are the whole\
+  \ problem, and this formula is why.** The error depends only on the\n*range*, not on the distribution\
+  \ inside it. One activation outlier at 100x the typical magnitude\nwidens the range by 100x and so multiplies\
+  \ every other weight's error by 100 — which is the\nobservation that motivates per-channel scales, and\
+  \ the reason AWQ and GPTQ spend their effort on\nchoosing what to keep in higher precision rather than\
+  \ on the rounding itself.\n\nReturn a boolean."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 17
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def fits_int8(self, w_min, w_max, bits, tolerance):\n \
+    \       \"\"\"\n        :type w_min: float\n        :type w_max: float\n        :type bits: int\n\
+    \        :type tolerance: float\n        :rtype: bool\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().fits_int8(float(_p[0]), float(_p[1]), int(_p[2]), float(_p[3])))
+
+    '
+reference_solution: "class Solution(object):\n    def fits_int8(self, w_min, w_max, bits, tolerance):\n\
+  \        levels = 2 ** bits\n        scale = (w_max - w_min) / (levels - 1)\n        return (scale /\
+  \ 2.0) <= tolerance\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: -1.0 1.0 8 0.01
+  expected_output: 'True'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: -1.0 1.0 8 0.004
+  expected_output: 'True'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: -0.1 0.1 8 0.001
+  expected_output: 'True'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: -100.0 100.0 8 0.5
+  expected_output: 'True'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: -1.0 1.0 4 0.05
+  expected_output: 'False'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 0.0 0.0 8 0.0
+  expected_output: 'True'
+  is_hidden: true
+hints:
+- 2**bits - 1 intervals, not 2**bits. Eight bits gives 256 levels and therefore 255 steps between the
+  extremes.
+- Worst-case round-to-nearest error is half a step.
+- The answer depends on the range only. Nothing about the distribution inside it enters.
+hint_ladder:
+  level_0: 2**bits - 1 intervals, not 2**bits. Eight bits gives 256 levels and therefore 255 steps between
+    the extremes.
+  level_1: Worst-case round-to-nearest error is half a step.
+  level_2: The answer depends on the range only. Nothing about the distribution inside it enters.

@@ -1,0 +1,49 @@
+slug: vision-encoder-freezing-strategy-design
+title: Freeze the vision encoder, or unfreeze it? Defend a schedule
+difficulty: medium
+categories:
+- VLM
+concepts:
+- vlm_architecture
+- projection_layers
+- peft_lora
+grading: rubric
+description: 'You are training a VLM: a pretrained vision encoder, a pretrained language model, and a
+  randomly initialised projection layer between them.
+
+
+  Propose a training schedule. Say what is frozen in each stage and why, and justify the order rather
+  than asserting it.
+
+
+  The specific thing to get right: **what goes wrong if you unfreeze everything from step one?** Be concrete
+  about the mechanism, not just ''it is unstable''. The projection is random at initialisation, so reason
+  about what its gradients do to two encoders that were each already good.'
+hints:
+- At step 0 the projection outputs noise. What signal does that send backwards?
+- Which component has the least pretrained knowledge to lose?
+- There is a middle option between fully frozen and fully unfrozen.
+hint_ladder:
+  level_0: At step 0 the projection outputs noise. What signal does that send backwards?
+  level_1: Which component has the least pretrained knowledge to lose?
+  level_2: There is a middle option between fully frozen and fully unfrozen.
+rubric:
+- criterion: 'Stage 1 trains the projection alone with both encoders frozen, and justifies it: the projection
+    is the only randomly initialised part, so it is the only one that needs to move first.'
+  weight: 0.3
+- criterion: 'Explains the failure of unfreezing everything immediately: gradients from a random projection
+    are noise, and backpropagating them corrupts two sets of pretrained weights before the projection
+    has learned anything useful.'
+  weight: 0.25
+- criterion: Proposes a later stage that unfreezes the language model (and optionally the top of the vision
+    encoder), with a lower learning rate than stage 1.
+  weight: 0.2
+- criterion: Names a parameter-efficient alternative — LoRA on the language model — and what it trades
+    away.
+  weight: 0.15
+- criterion: States a signal that would make them stop or change the schedule, such as degradation on
+    text-only benchmarks indicating catastrophic forgetting.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

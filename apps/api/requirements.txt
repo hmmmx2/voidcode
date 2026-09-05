@@ -1,0 +1,50 @@
+# FastAPI Backend Requirements
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# ML/LLM Dependencies
+# torch>=2.2.0: required for stable torch.compile + suppress_errors with BnB 4-bit (P2)
+# SDPA (torch.nn.functional.scaled_dot_product_attention) is built-in since 2.0 (P3)
+torch>=2.2.0
+transformers>=4.36.0
+peft>=0.7.0
+bitsandbytes>=0.41.0
+accelerate>=0.25.0
+
+# vLLM inference engine — install in WSL2/Linux only (no native Windows support)
+# Run offline model prep scripts first: merge_lora.py then quantize_awq.py
+# Enable with environment variable: USE_VLLM=true
+# pip install vllm --extra-index-url https://download.pytorch.org/whl/cu121
+# vllm>=0.4.0
+
+# AWQ quantization — needed only for the one-time offline quantize_awq.py script
+# pip install autoawq
+# autoawq>=0.2.0
+
+# Database (PostgreSQL + SQLAlchemy async)
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+psycopg2-binary>=2.9.9
+
+# Redis
+redis>=5.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+httpx>=0.26.0
+
+# Password hashing. argon2id, not bcrypt: bcrypt silently truncates at 72 bytes,
+# so two long passwords sharing a prefix verify against each other with no error.
+# Deliberately NOT `passlib` — unmaintained since 2020, and its bcrypt backend
+# raises AttributeError against bcrypt>=4.1, in the code path that logs people in.
+argon2-cffi>=23.1.0
+
+# EmailStr validation for the auth request models.
+email-validator>=2.1.0
+
+# Prometheus scrape endpoint (spec 6.2). Installed in this environment already but
+# undeclared, which means a fresh container would have shipped without /metrics.
+prometheus-client>=0.20.0

@@ -1,0 +1,17 @@
+# Test-only dependencies for apps/api.
+#
+# Deliberately separate from requirements.txt: the API container should not ship
+# a test runner, and requirements.gpu.txt / requirements.sglang.txt are pinned
+# against specific CUDA images that must not drift for a dev tool.
+#
+# Install alongside the runtime deps:
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# The DB-backed tests need a reachable Postgres and skip cleanly without one:
+#     docker compose up -d postgres
+
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+
+# httpx is already a runtime dependency; ASGITransport comes from it, so the
+# suite drives the app in-process without binding a port.

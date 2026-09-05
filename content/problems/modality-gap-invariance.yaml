@@ -1,0 +1,50 @@
+slug: modality-gap-invariance
+title: Measure the offset between two encoders' embedding clouds
+difficulty: hard
+categories:
+- VLM
+concepts:
+- embeddings
+- projection_layers
+description: Write a function reporting the distance between a dual encoder's image and text centroids
+  alongside the mean within-modality and cross-modality cosine. The numbers show why a similarity threshold
+  calibrated on one pairing is meaningless for the other.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- OpenAI
+- Google DeepMind
+- Anthropic
+prompt: Write a function reporting the distance between a dual encoder's image and text centroids alongside
+  the mean within-modality and cross-modality cosine. The numbers show why a similarity threshold calibrated
+  on one pairing is meaningless for the other.
+approach: Unit-normalise everything first, average the unit vectors within each modality without re-normalising
+  the centroid, and take the Euclidean distance between the two centroids. The within-modality means run
+  over distinct unordered pairs; the cross mean runs over the full rectangle.
+model_answer: "Consider shifting every image logit in row i by a constant c (concretely, any perturbation\
+  \ adding the same amount to S_ij for all j). Then\n\n    e^{S_ij + c} / sum_k e^{S_ik + c}\n       \
+  \ = (e^c e^{S_ij}) / (e^c sum_k e^{S_ik})\n        = e^{S_ij} / sum_k e^{S_ik}\n\nIdentical. The softmax\
+  \ is shift-invariant along the axis it normalises, so the loss cannot see it, so gradient descent has\
+  \ no reason to remove it. Combined with the fact that random high-dimensional initialisation already\
+  \ places the two encoders' outputs in narrow, separated cones, the gap is present at step 0 and nothing\
+  \ during training pushes it shut.\n\nWHAT STILL WORKS. Anything that *ranks* across modalities: retrieval\
+  \ and zero-shot classification both compare candidates within one modality against a query in the other,\
+  \ and a constant offset cancels in the comparison. That is why CLIP performs well at exactly the tasks\
+  \ it was designed for despite the gap.\n\nWHAT BREAKS. Anything treating the space as shared in absolute\
+  \ terms:\n  - Interpolating image->text passes through empty space.\n  - A cosine threshold tuned on\
+  \ image-image pairs is meaningless for image-text pairs.\n  - Arithmetic mixing embeddings from both\
+  \ modalities lands off-manifold.\n  - A downstream model consuming raw similarity as a feature inherits\
+  \ the offset.\n\nPractically: use similarity for ranking, never as an absolute score; calibrate any\
+  \ threshold on the exact modality pairing you will use; and closing the gap requires an objective that\
+  \ penalises it, not a post-hoc correction."
+follow_ups:
+- Why does high-dimensional random initialisation produce narrow cones?
+- Design a loss term that penalises the gap. What does it cost?
+- Does L2 normalisation onto the sphere remove the gap?
+red_flags:
+- Assuming a shared space means the modalities are interchangeable.
+- Comparing raw cosine similarities across different modality pairings.
+- Not seeing that softmax invariance is exactly why nothing closes it.
+source_kind: interview_question

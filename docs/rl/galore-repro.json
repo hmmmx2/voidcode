@@ -1,0 +1,34 @@
+{
+  "device": "NVIDIA GeForce RTX 5060 Ti",
+  "config": {
+    "layers": 8,
+    "dim": 2048,
+    "rank": 128,
+    "dtype": "float32"
+  },
+  "adamw": {
+    "optimizer": "adamw",
+    "params": 33554432,
+    "state_bytes": 268435456,
+    "bytes_per_param": 8.0,
+    "breakdown": {
+      "exp_avg": 128.0,
+      "exp_avg_sq": 128.0
+    }
+  },
+  "galore": {
+    "optimizer": "galore",
+    "params": 33554432,
+    "state_bytes": 25165824,
+    "bytes_per_param": 0.75,
+    "breakdown": {
+      "projector.projection": 8.0,
+      "exp_avg": 8.0,
+      "exp_avg_sq": 8.0
+    }
+  },
+  "measured_saving_pct": 90.62,
+  "shape_predicted_saving_pct": 90.62,
+  "paper_claim_pct": 65.5,
+  "reproduces_claim": true
+}

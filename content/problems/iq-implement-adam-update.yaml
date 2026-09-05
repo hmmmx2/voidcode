@@ -1,0 +1,172 @@
+slug: iq-implement-adam-update
+title: One Adam step, from memory
+difficulty: medium
+categories:
+- DL
+- PyTorch
+concepts:
+- optimizers_adaptive
+description: 'Write a single Adam update. You are given the current parameters, their gradients, the first
+  and second moment buffers, and the step number `t` (1-based, already incremented for this step).
+
+
+  Return `[params, m, v]` after the step, each rounded to 6 decimals.
+
+
+  **Bias correction is the question.** `m` and `v` start at zero, so early estimates are biased toward
+  zero — at `t = 1` with the usual betas, `m` is only 10% of the gradient and `v` is 0.1% of its square.
+  Dividing by `1 - beta^t` undoes exactly that. Omitting it gives a first step that is far too small,
+  and the error decays over hundreds of steps rather than disappearing.
+
+
+  The update is:
+
+
+  ```
+
+  m = b1*m + (1-b1)*g
+
+  v = b2*v + (1-b2)*g*g
+
+  m_hat = m / (1 - b1**t)
+
+  v_hat = v / (1 - b2**t)
+
+  p -= lr * m_hat / (sqrt(v_hat) + eps)
+
+  ```
+
+
+  **Return the uncorrected `m` and `v`**, not the hatted ones — the buffers that carry to the next step
+  are the raw moments. Returning the corrected values compounds the correction and is the most common
+  way this is written wrongly.'
+inferred_concepts: true
+review_needed: true
+order_index: 2
+examples:
+- input: params = [1.0], grads = [0.1], m = [0.0], v = [0.0], t = 1, lr = 0.01
+  output: '[[0.99], [0.01], [1e-05]]'
+  explanation: At t=1 bias correction makes m_hat equal g exactly, so the step is almost exactly lr regardless
+    of the gradient's size.
+constraints:
+- 1 <= len(params) == len(grads) == len(m) == len(v) <= 10^3
+- t >= 1
+- Return [params, m, v] with the UNCORRECTED moments.
+- Round every value to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: params
+    value: '[1.0]'
+  - name: grads
+    value: '[0.1]'
+  - name: t
+    value: '1'
+  stdin: '[1.0]
+
+    [0.1]
+
+    [0.0]
+
+    [0.0]
+
+    1
+
+    0.01 0.9 0.999 1e-8'
+  expected_output: '[[0.99], [0.01], [1e-05]]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: params
+    value: '[1.0, -2.0]'
+  - name: grads
+    value: '[0.5, -0.5]'
+  - name: t
+    value: '3'
+  stdin: '[1.0, -2.0]
+
+    [0.5, -0.5]
+
+    [0.2, -0.1]
+
+    [0.04, 0.02]
+
+    3
+
+    0.001 0.9 0.999 1e-8'
+  expected_output: '[[0.999768, -1.999801], [0.23, -0.14], [0.04021, 0.02023]]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: grads
+    value: '[0.0]'
+  stdin: '[5.0]
+
+    [0.0]
+
+    [0.3]
+
+    [0.09]
+
+    10
+
+    0.01 0.9 0.999 1e-8'
+  expected_output: '[[4.998621], [0.27], [0.08991]]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: t
+    value: '10000'
+  stdin: '[0.5]
+
+    [0.2]
+
+    [0.15]
+
+    [0.03]
+
+    10000
+
+    0.01 0.9 0.999 1e-8'
+  expected_output: '[[0.491053], [0.155], [0.03001]]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def adam_step(self, params, grads, m, v,\
+    \ t, lr, b1, b2, eps):\n        \"\"\"\n        :rtype: List[List[float]]  -- [params, m, v]\n   \
+    \     \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    params = json.loads(_in[0])
+
+    grads = json.loads(_in[1])
+
+    m = json.loads(_in[2])
+
+    v = json.loads(_in[3])
+
+    t = int(_in[4])
+
+    lr, b1, b2, eps = [float(x) for x in _in[5].split()]
+
+    _r = Solution().adam_step(params, grads, m, v, t, lr, b1, b2, eps)
+
+    print([[round(x, 6) for x in row] for row in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def adam_step(self, params, grads, m,\
+  \ v, t, lr, b1, b2, eps):\n        out_p, out_m, out_v = [], [], []\n        for p, g, mi, vi in zip(params,\
+  \ grads, m, v):\n            mi = b1 * mi + (1 - b1) * g\n            vi = b2 * vi + (1 - b2) * g *\
+  \ g\n            m_hat = mi / (1 - b1 ** t)\n            v_hat = vi / (1 - b2 ** t)\n            p =\
+  \ p - lr * m_hat / (math.sqrt(v_hat) + eps)\n            out_p.append(p)\n            out_m.append(mi)\n\
+  \            out_v.append(vi)\n        return [out_p, out_m, out_v]\n"

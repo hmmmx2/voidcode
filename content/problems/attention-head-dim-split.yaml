@@ -1,0 +1,77 @@
+slug: attention-head-dim-split
+title: Split d_model across heads, and reject what will not divide
+difficulty: easy
+categories:
+- LLM
+concepts:
+- multi_head_attention
+description: 'Input: `d_model n_heads`.
+
+
+  Return `head_dim total_qkv_params` where `head_dim = d_model / n_heads` and the QKV projections cost
+  `3 * d_model * d_model` parameters (biases ignored).
+
+
+  Return `-1 -1` when `n_heads` does not divide `d_model` exactly, or when either is non-positive. That
+  case is worth failing loudly on: a silently floored head dimension leaves part of the residual stream
+  unattended, and the model still trains — just worse, for a reason nothing reports.'
+order_index: 58
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def split(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().split(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def split(self, tokens):\n        d = int(tokens[0]);\
+  \ h = int(tokens[1])\n        if d <= 0 or h <= 0 or d % h != 0:\n            return '-1 -1'\n     \
+  \   return str(d // h) + ' ' + str(3 * d * d)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 512 8
+  expected_output: 64 786432
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 768 12
+  expected_output: 64 1769472
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 512 7
+  expected_output: -1 -1
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 4096 32
+  expected_output: 128 50331648
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0 8
+  expected_output: -1 -1
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 768 768
+  expected_output: 1 1769472
+  is_hidden: true
+hints:
+- Total QKV cost does not depend on the head count -- the heads partition d_model.
+- 'Use exact division: d_model % n_heads must be 0.'
+- This is why d_model is chosen as a highly composite number.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

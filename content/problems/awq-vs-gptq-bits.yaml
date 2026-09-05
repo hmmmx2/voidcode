@@ -1,0 +1,110 @@
+slug: awq-vs-gptq-bits
+title: What does group-wise quantization really cost?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- quantization_schemes
+- quantization_basics
+description: 'Return the effective bits per weight of group-wise quantization, including the scale and
+  zero-point
+
+  overhead.
+
+
+  Write `effective_bits(bits, group_size, scale_bits)`. Each group of `group_size` weights is stored
+
+  at `bits` each, plus **one scale and one zero-point** at `scale_bits` each. Return the total
+
+  divided by `group_size`, rounded to 4dp.
+
+
+  **Why "4-bit" is never 4 bits, and why the group size is the real decision.** At group 128 with
+
+  fp16 scales the overhead is 32 bits spread over 128 weights — 0.25 bits, so 4-bit is really 4.25.
+
+  At group 32 it is 1.0 extra bit, and your 4-bit model is 5-bit. Halving the group size to improve
+
+  accuracy costs real memory, and the two pull against each other directly.
+
+
+  **What the group size buys.** Quantization error depends on the *range* within a group, so smaller
+
+  groups isolate outliers and cut error sharply — one extreme weight ruins 128 neighbours but only
+
+  31 in a smaller group. This is the same observation that motivates AWQ and GPTQ: both spend their
+
+  effort deciding what to keep in higher precision rather than improving the rounding, because the
+
+  rounding is already optimal given the range.
+
+
+  AWQ scales salient channels before quantizing so their effective range shrinks; GPTQ quantizes
+
+  column by column and corrects the remaining columns for the error already committed. Both are
+
+  attacks on the range, not on the arithmetic.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 35
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def effective_bits(self, bits, group_size, scale_bits):\n\
+    \        \"\"\"\n        :rtype: float\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().effective_bits(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def effective_bits(self, bits, group_size, scale_bits):\n\
+  \        per_group = group_size * bits + 2 * scale_bits\n        return round(per_group / group_size,\
+  \ 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4 128 16
+  expected_output: '4.25'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4 32 16
+  expected_output: '5.0'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 4 64 16
+  expected_output: '4.5'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 8 128 16
+  expected_output: '8.25'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 4 128 32
+  expected_output: '4.5'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 3 128 16
+  expected_output: '3.25'
+  is_hidden: true
+hints:
+- One scale AND one zero-point per group, not one total.
+- Divide by group_size to get per-weight.
+- A large group size makes the overhead vanish and the error worse.
+hint_ladder:
+  level_0: One scale AND one zero-point per group, not one total.
+  level_1: Divide by group_size to get per-weight.
+  level_2: A large group size makes the overhead vanish and the error worse.

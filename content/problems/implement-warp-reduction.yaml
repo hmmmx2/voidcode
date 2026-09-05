@@ -1,0 +1,45 @@
+slug: implement-warp-reduction
+title: Simulate a warp shuffle reduction
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- warp_divergence
+- reduction_kernels
+description: Simulate `__shfl_down_sync` and use it to sum-reduce across a warp. Return every lane's value
+  after the loop, not just lane 0 -- what the other lanes hold is the part people get wrong.
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+prompt: Simulate `__shfl_down_sync` and use it to sum-reduce across a warp. Return every lane's value
+  after the loop, not just lane 0 -- what the other lanes hold is the part people get wrong.
+approach: Every lane executes the loop, so every lane reads. A lane whose source is past the end of the
+  warp keeps its own value rather than reading garbage, which is why only lane 0 is guaranteed the full
+  sum.
+model_answer: "    __inline__ __device__ float warpReduceSum(float val) {\n        for (int offset = 16;\
+  \ offset > 0; offset >>= 1)\n            val += __shfl_down_sync(0xffffffff, val, offset);\n       \
+  \ return val;   // lane 0 holds the total\n    }\n\nFive iterations (16, 8, 4, 2, 1) reduce 32 lanes,\
+  \ since each halves the number of live partial sums.\n\nNO __syncthreads(). That is a *block*-level\
+  \ barrier. Threads within a warp already issue together, and shuffles exchange registers directly between\
+  \ lanes without going through shared memory at all — so there is nothing to synchronise and no memory\
+  \ to make visible. Calling it here would be a needless block-wide barrier. This is also why the shuffle\
+  \ version beats the classic shared-memory tree: no shared memory traffic, no barriers.\n\nTHE MASK.\
+  \ 0xffffffff means 'all 32 lanes participate'. Since Volta's independent thread scheduling, divergent\
+  \ threads can be at different program counters, so the hardware no longer guarantees a warp is converged\
+  \ at a shuffle. The mask names which lanes must participate, and every named lane must reach the instruction\
+  \ or the result is undefined. That is exactly why the older maskless `__shfl_down` is deprecated — it\
+  \ silently assumed a convergence the hardware stopped providing.\n\nFOR A FULL BLOCK: reduce within\
+  \ each warp, have lane 0 of each write its partial to shared memory, __syncthreads() (now genuinely\
+  \ needed, because that is cross-warp), then have the first warp reduce the partials."
+follow_ups:
+- Extend it to a full block reduction.
+- What breaks if the block size is not a multiple of 32?
+- Why is the shuffle version faster than a shared-memory tree?
+red_flags:
+- Adding __syncthreads() inside the warp loop.
+- Using the deprecated maskless __shfl_down.
+- Not knowing lane 0 alone holds the result.
+source_kind: interview_question

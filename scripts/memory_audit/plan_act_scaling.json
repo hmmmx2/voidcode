@@ -1,0 +1,58 @@
+[
+ {
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": "adafactor_bf16_gc",
+  "seq": 2048,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": "adafactor_bf16_gc",
+  "seq": 4096,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": "galore_r128_8bit_layerwise",
+  "seq": 2048,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": "galore_r128_8bit_layerwise",
+  "seq": 4096,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "config": "adafactor_bf16_gc",
+  "seq": 2048,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "config": "adafactor_bf16_gc",
+  "seq": 4096,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "config": "galore_r128_8bit_layerwise",
+  "seq": 2048,
+  "batch": 1,
+  "steps": 3
+ },
+ {
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "config": "galore_r128_8bit_layerwise",
+  "seq": 4096,
+  "batch": 1,
+  "steps": 3
+ }
+]

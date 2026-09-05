@@ -1,0 +1,127 @@
+slug: iq-implement-causal-mask
+title: Softmax over a row that is entirely masked
+difficulty: medium
+categories:
+- DL
+- LLM
+concepts:
+- numerical_stability
+description: 'Given `scores` (a list of floats) and `mask` (a list of 0/1 of the same length, 1 meaning
+  *attend to this position*), return the softmax over the unmasked positions. Masked positions get exactly
+  `0.0`. Round to 6 decimals.
+
+
+  **The row where every mask entry is 0 is the question.** Setting masked scores to `-inf` and running
+  softmax gives `exp(-inf) = 0` for every term, so you compute `0 / 0` -- NaN. And NaN is not local: one
+  such row propagates through the next matmul and turns the whole batch into NaN, which is why this shows
+  up as ''my loss became NaN at step 400'' rather than as an obviously masked-out row.
+
+
+  **Return a row of all zeros in that case.** It is the only value that does not corrupt anything downstream.
+
+
+  Subtract the row maximum over the *unmasked* positions before exponentiating, or a score of 800 overflows.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 36
+examples:
+- input: scores = [1.0, 2.0, 3.0], mask = [1, 1, 0]
+  output: '[0.268941, 0.731059, 0.0]'
+  explanation: Only the first two compete. softmax([1,2]) = [0.268941, 0.731059], and the masked third
+    is exactly 0.0.
+- input: scores = [1.0, 2.0], mask = [0, 0]
+  output: '[0.0, 0.0]'
+  explanation: Nothing to attend to. Zeros, not NaN.
+constraints:
+- 1 <= len(scores) == len(mask) <= 10^4
+- mask[i] is 0 or 1
+- An all-zero mask returns all zeros, never NaN.
+- '|scores[i]| may reach 1000 -- do not overflow.'
+- Round to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: scores
+    value: '[1.0, 2.0, 3.0]'
+  - name: mask
+    value: '[1, 1, 0]'
+  stdin: '[1.0, 2.0, 3.0]
+
+    [1, 1, 0]'
+  expected_output: '[0.268941, 0.731059, 0.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: scores
+    value: '[1.0, 2.0]'
+  - name: mask
+    value: '[0, 0]'
+  stdin: '[1.0, 2.0]
+
+    [0, 0]'
+  expected_output: '[0.0, 0.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: scores
+    value: '[800.0, 800.0, 799.0]'
+  stdin: '[800.0, 800.0, 799.0]
+
+    [1, 1, 1]'
+  expected_output: '[0.422319, 0.422319, 0.155362]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: scores
+    value: '[1.0, 900.0, 2.0]'
+  - name: mask
+    value: '[1, 0, 1]'
+  stdin: '[1.0, 900.0, 2.0]
+
+    [1, 0, 1]'
+  expected_output: '[0.268941, 0.0, 0.731059]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: scores
+    value: '[5.0]'
+  stdin: '[5.0]
+
+    [1]'
+  expected_output: '[1.0]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def masked_softmax(self, scores, mask):\n\
+    \        \"\"\"\n        :type scores: List[float]\n        :type mask: List[int]   -- 1 = attend,\
+    \ 0 = masked out\n        :rtype: List[float]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    scores = json.loads(_in[0])
+
+    mask = json.loads(_in[1])
+
+    _r = Solution().masked_softmax(scores, mask)
+
+    print([round(v, 6) for v in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def masked_softmax(self, scores, mask):\n\
+  \        live = [i for i, m in enumerate(mask) if m]\n        if not live:\n            return [0.0]\
+  \ * len(scores)\n        top = max(scores[i] for i in live)\n        exps = {i: math.exp(scores[i] -\
+  \ top) for i in live}\n        total = sum(exps.values())\n        return [exps[i] / total if i in exps\
+  \ else 0.0\n                for i in range(len(scores))]\n"

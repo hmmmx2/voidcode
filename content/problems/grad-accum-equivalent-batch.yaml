@@ -1,0 +1,102 @@
+slug: grad-accum-equivalent-batch
+title: How many micro-steps for this effective batch?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- gradient_accumulation
+- data_parallel
+description: 'Given a target effective batch size, a per-GPU micro-batch, and a GPU count, return the
+  number
+
+  of accumulation steps needed — or `None` if the target is not reachable exactly.
+
+
+  Write `steps_needed(effective_batch, micro_batch, gpus)`.
+
+
+  Effective batch is `micro_batch * gpus * accumulation_steps`. Return the integer accumulation
+
+  steps, or `None` when `effective_batch` is not divisible by `micro_batch * gpus`.
+
+
+  **Why refuse rather than round.** An effective batch that silently differs from the one in your
+
+  config makes the run incomparable to every other run at that "batch size", including the published
+
+  baseline you are trying to match. Rounding to the nearest reachable value is how two experiments
+
+  end up looking like a hyperparameter difference when they are actually a batch-size difference.
+
+
+  **And why `no_sync` matters here.** Under data parallelism, wrapping the micro-steps in `no_sync`
+
+  gives one all-reduce per optimizer step rather than one per micro-batch. At 32 accumulation steps
+
+  that is the difference between 1 collective and 32, which on a slow interconnect decides whether
+
+  the second GPU helps at all.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 19
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def steps_needed(self, effective_batch, micro_batch, gpus):\n\
+    \        \"\"\"\n        :rtype: int | None\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().steps_needed(int(_p[0]), int(_p[1]), int(_p[2])))
+
+    '
+reference_solution: "class Solution(object):\n    def steps_needed(self, effective_batch, micro_batch,\
+  \ gpus):\n        per_step = micro_batch * gpus\n        if per_step == 0 or effective_batch % per_step:\n\
+  \            return None\n        return effective_batch // per_step\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 512 8 2
+  expected_output: '32'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 512 8 3
+  expected_output: None
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 1024 1 8
+  expected_output: '128'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 64 64 1
+  expected_output: '1'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 100 8 2
+  expected_output: None
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 2048 16 4
+  expected_output: '32'
+  is_hidden: true
+hints:
+- Per-step samples are micro_batch * gpus, before accumulation.
+- Exact divisibility only — return None rather than rounding.
+- Accumulation steps of 1 means no accumulation, which is still a valid answer.
+hint_ladder:
+  level_0: Per-step samples are micro_batch * gpus, before accumulation.
+  level_1: Exact divisibility only — return None rather than rounding.
+  level_2: Accumulation steps of 1 means no accumulation, which is still a valid answer.

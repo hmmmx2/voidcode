@@ -1,0 +1,51 @@
+# apps/api/requirements.gpu.txt
+# ──────────────────────────────────────────────────────────────────────────────
+# Backend dependencies for the GPU / Docker vLLM container.
+#
+# ALL versions pinned to match the working local WSL2 ~/vllm-env (pip freeze).
+# Run `pip freeze` in ~/vllm-env to regenerate if versions ever drift.
+#
+# NOT included here (pre-installed in Dockerfile.gpu — do not re-pin here):
+#   - torch==2.9.1       — pre-installed via cu126 wheel in Dockerfile.gpu
+#   - torchaudio==2.9.1  — pre-installed in Dockerfile.gpu
+#   - vllm==0.15.1       — pre-installed in Dockerfile.gpu
+#   - uvloop==0.22.1     — pre-installed alongside vllm in Dockerfile.gpu
+#   - bitsandbytes       — BnB NF4 quantization not used in the vLLM path
+#   - peft               — LoRA is merged into AWQ weights; no runtime adapter
+#   - accelerate         — not required by vLLM inference
+#
+# For the CPU / WSL2 HuggingFace fallback path, use requirements.txt instead.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.129.0
+uvicorn[standard]==0.41.0
+pydantic==2.12.5
+python-multipart>=0.0.6
+
+# ── LLM tokenizer (model weights loaded by vLLM, not HuggingFace) ────────────
+# Pinned to exact local WSL2 vllm-env version (pip freeze verified).
+# vLLM 0.15.1 is fully compatible with transformers 4.57.6.
+# Previous constraint (>=4.45.0,<4.50.0) was based on vLLM 0.7.3 — now obsolete.
+transformers==4.57.6
+
+# ── Triton JIT kernels ────────────────────────────────────────────────────────
+# Required for vLLM PagedAttention CUDA kernels on Blackwell (sm_120).
+# Installed as a vLLM transitive dep — pinned here to lock to local working version.
+triton==3.5.1
+
+# ── Database (PostgreSQL + async SQLAlchemy) ──────────────────────────────────
+sqlalchemy[asyncio]>=2.0.25
+asyncpg==0.31.0
+alembic==1.18.4
+psycopg2-binary==2.9.11
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+redis==7.2.0
+
+# ── HTTP client (Judge0 proxy) ────────────────────────────────────────────────
+httpx==0.28.1
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv==1.2.1
+huggingface-hub==0.36.2

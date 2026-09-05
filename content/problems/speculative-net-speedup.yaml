@@ -1,0 +1,89 @@
+slug: speculative-net-speedup
+title: 'Speculative decoding: net speedup after paying for the draft'
+difficulty: hard
+categories:
+- Systems
+- LLM
+concepts:
+- speculative_decoding
+- serving_latency
+description: 'Input: `gamma accept_rate draft_cost_ratio`.
+
+
+  With `gamma` speculated tokens per round and per-token acceptance `a`, the expected accepted tokens
+  per round is `(1 - a**(gamma+1)) / (1 - a)` for `a < 1`, and `gamma + 1` when `a == 1`.
+
+
+  Each round costs one target forward plus `gamma * draft_cost_ratio` target-equivalents. Return `expected_tokens
+  cost net_speedup`, rounded to 3, 3 and 2 decimals.
+
+
+  Net speedup is expected tokens over cost. A draft model that is too slow or too inaccurate makes this
+  **less than 1**, and the arithmetic should show that plainly rather than assuming speculation always
+  helps.'
+order_index: 87
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def net(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().net(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def net(self, tokens):\n        g = int(tokens[0]);\
+  \ a = float(tokens[1]); dc = float(tokens[2])\n        if a >= 1:\n            exp = float(g + 1)\n\
+  \        elif a <= 0:\n            exp = 1.0\n        else:\n            exp = (1 - a ** (g + 1)) /\
+  \ (1 - a)\n        cost = 1 + g * dc\n        net = 0.0 if cost <= 0 else exp / cost\n        return\
+  \ ' '.join([str(round(exp, 3)), str(round(cost, 3)),\n                         str(round(net, 2))])\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 4 0.8 0.1
+  expected_output: 3.362 1.4 2.4
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 4 0.2 0.5
+  expected_output: 1.25 3.0 0.42
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 4 1.0 0.1
+  expected_output: 5.0 1.4 3.57
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 4 0.0 0.1
+  expected_output: 1.0 1.4 0.71
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 0.9 0.9
+  expected_output: 1.9 1.9 1.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 8 0.7 0.05
+  expected_output: 3.199 1.4 2.28
+  is_hidden: true
+hints:
+- The geometric sum counts the run of accepted tokens before the first rejection.
+- One token is always produced by the target even when everything is rejected.
+- net < 1 means speculation is costing you time.
+hint_ladder:
+  level_0: The geometric sum counts the run of accepted tokens before the first rejection.
+  level_1: One token is always produced by the target even when everything is rejected.
+  level_2: net < 1 means speculation is costing you time.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

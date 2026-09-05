@@ -1,0 +1,185 @@
+slug: iq-expectation-of-dropout
+title: Compute the moments inverted dropout leaves behind
+difficulty: easy
+categories:
+- DL
+concepts:
+- regularization
+description: 'Inverted dropout replaces each activation `a_i` with `c * m_i * a_i`, where `m_i ~ Bernoulli(1
+  - p)` is 1 when the unit is kept, the masks are independent across units, and `c` is a constant chosen
+  so the training-time expectation matches what the plain network produces at inference.
+
+
+  Given the activations `a`, the drop probability `p` and a `mode` of `"train"` or `"eval"`, return `[scale,
+  mean, var]` for the summed output `S = sum_i output_i`:
+
+
+  - `scale` — the constant `c`. Derive it by requiring `E[c * m_i * a_i] = a_i`, given `E[m_i] = 1 - p`.
+
+  - `mean` — `E[S]`.
+
+  - `var` — `Var(S)`. The masks are independent so the per-unit variances add, and `Var(m_i) = p * (1
+  - p)`.
+
+
+  In `"eval"` mode dropout is switched off completely: no mask, no scaling. `scale` is `1.0`, `mean` is
+  the plain sum, and `var` is `0.0`. That the deployed graph is the plain network is exactly why the correction
+  is put on the training side.
+
+
+  Edge cases and rounding:
+
+
+  - `p = 0` is legal in `"train"` mode and must not divide by zero in spirit or in fact: scale `1.0`,
+  variance `0.0`.
+
+  - Activations may be negative. The mean depends on their signed sum, the variance on their squares,
+  so a sign error shows up in only one of the two.
+
+  - Round all three values to 6 decimal places.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 19
+examples:
+- input: a = [1.0, 2.0], p = 0.5, mode = "train"
+  output: '[2.0, 3.0, 5.0]'
+  explanation: c(1-p) = 1 gives c = 2, so survivors are doubled. The mean is preserved at 1 + 2 = 3. Var(S)
+    = c^2 * p(1-p) * (1^2 + 2^2) = 4 * 0.25 * 5 = 5.
+- input: a = [1.0, 2.0], p = 0.5, mode = "eval"
+  output: '[1.0, 3.0, 0.0]'
+  explanation: Same mean, zero variance. Only the mean is shared between the two modes — the distribution
+    is not preserved, and the gap is the regularisation.
+constraints:
+- 1 <= len(a) <= 10^4
+- 0 <= p < 1
+- mode is "train" or "eval"
+- The mean must be identical in both modes.
+- Round all three values to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: a
+    value: '[1.0, 2.0]'
+  - name: p
+    value: '0.5'
+  - name: mode
+    value: train
+  stdin: '[1.0, 2.0]
+
+    0.5
+
+    train'
+  expected_output: '[2.0, 3.0, 5.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: a
+    value: '[1.0, 2.0]'
+  - name: p
+    value: '0.5'
+  - name: mode
+    value: eval
+  stdin: '[1.0, 2.0]
+
+    0.5
+
+    eval'
+  expected_output: '[1.0, 3.0, 0.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: a
+    value: '[1.0, -2.0, 3.0]'
+  - name: p
+    value: '0.8'
+  - name: mode
+    value: train
+  stdin: '[1.0, -2.0, 3.0]
+
+    0.8
+
+    train'
+  expected_output: '[5.0, 2.0, 56.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: a
+    value: '[1.0, 2.0, 3.0]'
+  - name: p
+    value: '0.0'
+  - name: mode
+    value: train
+  stdin: '[1.0, 2.0, 3.0]
+
+    0.0
+
+    train'
+  expected_output: '[1.0, 6.0, 0.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: a
+    value: '[-1.0, -2.0, 4.0]'
+  - name: p
+    value: '0.9'
+  - name: mode
+    value: eval
+  stdin: '[-1.0, -2.0, 4.0]
+
+    0.9
+
+    eval'
+  expected_output: '[1.0, 1.0, 0.0]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: a
+    value: '[3.0, -4.0]'
+  - name: p
+    value: '0.25'
+  - name: mode
+    value: train
+  stdin: '[3.0, -4.0]
+
+    0.25
+
+    train'
+  expected_output: '[1.333333, -1.0, 8.333333]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def dropout_moments(self, a, p, mode):\n        \"\"\"\n\
+    \        :type a: List[float]\n        :type p: float\n        :type mode: str  -- \"train\" or \"\
+    eval\"\n        :rtype: List[float]  -- [scale, mean, var]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    a = json.loads(_in[0])
+
+    p = float(_in[1])
+
+    mode = _in[2].strip()
+
+    _r = Solution().dropout_moments(a, p, mode)
+
+    print([round(float(x), 6) + 0.0 for x in _r])
+
+    '
+source_kind: interview_problem
+reference_solution: "class Solution(object):\n    def dropout_moments(self, a, p, mode):\n        total\
+  \ = float(sum(a))\n        if mode == \"eval\":\n            return [1.0, total, 0.0]\n        scale\
+  \ = 1.0 / (1.0 - p)\n        var = (p / (1.0 - p)) * sum(x * x for x in a)\n        return [scale, total,\
+  \ var]\n"

@@ -1,0 +1,106 @@
+slug: dead-group-rate-grpo
+title: Count the GRPO groups that carry no gradient
+difficulty: medium
+categories:
+- LLM
+concepts:
+- rlhf_grpo
+- loss_functions
+description: 'GRPO computes advantages *within* a group: reward minus the group mean, divided by the group
+
+  standard deviation. There is no value network — the group is the baseline.
+
+
+  That has a consequence worth being able to state in an interview. **If every completion in a
+
+  group scores identically, the advantage is exactly zero and the group contributes no gradient**,
+
+  no matter how many completions you sampled. These are dead groups, and they are the dominant
+
+  failure mode of verifiable-reward RL.
+
+
+  Write `dead_group_rate(rewards, tol=1e-8)` where `rewards` is a list of groups, each a list of
+
+  per-completion rewards. Return the fraction of groups whose spread (max minus min) is within
+
+  `tol`.
+
+
+  **Count both directions.** A group where everything failed and a group where everything passed
+
+  are both dead. It is tempting to only count all-fail, because that is the intuitive failure — but
+
+  on an easy corpus the all-pass case dominates, and a rate that only sees one of them will read
+
+  as healthy while the run learns nothing.
+
+
+  Read this beside the reward curve, never alone: a reward rising while the dead-group rate climbs
+
+  toward 1 means an ever-shrinking handful of prompts is doing all the training.
+
+  '
+inferred_concepts: false
+review_needed: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def dead_group_rate(self, rewards, tol=1e-8):\n       \
+    \ \"\"\"\n        :type rewards: List[List[float]]\n        :type tol: float\n        :rtype: float\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, ast
+
+    print(Solution().dead_group_rate(ast.literal_eval(sys.stdin.read().strip())))
+
+    '
+test_cases:
+- is_hidden: false
+  order_index: 0
+  stdin: '[[0.0, 0.0, 0.0], [0.2, 0.5, 0.9]]'
+  expected_output: '0.5'
+  label: Case 1
+  inputs: []
+- is_hidden: false
+  order_index: 1
+  stdin: '[[1.0, 1.0], [1.0, 1.0]]'
+  expected_output: '1.0'
+  label: Case 2
+  inputs: []
+- is_hidden: true
+  order_index: 2
+  stdin: '[[0.5, 0.5, 0.5, 0.5]]'
+  expected_output: '1.0'
+  label: Hidden 1
+  inputs: []
+- is_hidden: true
+  order_index: 3
+  stdin: '[[0.0, 1.0], [0.0, 1.0], [0.3, 0.3]]'
+  expected_output: '0.3333333333333333'
+  label: Hidden 2
+  inputs: []
+- is_hidden: true
+  order_index: 4
+  stdin: '[[0.1, 0.100000000001]]'
+  expected_output: '1.0'
+  label: Hidden 3
+  inputs: []
+- is_hidden: true
+  order_index: 5
+  stdin: '[[0.0, 0.25, 0.5, 0.75, 1.0]]'
+  expected_output: '0.0'
+  label: Hidden 4
+  inputs: []
+hints:
+- Spread is max minus min. A group is dead when that is within tol, not when it equals zero exactly.
+- Both all-zero and all-one groups are dead; do not special-case zero.
+- Floating point rewards from partial credit will not compare equal, which is why tol exists.
+hint_ladder:
+  level_0: Spread is max minus min. A group is dead when that is within tol, not when it equals zero exactly.
+  level_1: Both all-zero and all-one groups are dead; do not special-case zero.
+  level_2: Floating point rewards from partial credit will not compare equal, which is why tol exists.
+source_kind: problem
+order_index: 15
+reference_solution: "class Solution(object):\n    def dead_group_rate(self, rewards, tol=1e-8):\n    \
+  \    if not rewards:\n            return 0.0\n        dead = sum(1 for g in rewards if max(g) - min(g)\
+  \ <= tol)\n        return dead / len(rewards)\n"

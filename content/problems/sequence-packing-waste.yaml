@@ -1,0 +1,85 @@
+slug: sequence-packing-waste
+title: How much padding does a batch waste?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- dataloading
+- memory_accounting
+description: 'Training batches are padded to their longest sequence, and every padded token is compute
+  spent on nothing.
+
+
+  Input: `batch_size`, then the token length of each sequence in arrival order. Group them into consecutive
+  batches of `batch_size` (the final batch may be short), pad each to its own longest member, and return
+  `total_padding_tokens padded_total` separated by a space.
+
+
+  This is why length-grouped batching exists: the same sequences in sorted order waste far less, and the
+  arithmetic here shows how much.'
+order_index: 47
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def waste(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().waste(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def waste(self, tokens):\n        bs = int(tokens[0])\n\
+  \        lens = [int(x) for x in tokens[1:]]\n        pad = 0; total = 0\n        for i in range(0,\
+  \ len(lens), bs):\n            chunk = lens[i:i + bs]\n            m = max(chunk)\n            total\
+  \ += m * len(chunk)\n            pad += m * len(chunk) - sum(chunk)\n        return str(pad) + ' ' +\
+  \ str(total)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 2 10 10 10 10
+  expected_output: 0 40
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 2 1 100 1 100
+  expected_output: 198 400
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 4 5 5 5 5
+  expected_output: 0 20
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 3 1 2 3 4
+  expected_output: 3 13
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 7 7 7
+  expected_output: 0 21
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 2 100 1
+  expected_output: 99 200
+  is_hidden: true
+hints:
+- Each batch pads to ITS OWN maximum, not to a global maximum.
+- Padding for one batch is batch_size_actual * max_len - sum(lengths).
+- The last batch can be smaller than batch_size.
+hint_ladder:
+  level_0: Each batch pads to ITS OWN maximum, not to a global maximum.
+  level_1: Padding for one batch is batch_size_actual * max_len - sum(lengths).
+  level_2: The last batch can be smaller than batch_size.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

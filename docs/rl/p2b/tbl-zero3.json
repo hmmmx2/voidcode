@@ -1,0 +1,40 @@
+{
+  "guard": {
+    "budget_gib": 43.543,
+    "capacity_gib": 44.432,
+    "device": 0,
+    "headroom_gib": 1.65,
+    "peak_reserved_gib": 42.781,
+    "peak_stage": "optimizer",
+    "stages": {
+      "backward": {
+        "allocated_gib": 26.6775,
+        "reserved_gib": 42.7812
+      },
+      "forward": {
+        "allocated_gib": 25.9199,
+        "reserved_gib": 42.7812
+      },
+      "optimizer": {
+        "allocated_gib": 34.7782,
+        "reserved_gib": 42.7812
+      }
+    }
+  },
+  "layers": 12,
+  "optimizer": "adamw",
+  "params_b": 3.026,
+  "peak_reserved_gib_per_device": [
+    42.781,
+    42.879
+  ],
+  "seq": 1024,
+  "step_ms_mean": 988.72,
+  "step_ms_min": 986.63,
+  "steps": 8,
+  "strategy": "zero3",
+  "tokens_per_s": 2071.4,
+  "vocab": 32000,
+  "warmup": 2,
+  "world_size": 2
+}

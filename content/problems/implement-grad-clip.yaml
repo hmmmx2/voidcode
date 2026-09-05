@@ -1,0 +1,46 @@
+slug: implement-grad-clip
+title: Global-norm gradient clipping
+difficulty: easy
+categories:
+- DL
+- PyTorch
+concepts:
+- normalization_layers
+- backpropagation
+description: Write clipping by global norm over a list of gradient tensors. Say what it does to the update
+  direction, and where it must sit relative to loss-scale unscaling.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- Anthropic
+- Meta
+prompt: Write clipping by global norm over a list of gradient tensors. Say what it does to the update
+  direction, and where it must sit relative to loss-scale unscaling.
+approach: One norm across all parameters, one shared scale factor. The direction question is the point
+  of the exercise.
+model_answer: "    def clip_global_norm(grads, max_norm):\n        total = sum((g * g).sum() for g in\
+  \ grads) ** 0.5\n        # Guard the divide: total == 0 on a step where every grad\n        # underflowed,\
+  \ and 0/0 turns a dead step into NaN weights.\n        scale = max_norm / (total + 1e-6)\n        if\
+  \ scale < 1.0:                 # only ever shrink\n            for g in grads:\n                g *=\
+  \ scale\n        return total                    # log it, see below\n\nDIRECTION. One scalar multiplies\
+  \ every gradient, so the update direction is exactly preserved and only magnitude is capped. Clipping\
+  \ *by value* clamps each component independently, which rotates the update toward the small components\
+  \ — a gradient with one large entry and many small ones comes out pointing somewhere else entirely.\
+  \ That is why global norm is the default everywhere serious.\n\nORDER WITH MIXED PRECISION. Gradients\
+  \ arrive multiplied by the loss scale S, so their norm is S times the true norm — comparing that to\
+  \ max_norm would clip essentially every step. **Unscale first, then clip, then step.** Getting this\
+  \ backwards makes the threshold meaningless while looking like it works.\n\nReturn the norm and log\
+  \ it. Occasional clipping is healthy — it is catching bad batches. If it fires on most steps, the effective\
+  \ learning rate is now set by max_norm rather than by the schedule, and the schedule has quietly stopped\
+  \ doing anything."
+follow_ups:
+- Your clip rate is 90%. What does that tell you and what do you change?
+- How does this interact with gradient accumulation?
+- How would you compute the global norm across sharded parameters?
+red_flags:
+- Clipping per-tensor rather than globally, changing the direction.
+- Clipping before unscaling under mixed precision.
+- No guard on the divide, so a zero-gradient step produces NaN.
+source_kind: interview_question

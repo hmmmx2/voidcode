@@ -1,0 +1,102 @@
+slug: dataloader-throughput-ceiling
+title: Is your dataloader starving the GPU?
+difficulty: medium
+categories:
+- DL
+concepts:
+- dataloading
+- vectorization
+description: 'Return whether the dataloader is the bottleneck.
+
+
+  Write `is_input_bound(gpu_step_ms, batch_size, per_sample_ms, num_workers)`. The loader produces a
+
+  batch in `batch_size * per_sample_ms / num_workers` milliseconds, assuming workers scale linearly.
+
+  Return `True` if that exceeds the GPU step time.
+
+
+  **Why this is worth computing rather than eyeballing a utilisation graph.** An input-bound run
+
+  looks exactly like a slow model: the step time is high, the loss curve is fine, and `nvidia-smi`
+
+  shows low utilisation — which people read as "the model is small" rather than "the GPU is waiting".
+
+  Buying a faster card changes nothing, because the card was never the constraint.
+
+
+  **Where the linear-workers assumption breaks, and it breaks in both directions.** Workers are
+
+  separate processes, so each carries a copy of the dataset object and its own CUDA context if it
+
+  touches the GPU; past a point they contend for CPU and memory bandwidth and the speedup flattens.
+
+  But prefetching hides latency the model above does not account for — a loader that produces a batch
+
+  in exactly one step time is not actually starving the GPU if it produced the next one while the
+
+  current step ran. Treat this as a screening test that says "look here", not a verdict.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 37
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def is_input_bound(self, gpu_step_ms, batch_size, per_sample_ms,\
+    \ num_workers):\n        \"\"\"\n        :rtype: bool\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [float(x) for x in sys.stdin.read().split()]
+
+    print(Solution().is_input_bound(_p[0], _p[1], _p[2], _p[3]))
+
+    '
+reference_solution: "class Solution(object):\n    def is_input_bound(self, gpu_step_ms, batch_size, per_sample_ms,\
+  \ num_workers):\n        loader_ms = (batch_size * per_sample_ms) / max(num_workers, 1)\n        return\
+  \ loader_ms > gpu_step_ms\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 200 32 2 4
+  expected_output: 'False'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 200 32 40 4
+  expected_output: 'True'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 100 64 2 8
+  expected_output: 'False'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 100 64 2 1
+  expected_output: 'True'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 50 1 50 1
+  expected_output: 'False'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 200 256 1 16
+  expected_output: 'False'
+  is_hidden: true
+hints:
+- Workers divide the per-batch time; guard against zero.
+- Compare against the GPU step, not against a fixed threshold.
+- Strictly greater — equal is not starving.
+hint_ladder:
+  level_0: Workers divide the per-batch time; guard against zero.
+  level_1: Compare against the GPU step, not against a fixed threshold.
+  level_2: Strictly greater — equal is not starving.

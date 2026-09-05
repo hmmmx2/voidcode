@@ -1,0 +1,54 @@
+slug: pipeline-bubble-fraction
+title: Compute the pipeline bubble and the micro-batch count it demands
+difficulty: hard
+categories:
+- CUDA
+- LLM
+concepts:
+- pipeline_parallel
+description: 'Write `pipeline(stages, microbatches, chunks, target)` returning the fraction of the pass
+  wasted while the pipeline fills and drains, plus the smallest micro-batch count that would hold that
+  fraction at or below `target`. The trap is `chunks`: an interleaved schedule handing each device several
+  non-contiguous stages shrinks the idle time by that factor, and ignoring it makes the second number
+  several times too large.'
+inferred_concepts: true
+review_needed: true
+domain: cuda
+kind: code
+companies:
+- NVIDIA
+- Meta
+- OpenAI
+prompt: 'Write `pipeline(stages, microbatches, chunks, target)` returning the fraction of the pass wasted
+  while the pipeline fills and drains, plus the smallest micro-batch count that would hold that fraction
+  at or below `target`. The trap is `chunks`: an interleaved schedule handing each device several non-contiguous
+  stages shrinks the idle time by that factor, and ignoring it makes the second number several times too
+  large.'
+approach: With one unit of time per stage per micro-batch, the pass takes chunks*M + P - 1 units where
+  only chunks*M are useful, and the ratio of the difference to the total is the bubble. For the second
+  value, invert the inequality for M and take a ceiling clamped to at least 1 -- then re-test the candidate,
+  because a float ceiling can land one step either side of the true answer.
+model_answer: "Let each stage take one unit per micro-batch. The last stage cannot start micro-batch 1\
+  \ until it has traversed P-1 earlier stages, and the drain at the end costs the same again.\n\n    ideal\
+  \ time  = M          (perfectly packed)\n    actual time = M + P - 1  (fill + steady state + drain)\n\
+  \n    bubble fraction = (P - 1) / (M + P - 1)\n\nP = 8, M = 8:   7 / 15 = **46.7% wasted**\nP = 8, M\
+  \ = 64:  7 / 71 = **9.9% wasted**\n\nSo micro-batches must considerably outnumber stages — a useful\
+  \ rule is M >= 4P to keep the bubble under ~20%. This is why pipeline parallelism needs a large global\
+  \ batch to be efficient, and why interleaved (virtual pipeline) schedules exist: assigning each device\
+  \ several non-contiguous stages shrinks the effective P per pass.\n\nWHY TENSOR PARALLELISM STAYS INSIDE\
+  \ A NODE. Tensor parallelism splits individual weight matrices, so it needs an all-reduce at *every*\
+  \ layer boundary — many times per forward pass, directly on the critical path. Volume is high but latency\
+  \ per step is low, so it belongs on NVLink at hundreds of GB/s, and is normally capped at the 8 GPUs\
+  \ of one node.\n\nPipeline parallelism communicates one activation tensor per stage boundary — far lower\
+  \ volume — so it tolerates InfiniBand or Ethernet and is what you use *across* nodes. Putting tensor\
+  \ parallelism across nodes puts an all-reduce on the slow link at every layer and throughput collapses.\
+  \ Data parallelism with sharded optimiser state wraps both on the outside."
+follow_ups:
+- How does an interleaved schedule reduce the effective P?
+- What does ZeRO-3 shard, and how does that differ from tensor parallelism?
+- The model fits on one node. Do you use pipeline parallelism at all?
+red_flags:
+- Forgetting the drain and deriving (P-1)/M.
+- Believing micro-batching eliminates the bubble entirely.
+- Placing tensor parallelism across node boundaries.
+source_kind: interview_question

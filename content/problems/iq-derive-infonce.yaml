@@ -1,0 +1,170 @@
+slug: iq-derive-infonce
+title: Symmetric contrastive loss for an image-text batch
+difficulty: medium
+categories:
+- VLM
+concepts:
+- loss_functions
+description: "Write `clip_loss(image_emb, text_emb, tau)`.\n\n`image_emb[i]` and `text_emb[i]` are the\
+  \ i-th matched pair, given as plain lists of floats of equal length. They are **not** unit vectors.\n\
+  \n1. L2-normalise every vector: `u = v / sqrt(sum(x*x))`.\n2. Build the N x N score matrix `S[i][j]\
+  \ = dot(u_img[i], u_txt[j]) / tau`. The N diagonal entries are the true pairs; every off-diagonal entry\
+  \ is a negative drawn from the same batch, so the batch *is* the negative set.\n3. Score each row --\
+  \ image i choosing among N captions:\n\n   `row_i = -log( exp(S[i][i]) / sum_j exp(S[i][j]) )`\n\n4.\
+  \ Score each column -- caption j choosing among N images:\n\n   `col_j = -log( exp(S[j][j]) / sum_i\
+  \ exp(S[i][j]) )`\n\n5. Return `(mean of row_i + mean of col_j) / 2`.\n\nBoth directions are needed.\
+  \ Normalising along rows constrains nothing along columns, so a one-directional objective trains image-to-text\
+  \ retrieval and leaves text-to-image free.\n\n**Edge cases.** `N = 1` returns exactly `0.0` -- there\
+  \ is nothing to discriminate against, and the loss at chance is `log N`. A zero vector normalises to\
+  \ all zeros.\n\nReturn a float; the driver rounds it to 6 decimals.\n\nStandard library only -- no numpy,\
+  \ no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 26
+examples:
+- input: image_emb = [[1.0, 0.0], [0.0, 1.0]], text_emb = [[1.0, 0.0], [0.0, 1.0]], tau = 1.0
+  output: '0.313262'
+  explanation: Both sets are already unit vectors, so S = [[1, 0], [0, 1]]. Every row and every column
+    contributes log(1 + e^-1) = 0.3132617.
+- input: image_emb = [[1.0, 0.0], [0.0, 1.0]], text_emb = [[1.0, 0.0], [0.0, 1.0]], tau = 0.5
+  output: '0.126928'
+  explanation: A smaller tau sharpens the same scores to [[2, 0], [0, 2]] and the loss falls to log(1
+    + e^-2). Multiplying by tau instead would raise it.
+constraints:
+- 1 <= N <= 200, and len(image_emb) == len(text_emb) == N
+- All vectors share one dimension D, 1 <= D <= 64
+- 0 < tau <= 100
+- Normalise before scoring -- the inputs are not unit vectors.
+- Score rows and columns and average the two means.
+- N = 1 returns exactly 0.0.
+- Round to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: image_emb
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: text_emb
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: tau
+    value: '1.0'
+  stdin: '[[1.0, 0.0], [0.0, 1.0]]
+
+    [[1.0, 0.0], [0.0, 1.0]]
+
+    1.0'
+  expected_output: '0.313262'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: image_emb
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: text_emb
+    value: '[[1.0, 0.0], [0.0, 1.0]]'
+  - name: tau
+    value: '0.5'
+  stdin: '[[1.0, 0.0], [0.0, 1.0]]
+
+    [[1.0, 0.0], [0.0, 1.0]]
+
+    0.5'
+  expected_output: '0.126928'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: image_emb
+    value: '[[3.0, 4.0], [1.0, 0.0]]'
+  - name: text_emb
+    value: '[[1.0, 0.0], [0.0, 5.0]]'
+  - name: tau
+    value: '1.0'
+  stdin: '[[3.0, 4.0], [1.0, 0.0]]
+
+    [[1.0, 0.0], [0.0, 5.0]]
+
+    1.0'
+  expected_output: '1.048879'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: image_emb
+    value: '[[2.0, 0.0], [0.0, 3.0]]'
+  - name: text_emb
+    value: '[[5.0, 0.0], [0.0, 7.0]]'
+  - name: tau
+    value: '1.0'
+  stdin: '[[2.0, 0.0], [0.0, 3.0]]
+
+    [[5.0, 0.0], [0.0, 7.0]]
+
+    1.0'
+  expected_output: '0.313262'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: image_emb
+    value: '[[0.3, 0.4]]'
+  - name: text_emb
+    value: '[[-1.0, 2.0]]'
+  - name: tau
+    value: '0.07'
+  stdin: '[[0.3, 0.4]]
+
+    [[-1.0, 2.0]]
+
+    0.07'
+  expected_output: '0.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: image_emb
+    value: '[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]'
+  - name: text_emb
+    value: '[[1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0]]'
+  - name: tau
+    value: '0.25'
+  stdin: '[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+
+    [[1.0, 1.0, 0.0], [0.0, 1.0, 1.0], [1.0, 0.0, 1.0]]
+
+    0.25'
+  expected_output: '0.722272'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\n\nclass Solution(object):\n    def clip_loss(self, image_emb, text_emb,\
+    \ tau):\n        \"\"\"\n        :type image_emb: List[List[float]]\n        :type text_emb: List[List[float]]\n\
+    \        :type tau: float\n        :rtype: float\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    image_emb = json.loads(_in[0])
+
+    text_emb = json.loads(_in[1])
+
+    tau = float(_in[2])
+
+    _r = Solution().clip_loss(image_emb, text_emb, tau)
+
+    print(round(_r, 6))
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\n\nclass Solution(object):\n    def clip_loss(self, image_emb, text_emb,\
+  \ tau):\n        n = len(image_emb)\n\n        def unit(v):\n            m = math.sqrt(sum(x * x for\
+  \ x in v))\n            if m == 0.0:\n                return [0.0] * len(v)\n            return [x /\
+  \ m for x in v]\n\n        I = [unit(v) for v in image_emb]\n        T = [unit(v) for v in text_emb]\n\
+  \        S = [[sum(a * b for a, b in zip(I[i], T[j])) / tau for j in range(n)]\n             for i in\
+  \ range(n)]\n\n        def nll(row, k):\n            hi = max(row)\n            lse = hi + math.log(sum(math.exp(x\
+  \ - hi) for x in row))\n            return lse - row[k]\n\n        i2t = sum(nll(S[i], i) for i in range(n))\
+  \ / n\n        t2i = sum(nll([S[i][j] for i in range(n)], j) for j in range(n)) / n\n        return\
+  \ (i2t + t2i) / 2.0\n"

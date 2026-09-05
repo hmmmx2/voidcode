@@ -1,0 +1,65 @@
+slug: warmup-adam-variance
+title: Compute the effective sample count behind Adam's second moment
+difficulty: hard
+categories:
+- DL
+- LLM
+concepts:
+- optimizers_adaptive
+- lr_scheduling
+description: Write a function returning how many gradient samples Adam's bias-corrected second moment
+  effectively averages at step t, the weight it puts on the newest gradient, and the resulting relative
+  spread of the estimate. The trap is that bias correction fixes the mean and does nothing to the variance,
+  which is what actually forces warmup.
+inferred_concepts: true
+review_needed: true
+domain: dl
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- Google DeepMind
+prompt: Write a function returning how many gradient samples Adam's bias-corrected second moment effectively
+  averages at step t, the weight it puts on the newest gradient, and the resulting relative spread of
+  the estimate. The trap is that bias correction fixes the mean and does nothing to the variance, which
+  is what actually forces warmup.
+approach: Write the bias-corrected second moment as a weighted average of past squared gradients whose
+  weights sum to one, then apply the Kish effective sample size, one over the sum of squared weights.
+  Both sums are geometric, so there is a closed form; a loop over t terms will not survive the large-t
+  test.
+model_answer: 'v_t = b2 v_{t-1} + (1-b2) g_t², so v_t is an exponential moving average with effective
+  sample size ≈ 1/(1-b2) = 1000 at b2 = 0.999. But at step t it has only seen t samples, so the effective
+  window is min(t, 1000).
+
+
+  At t = 1, v_1 = (1-b2) g_1², and bias correction divides by (1-b2^1) = (1-b2), giving v_hat_1 = g_1².
+  Unbiased — and estimated from **one sample**, so its relative standard deviation is order 1.
+
+
+  The update is m_hat / sqrt(v_hat). Dividing by a square root of a one-sample estimate is the problem:
+  if g_1 happens to be small for some parameter, sqrt(v_hat) is small and that parameter takes an enormous
+  step. Adam''s per-parameter step is bounded by roughly lr in the steady state, but that bound relies
+  on m and v being estimated from the same well-sampled distribution, which is exactly what is false early.
+
+
+  So bias correction fixes E[v_hat] and does nothing about Var[v_hat], which is what actually hurts. Warmup
+  keeps lr small precisely while the effective sample size grows from 1 toward 1/(1-b2).
+
+
+  The asymmetry is what makes it matter: a too-large early step can saturate attention logits or blow
+  up a norm layer, and the model does not recover — it sits at a worse loss for the whole run. That is
+  why divergence shows up in the first fraction of a percent of training or not at all, and why warmup
+  length grows with batch size, since larger batches use larger peak learning rates.
+
+
+  This is also exactly what RAdam formalises: estimate the variance of v_hat and rectify the step until
+  it is trustworthy.'
+follow_ups:
+- Estimate the effective sample size of v_t at step t for b2 = 0.999.
+- Does SGD with momentum need warmup? Under what conditions?
+- Your run diverges at step 3000, after warmup ended. Now what?
+red_flags:
+- Claiming bias correction removes the need for warmup.
+- Arguing about the mean when the problem is the variance.
+- Not knowing early divergence is usually unrecoverable rather than self-correcting.
+source_kind: interview_question

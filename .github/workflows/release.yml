@@ -1,0 +1,151 @@
+# Build and publish the container images.
+#
+# THERE WAS NO CD WORKFLOW AT ALL — no image publish, no environments, nothing. `ci.yml`
+# ran tests and stopped, so the only way an image existed was somebody building it by
+# hand on a laptop.
+#
+# This publishes images and DOES NOT DEPLOY. That is deliberate: the manifests in
+# `deploy/base` have never been applied to a cluster, and a workflow that applies
+# unvalidated manifests to a real environment on every tag is worse than no workflow.
+# The `deploy` job is written and gated off; the gate comes off when someone has
+# applied them once by hand.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Manual runs, so the build can be exercised without minting a version tag. Tags are
+  # cheap but they are also permanent and they imply a release happened.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push images to the registry (otherwise build only)"
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Tests gate the images. Without this a tag builds and publishes an image from a
+  # commit whose tests were never run — and a published image is much harder to
+  # retract than a failed build.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      # Independent so a web failure does not hide an API failure, and both logs exist.
+      fail-fast: false
+      matrix:
+        include:
+          - { name: api, dockerfile: apps/api/Dockerfile, context: apps/api }
+          # The web build needs the REPO ROOT as context, not apps/web: the Dockerfile
+          # copies pnpm-lock.yaml and packages/shared to install a workspace. Getting
+          # this wrong fails with a confusing "pnpm-lock.yaml not found".
+          - { name: web, dockerfile: apps/web/Dockerfile, context: . }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        # Only when actually publishing. A build-only run needs no credentials, and not
+        # requesting them is one less place a token can leak from.
+        if: github.event_name == 'push' || inputs.publish
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+          # `latest` on a tag push only. A manual run tagging `latest` would silently
+          # move what a cluster pulls, from a commit nobody released.
+          flavor: latest=${{ github.event_name == 'push' }}
+
+      - name: Build${{ (github.event_name == 'push' || inputs.publish) && ' and push' || '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name == 'push' || inputs.publish }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8000' }}
+
+      # A .dockerignore that stops excluding .env would put a live API key into a
+      # published layer, and `docker history` would show it. This repo had no
+      # .dockerignore at all until the web image was first built, and the first build's
+      # 1.1 GB context DID include apps/api/.env.
+      #
+      # Checked here rather than trusted: the build context is assembled by Docker from
+      # rules in a file anyone can edit, and a published layer cannot be un-published.
+      - name: Refuse to publish an image containing a .env
+        if: github.event_name == 'push' || inputs.publish
+        run: |
+          set -euo pipefail
+          image="$(echo '${{ steps.meta.outputs.tags }}' | head -1)"
+          echo "inspecting $image"
+          # Every layer, not just the final filesystem: a file deleted in a later layer
+          # is still present in the earlier one and still shipped.
+          if docker history --no-trunc "$image" | grep -qiE '(^|[^a-z])\.env([^a-z.]|$)'; then
+            echo "::error::a build step references a .env file — check .dockerignore"
+            exit 1
+          fi
+          docker create --name probe "$image" >/dev/null
+          if docker export probe | tar -t 2>/dev/null | grep -E '(^|/)\.env(\.|$)' | grep -v '\.env\.example'; then
+            echo "::error::the image filesystem contains a .env"
+            docker rm probe >/dev/null
+            exit 1
+          fi
+          docker rm probe >/dev/null
+          echo "no .env in the image"
+
+  # WRITTEN AND DELIBERATELY DISABLED.
+  #
+  # `deploy/base` has never been applied to a cluster — kubectl is available in CI but
+  # no cluster was reachable while it was written, so `--dry-run=client` validated
+  # nothing (it needs a live API server for its OpenAPI schema). Rolling out unvalidated
+  # manifests automatically on every tag is a worse failure than deploying by hand.
+  #
+  # To enable: apply them once manually, then change `if: false` to
+  # `if: github.event_name == 'push'` and add the KUBE_CONFIG secret.
+  deploy:
+    needs: images
+    if: false
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Roll out
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > /tmp/kubeconfig
+          export KUBECONFIG=/tmp/kubeconfig
+          kubectl -n voidcode set image deployment/voidcode-api \
+            api=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }} \
+            migrate=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }}
+          kubectl -n voidcode set image deployment/voidcode-web \
+            web=${{ env.REGISTRY }}/${{ github.repository }}/web:${{ github.ref_name }}
+          # Fail the job if the rollout does not converge, rather than reporting success
+          # for a deployment whose new pods are crash-looping.
+          kubectl -n voidcode rollout status deployment/voidcode-api --timeout=5m
+          kubectl -n voidcode rollout status deployment/voidcode-web --timeout=5m

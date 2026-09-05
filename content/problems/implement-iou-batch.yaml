@@ -1,0 +1,44 @@
+slug: implement-iou-batch
+title: Write vectorised IoU
+difficulty: easy
+categories:
+- VLM
+concepts:
+- image_preprocessing
+description: Write IoU for two boxes in (x1, y1, x2, y2). Handle boxes that do not overlap, and say what
+  breaks with degenerate boxes.
+inferred_concepts: true
+review_needed: true
+domain: vlm
+kind: code
+companies:
+- Meta
+- NVIDIA
+order_index: 29
+prompt: Write IoU for two boxes in (x1, y1, x2, y2). Handle boxes that do not overlap, and say what breaks
+  with degenerate boxes.
+approach: Intersection is a max of lefts and a min of rights, clamped at zero. The clamp is what the question
+  is really about.
+model_answer: "    def iou(a, b):\n        ax1, ay1, ax2, ay2 = a\n        bx1, by1, bx2, by2 = b\n\n\
+  \        ix1, iy1 = max(ax1, bx1), max(ay1, by1)\n        ix2, iy2 = min(ax2, bx2), min(ay2, by2)\n\n\
+  \        iw = max(0.0, ix2 - ix1)      # clamp: no overlap -> 0\n        ih = max(0.0, iy2 - iy1)\n\
+  \        inter = iw * ih\n\n        area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)\n        area_b\
+  \ = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)\n        union = area_a + area_b - inter\n        return\
+  \ inter / union if union > 0 else 0.0\n\nTHE CLAMP IS THE TEST. Without max(0, ·), two disjoint boxes\
+  \ give negative width *and* negative height, whose product is **positive** — so a pair of boxes that\
+  \ do not touch reports a healthy IoU. It is a sign error that produces plausible numbers rather than\
+  \ an obvious failure, which is why it survives code review and shows up as mysteriously bad mAP.\n\n\
+  DEGENERATE BOXES. A zero-area box (x1 == x2) makes both areas and the intersection zero, so union is\
+  \ 0 and the ratio is 0/0. Returning 0.0 is the right convention — a box with no extent overlaps nothing.\n\
+  \nOne convention trap worth naming: some datasets treat coordinates as inclusive pixel indices, making\
+  \ width x2 - x1 + 1. Mixing the two conventions shifts every IoU slightly and quietly moves every threshold-based\
+  \ metric."
+follow_ups:
+- Vectorise this to all pairs between two sets of boxes.
+- What does GIoU add, and which failure of IoU does it fix?
+- How does the +1 convention change results at an IoU threshold of 0.5?
+red_flags:
+- No clamp, so disjoint boxes report positive overlap.
+- Dividing by union without guarding zero.
+- Forgetting to subtract the intersection from the union.
+source_kind: interview_question

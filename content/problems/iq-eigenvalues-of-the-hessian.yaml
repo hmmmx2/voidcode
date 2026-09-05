@@ -1,0 +1,190 @@
+slug: iq-eigenvalues-of-the-hessian
+title: Score a learning rate against the curvature spectrum
+difficulty: hard
+categories:
+- ML
+- DL
+concepts:
+- tensors_and_shapes
+description: 'Gradient descent on `L(w) = 0.5 * w^T H w` is `w <- w - eta * H * w`. In the eigenbasis
+  of `H` the update decouples completely: each coordinate independently obeys `w_i <- (1 - eta*lambda_i)
+  * w_i`, so after `t` steps it has been multiplied by `(1 - eta*lambda_i)**t`.
+
+
+  Given `eigs` (the eigenvalues of `H`, all strictly positive, unsorted), a step size `eta` and a target
+  `eps`, return `[rho, eta_max, eta_star, steps]`:
+
+
+  - `rho` — the worst-case contraction per step at the given `eta`: `max_i |1 - eta*lambda_i|`. Convergence
+  requires `rho < 1`; `rho >= 1` means at least one coordinate does not shrink.
+
+  - `eta_max` — the step size at which `rho` first reaches 1, i.e. `2 / lambda_max`. Note the factor of
+  2.
+
+  - `eta_star` — the step size that minimises `rho`, i.e. `2 / (lambda_max + lambda_min)`.
+
+  - `steps` — run at `eta = eta_star`, where the worst-case contraction is `rate = (kappa - 1) / (kappa
+  + 1)` with `kappa = lambda_max / lambda_min`. Return the smallest integer `t >= 1` such that `rate**t
+  <= eps`.
+
+
+  Edge cases and rounding:
+
+
+  - If every eigenvalue is equal then `kappa = 1` and `rate = 0`: a single step lands exactly on the optimum,
+  so `steps` is 1. Do not take the logarithm of zero.
+
+  - The absolute value in `rho` is load-bearing. Overshooting past the optimum gives a negative factor
+  whose magnitude is what matters.
+
+  - `rho`, `eta_max` and `eta_star` are rounded to 6 decimal places; `steps` is returned as an integer.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 15
+examples:
+- input: eigs = [1.0, 4.0], eta = 0.4, eps = 0.01
+  output: '[0.6, 0.5, 0.4, 10]'
+  explanation: '|1 - 0.4*1| = 0.6 and |1 - 0.4*4| = 0.6, so rho = 0.6. eta_max = 2/4 = 0.5 and eta_star
+    = 2/(4+1) = 0.4, so the supplied step size is already optimal. kappa = 4 gives rate = 3/5, and 0.6**9
+    = 0.01008 > 0.01 while 0.6**10 = 0.00605 <= 0.01.'
+- input: eigs = [1.0, 10.0], eta = 0.25, eps = 0.001
+  output: '[1.5, 0.2, 0.181818, 35]'
+  explanation: '|1 - 0.25*10| = 1.5, so the sharp direction grows by 50% per step and the run diverges,
+    even though the flat direction contracts to 0.75. A single eigenvalue sets the ceiling.'
+constraints:
+- 1 <= len(eigs) <= 10^3
+- Every eigenvalue is strictly positive.
+- eta > 0
+- 0 < eps < 1
+- steps counts optimal-step-size steps, not steps at the supplied eta.
+- Round the three floats to 6 decimal places; return steps as an int.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: eigs
+    value: '[1.0, 4.0]'
+  - name: eta
+    value: '0.4'
+  - name: eps
+    value: '0.01'
+  stdin: '[1.0, 4.0]
+
+    0.4
+
+    0.01'
+  expected_output: '[0.6, 0.5, 0.4, 10]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: eigs
+    value: '[1.0, 10.0]'
+  - name: eta
+    value: '0.25'
+  - name: eps
+    value: '0.001'
+  stdin: '[1.0, 10.0]
+
+    0.25
+
+    0.001'
+  expected_output: '[1.5, 0.2, 0.181818, 35]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: eigs
+    value: '[2.0, 2.0]'
+  - name: eta
+    value: '0.5'
+  - name: eps
+    value: '0.01'
+  stdin: '[2.0, 2.0]
+
+    0.5
+
+    0.01'
+  expected_output: '[0.0, 1.0, 0.5, 1]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: eigs
+    value: '[0.5, 2.0, 8.0, 1.0]'
+  - name: eta
+    value: '0.2'
+  - name: eps
+    value: 1e-06
+  stdin: '[0.5, 2.0, 8.0, 1.0]
+
+    0.2
+
+    1e-06'
+  expected_output: '[0.9, 0.25, 0.235294, 111]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: eigs
+    value: '[3.0]'
+  - name: eta
+    value: '0.1'
+  - name: eps
+    value: '0.5'
+  stdin: '[3.0]
+
+    0.1
+
+    0.5'
+  expected_output: '[0.7, 0.666667, 0.333333, 1]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: eigs
+    value: '[1.0, 4.0]'
+  - name: eta
+    value: '0.5'
+  - name: eps
+    value: '0.01'
+  stdin: '[1.0, 4.0]
+
+    0.5
+
+    0.01'
+  expected_output: '[1.0, 0.5, 0.4, 10]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def gd_analysis(self, eigs, eta, eps):\n\
+    \        \"\"\"\n        :type eigs: List[float]\n        :type eta: float\n        :type eps: float\n\
+    \        :rtype: List  -- [rho, eta_max, eta_star, steps]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    eigs = json.loads(_in[0])
+
+    eta = float(_in[1])
+
+    eps = float(_in[2])
+
+    _r = Solution().gd_analysis(eigs, eta, eps)
+
+    print([round(float(_r[0]), 6), round(float(_r[1]), 6), round(float(_r[2]), 6), int(_r[3])])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def gd_analysis(self, eigs, eta, eps):\n\
+  \        lo = min(eigs)\n        hi = max(eigs)\n        rho = max(abs(1.0 - eta * e) for e in eigs)\n\
+  \        eta_max = 2.0 / hi\n        eta_star = 2.0 / (hi + lo)\n        kappa = hi / lo\n        rate\
+  \ = (kappa - 1.0) / (kappa + 1.0)\n        if rate == 0.0:\n            steps = 1\n        else:\n \
+  \           steps = int(math.ceil(math.log(eps) / math.log(rate)))\n        return [rho, eta_max, eta_star,\
+  \ steps]\n"

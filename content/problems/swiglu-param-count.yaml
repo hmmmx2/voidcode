@@ -1,0 +1,80 @@
+slug: swiglu-param-count
+title: A gated FFN has three matrices, not two
+difficulty: medium
+categories:
+- LLM
+concepts:
+- feedforward_blocks
+description: 'Input: `d_model d_ff gated`, where `gated` is 1 or 0.
+
+
+  A standard FFN is two matrices: `d_model x d_ff` up and `d_ff x d_model` down. A gated variant such
+  as SwiGLU adds a third `d_model x d_ff` gate projection.
+
+
+  Return `params d_ff_for_equal_params`, where the second is the `d_ff` a GATED FFN would need to match
+  the parameter count of a NON-gated one at the given `d_ff`, floored to an integer.
+
+
+  This is why gated models quote `d_ff` around 8/3 of the usual 4x rather than 4x: the third matrix has
+  to be paid for somewhere, and it is paid for in width.'
+order_index: 68
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def ffn(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().ffn(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def ffn(self, tokens):\n        d = int(tokens[0]);\
+  \ f = int(tokens[1]); g = int(tokens[2])\n        mult = 3 if g == 1 else 2\n        params = mult *\
+  \ d * f\n        equal = int(2 * f / 3)\n        return str(params) + ' ' + str(equal)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 512 2048 0
+  expected_output: 2097152 1365
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 512 2048 1
+  expected_output: 3145728 1365
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 4096 16384 1
+  expected_output: 201326592 10922
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 768 3072 0
+  expected_output: 4718592 2048
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 1 3 1
+  expected_output: 9 2
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 512 0 1
+  expected_output: 0 0
+  is_hidden: true
+hints:
+- 'Non-gated: 2 * d_model * d_ff. Gated: 3 * d_model * d_ff.'
+- Equal params means 3 * d * x == 2 * d * d_ff, so x = 2/3 * d_ff.
+- 4 * d_model scaled by 2/3 gives the familiar 8/3.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

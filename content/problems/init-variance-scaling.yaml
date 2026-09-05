@@ -1,0 +1,86 @@
+slug: init-variance-scaling
+title: What standard deviation should this layer initialise to?
+difficulty: medium
+categories:
+- DL
+concepts:
+- initialization
+- activations
+description: "Return the standard deviation a layer should be initialised with.\n\nWrite `init_std(fan_in,\
+  \ fan_out, scheme)` for `\"xavier\"`, `\"he\"` or `\"lecun\"`:\n\n    xavier  sqrt(2 / (fan_in + fan_out))\n\
+  \    he      sqrt(2 / fan_in)\n    lecun   sqrt(1 / fan_in)\n\nRound to 6 decimal places.\n\n**Why the\
+  \ schemes differ by a factor of 2, which is the whole idea.** Initialisation exists to keep\nactivation\
+  \ variance roughly constant as signal passes through layers — too small and it vanishes by\nthe output,\
+  \ too large and it explodes. Xavier assumes a symmetric activation like tanh that passes\nroughly all\
+  \ its input variance through. He assumes ReLU, which zeroes half its inputs and therefore\nhalves the\
+  \ variance, so the initial weights must be larger by exactly that factor to compensate.\n\n**Which is\
+  \ why the pairing matters more than the formula.** He init with tanh over-amplifies; Xavier\nwith ReLU\
+  \ under-amplifies and deep networks train slowly or not at all. The scheme is a claim about\nthe activation\
+  \ function that follows it, not a free choice.\n\nXavier is the only one using `fan_out`, because it\
+  \ balances the forward and backward passes at\nonce — the backward pass sees the transposed matrix,\
+  \ where fan_in and fan_out swap."
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 33
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def init_std(self, fan_in, fan_out, scheme):\n        \"\
+    \"\"\n        :rtype: float\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().init_std(int(_p[0]), int(_p[1]), _p[2]))
+
+    '
+reference_solution: "class Solution(object):\n    def init_std(self, fan_in, fan_out, scheme):\n     \
+  \   import math\n        if scheme == 'xavier':\n            return round(math.sqrt(2.0 / (fan_in +\
+  \ fan_out)), 6)\n        if scheme == 'he':\n            return round(math.sqrt(2.0 / fan_in), 6)\n\
+  \        return round(math.sqrt(1.0 / fan_in), 6)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1024 1024 xavier
+  expected_output: '0.03125'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1024 1024 he
+  expected_output: '0.044194'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 3584 18944 xavier
+  expected_output: '0.009422'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 4096 4096 lecun
+  expected_output: '0.015625'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 1 1 he
+  expected_output: '1.414214'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 18944 3584 he
+  expected_output: '0.010275'
+  is_hidden: true
+hints:
+- Only Xavier uses fan_out.
+- He's factor of 2 compensates for ReLU zeroing half its inputs.
+- These are standard deviations, not variances.
+hint_ladder:
+  level_0: Only Xavier uses fan_out.
+  level_1: He's factor of 2 compensates for ReLU zeroing half its inputs.
+  level_2: These are standard deviations, not variances.

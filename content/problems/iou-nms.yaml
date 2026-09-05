@@ -1,0 +1,155 @@
+slug: iou-nms
+title: IoU and Non-Max Suppression
+difficulty: hard
+categories:
+- VLM
+concepts:
+- image_preprocessing
+description: 'Implement non-max suppression, the post-processing step every object detector and vision-language
+  grounding model ends with.
+
+
+  A detector emits many overlapping boxes for the same object. NMS keeps the most confident one and discards
+  its duplicates:
+
+
+  1. Sort the boxes by score, highest first.
+
+  2. Take the top box and keep it.
+
+  3. Discard every remaining box whose **IoU** with it exceeds `threshold`.
+
+  4. Repeat with what is left.
+
+
+  IoU is intersection area over union area, where `union = area_a + area_b - intersection`. Boxes are
+  `[x1, y1, x2, y2]` with `(x1, y1)` the top-left corner.
+
+
+  Return the kept indices **in the order they were selected** -- decreasing score. Break score ties by
+  preferring the lower index.'
+inferred_concepts: true
+review_needed: true
+order_index: 8
+examples:
+- input: boxes = [[0,0,10,10], [1,1,11,11], [20,20,30,30]], scores = [0.9, 0.8, 0.7], threshold = 0.5
+  output: '[0, 2]'
+  explanation: Box 1 overlaps box 0 with IoU 81/119 = 0.68 > 0.5 and is suppressed. Box 2 is disjoint
+    and survives.
+- input: boxes = [[0,0,10,10], [0,0,10,10]], scores = [0.9, 0.5], threshold = 0.5
+  output: '[0]'
+  explanation: Identical boxes have IoU 1.0, so only the higher-scoring one is kept.
+- input: boxes = [[0,0,4,4], [2,2,6,6]], scores = [0.9, 0.8], threshold = 0.1
+  output: '[0]'
+  explanation: IoU is 4/28 = 0.143, which exceeds a threshold this strict, so the second box is suppressed.
+constraints:
+- 1 <= len(boxes) <= 10^3, and len(scores) == len(boxes)
+- Boxes are [x1, y1, x2, y2] with x1 <= x2 and y1 <= y2.
+- 0 <= threshold <= 1. Suppress a box when its IoU is strictly greater than the threshold.
+- If the union area is 0, treat the IoU as 0.
+- Return kept indices in selection order (decreasing score).
+- Standard library only -- no numpy, no torch.
+hints:
+- Write IoU on its own first and test it against a case you can compute by hand -- two identical boxes
+  must give exactly 1.0, two disjoint boxes exactly 0.0.
+- The intersection can be empty. Clamp its width and its height at 0 INDEPENDENTLY; a negative width multiplied
+  by a negative height gives a positive area and silently suppresses boxes that do not overlap at all.
+- Sort indices by (-score, index) so ties prefer the lower index. Then repeatedly take the front, keep
+  it, and filter the rest down to those with IoU <= threshold.
+hint_ladder:
+  level_0: Write IoU on its own first and test it against a case you can compute by hand -- two identical
+    boxes must give exactly 1.0, two disjoint boxes exactly 0.0.
+  level_1: The intersection can be empty. Clamp its width and its height at 0 INDEPENDENTLY; a negative
+    width multiplied by a negative height gives a positive area and silently suppresses boxes that do
+    not overlap at all.
+  level_2: Sort indices by (-score, index) so ties prefer the lower index. Then repeatedly take the front,
+    keep it, and filter the rest down to those with IoU <= threshold.
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: boxes
+    value: '[[0.0, 0.0, 10.0, 10.0], [1.0, 1.0, 11.0, 11.0], [20.0, 20.0, 30.0, 30.0]]'
+  - name: scores
+    value: '[0.9, 0.8, 0.7]'
+  - name: threshold
+    value: '0.5'
+  stdin: '[[0.0, 0.0, 10.0, 10.0], [1.0, 1.0, 11.0, 11.0], [20.0, 20.0, 30.0, 30.0]]
+
+    [0.9, 0.8, 0.7]
+
+    0.5'
+  expected_output: '[0, 2]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: boxes
+    value: '[[0.0, 0.0, 10.0, 10.0], [0.0, 0.0, 10.0, 10.0]]'
+  - name: scores
+    value: '[0.9, 0.5]'
+  - name: threshold
+    value: '0.5'
+  stdin: '[[0.0, 0.0, 10.0, 10.0], [0.0, 0.0, 10.0, 10.0]]
+
+    [0.9, 0.5]
+
+    0.5'
+  expected_output: '[0]'
+  is_hidden: false
+- label: Case 3
+  order_index: 2
+  inputs:
+  - name: boxes
+    value: '[[0.0, 0.0, 4.0, 4.0], [2.0, 2.0, 6.0, 6.0]]'
+  - name: scores
+    value: '[0.9, 0.8]'
+  - name: threshold
+    value: '0.1'
+  stdin: '[[0.0, 0.0, 4.0, 4.0], [2.0, 2.0, 6.0, 6.0]]
+
+    [0.9, 0.8]
+
+    0.1'
+  expected_output: '[0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 3
+  inputs:
+  - name: boxes
+    value: '[[0.0, 0.0, 2.0, 2.0]]'
+  - name: scores
+    value: '[0.5]'
+  - name: threshold
+    value: '0.5'
+  stdin: '[[0.0, 0.0, 2.0, 2.0]]
+
+    [0.5]
+
+    0.5'
+  expected_output: '[0]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def nms(self, boxes, scores, threshold):\n        \"\"\"\
+    \n        :type boxes: List[List[float]]  # [x1, y1, x2, y2]\n        :type scores: List[float]\n\
+    \        :type threshold: float\n        :rtype: List[int]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    boxes = json.loads(_in[0]); scores = json.loads(_in[1]); threshold = float(_in[2])
+
+    print(Solution().nms(boxes, scores, threshold))
+
+    '
+source_kind: problem
+reference_solution: "class Solution(object):\n    def nms(self, boxes, scores, threshold):\n        def\
+  \ iou(a, b):\n            x1 = max(a[0], b[0]); y1 = max(a[1], b[1])\n            x2 = min(a[2], b[2]);\
+  \ y2 = min(a[3], b[3])\n            inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)\n            area_a\
+  \ = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])\n            area_b = max(0.0, b[2] - b[0]) * max(0.0,\
+  \ b[3] - b[1])\n            union = area_a + area_b - inter\n            return inter / union if union\
+  \ > 0 else 0.0\n        order = sorted(range(len(boxes)), key=lambda i: (-scores[i], i))\n        kept\
+  \ = []\n        while order:\n            best = order.pop(0)\n            kept.append(best)\n     \
+  \       order = [i for i in order if iou(boxes[best], boxes[i]) <= threshold]\n        return kept\n"

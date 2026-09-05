@@ -1,0 +1,48 @@
+slug: implement-top-p
+title: Write nucleus sampling
+difficulty: medium
+categories:
+- LLM
+concepts:
+- sampling_decoding
+description: Write top-p sampling from logits, including temperature. Handle the case where the top token
+  already exceeds p.
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- OpenAI
+- Anthropic
+order_index: 24
+prompt: Write top-p sampling from logits, including temperature. Handle the case where the top token already
+  exceeds p.
+approach: Temperature on logits, softmax, sort descending, cumulative sum, cut. The edge case is the whole
+  test.
+model_answer: "    import math, random\n\n    def top_p_sample(logits, p=0.9, temp=1.0):\n        if temp\
+  \ == 0:                       # greedy, not a divide\n            return max(range(len(logits)), key=lambda\
+  \ i: logits[i])\n\n        z = [x / temp for x in logits]\n        m = max(z)                      \
+  \    # subtract max: stability\n        e = [math.exp(x - m) for x in z]\n        s = sum(e)\n     \
+  \   probs = [x / s for x in e]\n\n        order = sorted(range(len(probs)), key=lambda i: -probs[i])\n\
+  \        cum, keep = 0.0, []\n        for i in order:\n            keep.append(i)\n            cum +=\
+  \ probs[i]\n            if cum >= p:\n                break                       # AFTER appending\n\
+  \n        total = sum(probs[i] for i in keep)  # renormalise\n        r = random.random() * total\n\
+  \        acc = 0.0\n        for i in keep:\n            acc += probs[i]\n            if acc >= r:\n\
+  \                return i\n        return keep[-1]                     # float guard\n\nTHE EDGE CASE.\
+  \ If the top token has probability 0.95 and p = 0.9, breaking *before* appending leaves the candidate\
+  \ set empty and the function either crashes or samples from nothing. Appending first and then testing\
+  \ guarantees at least one token, which is the correct behaviour: a confident model should emit its confident\
+  \ token.\n\nTwo more things being checked. Subtracting the max before exp — without it, a logit of 800\
+  \ overflows to inf and every probability becomes NaN. And temp = 0 handled as a branch rather than a\
+  \ division, since 'temperature 0' conventionally means greedy, and dividing by zero gives inf logits\
+  \ and a NaN softmax.\n\nNote temperature is applied *before* truncation, so raising it widens the set\
+  \ top-p then selects from — the two interact rather than compose independently."
+follow_ups:
+- Why is top-p usually preferred to top-k?
+- What is min-p, and which failure of top-p does it target?
+- How would you combine top-p with a repetition penalty without breaking normalisation?
+red_flags:
+- Breaking before appending, so a confident model yields an empty set.
+- No max subtraction, so large logits overflow to NaN.
+- Dividing by temp = 0 instead of branching to greedy.
+source_kind: interview_question

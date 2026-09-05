@@ -1,0 +1,200 @@
+slug: iq-pipeline-bubble-fraction
+title: Compute the pipeline bubble and the micro-batch count it demands
+difficulty: medium
+categories:
+- CUDA
+- LLM
+concepts:
+- pipeline_parallel
+description: "Implement:\n\n```python\nclass Solution(object):\n    def pipeline(self, stages, microbatches,\
+  \ chunks, target):\n        ...\n```\n\nA pipeline of `P = stages` devices processes `M = microbatches`\
+  \ micro-batches. Take one stage's work on one micro-batch as the unit of time. The last stage cannot\
+  \ begin until micro-batch 1 has crossed the `P - 1` stages ahead of it, and the earlier stages sit idle\
+  \ while the tail drains, so the pass takes `M + P - 1` units of which only `M` are useful:\n\n```\n\
+  bubble = (P - 1) / (M + P - 1)\n```\n\nAn interleaved schedule assigns each device `chunks` non-contiguous\
+  \ stages, splitting a stage's work per micro-batch into `chunks` pieces of `1/chunks` the duration.\
+  \ Fill and drain shrink by that factor while the useful work does not, giving the general form you must\
+  \ implement:\n\n```\nbubble = (P - 1) / (chunks * M + P - 1)\n```\n\nReturn `[bubble, min_microbatches]`:\n\
+  \n- `bubble` for the given `microbatches`, rounded to 6 decimal places.\n- `min_microbatches` is the\
+  \ smallest integer `M2 >= 1` for which `(P - 1) / (chunks * M2 + P - 1) <= target`, with `stages` and\
+  \ `chunks` held fixed. It is an integer and is never rounded. Equality counts as meeting the target.\n\
+  \nWith `P = 1` there is no pipeline at all: `bubble` is 0.0 and `min_microbatches` is 1.\n\n**Watch\
+  \ the ceiling.** Solving the inequality gives `M2 >= (P - 1) * (1 - target) / (target * chunks)`, and\
+  \ taking `math.ceil` of that in floating point can land one step either side of the true answer. Re-test\
+  \ the candidate against the inequality (and the candidate below it) before returning.\n\nStandard library\
+  \ only -- no numpy, no torch."
+inferred_concepts: true
+review_needed: true
+order_index: 34
+examples:
+- input: stages = 8, microbatches = 8, chunks = 1, target = 0.15
+  output: '[0.466667, 40]'
+  explanation: 7 idle units against 15 total is 7/15 = 46.7% of the pass thrown away. To get to 15% you
+    need 7/(M+7) <= 0.15, so M >= 39.67 and the answer is 40 -- micro-batches must far outnumber stages.
+- input: stages = 8, microbatches = 64, chunks = 1, target = 0.06
+  output: '[0.098592, 110]'
+  explanation: Eight times the micro-batches drops the bubble from 46.7% to 9.9%, and reaching 6% would
+    take 110 of them.
+constraints:
+- 1 <= stages <= 1024
+- 1 <= microbatches <= 10^6
+- 1 <= chunks <= 64
+- 0 < target < 1
+- min_microbatches is an integer >= 1; equality with target counts as met.
+- Round bubble to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: stages
+    value: '8'
+  - name: microbatches
+    value: '8'
+  - name: chunks
+    value: '1'
+  - name: target
+    value: '0.15'
+  stdin: '8
+
+    8
+
+    1
+
+    0.15'
+  expected_output: '[0.466667, 40]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: stages
+    value: '8'
+  - name: microbatches
+    value: '64'
+  - name: chunks
+    value: '1'
+  - name: target
+    value: '0.06'
+  stdin: '8
+
+    64
+
+    1
+
+    0.06'
+  expected_output: '[0.098592, 110]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: stages
+    value: '8'
+  - name: microbatches
+    value: '8'
+  - name: chunks
+    value: '4'
+  - name: target
+    value: '0.15'
+  stdin: '8
+
+    8
+
+    4
+
+    0.15'
+  expected_output: '[0.179487, 10]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: stages
+    value: '1'
+  - name: microbatches
+    value: '1'
+  - name: chunks
+    value: '1'
+  - name: target
+    value: '0.15'
+  stdin: '1
+
+    1
+
+    1
+
+    0.15'
+  expected_output: '[0.0, 1]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: stages
+    value: '2'
+  - name: microbatches
+    value: '100'
+  - name: chunks
+    value: '1'
+  - name: target
+    value: '0.5'
+  stdin: '2
+
+    100
+
+    1
+
+    0.5'
+  expected_output: '[0.009901, 1]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: stages
+    value: '16'
+  - name: microbatches
+    value: '4'
+  - name: chunks
+    value: '2'
+  - name: target
+    value: '0.25'
+  stdin: '16
+
+    4
+
+    2
+
+    0.25'
+  expected_output: '[0.652174, 23]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def pipeline(self, stages, microbatches,\
+    \ chunks, target):\n        \"\"\"\n        :type stages: int         -- P, devices in the pipeline\n\
+    \        :type microbatches: int   -- M\n        :type chunks: int         -- stages per device in\
+    \ an interleaved schedule\n        :type target: float\n        :rtype: list  -- [bubble, min_microbatches]\n\
+    \        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    stages = int(_in[0])
+
+    microbatches = int(_in[1])
+
+    chunks = int(_in[2])
+
+    target = float(_in[3])
+
+    _r = Solution().pipeline(stages, microbatches, chunks, target)
+
+    print(json.dumps([round(_r[0], 6), _r[1]]))
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def _bubble(self, stages, microbatches,\
+  \ chunks):\n        return float(stages - 1) / float(chunks * microbatches + stages - 1)\n\n    def\
+  \ pipeline(self, stages, microbatches, chunks, target):\n        bubble = self._bubble(stages, microbatches,\
+  \ chunks)\n        need = float(stages - 1) * (1.0 - target) / (target * chunks)\n        m = int(math.ceil(need))\n\
+  \        if m < 1:\n            m = 1\n        while self._bubble(stages, m, chunks) > target:\n   \
+  \         m += 1\n        while m > 1 and self._bubble(stages, m - 1, chunks) <= target:\n         \
+  \   m -= 1\n        return [bubble, m]\n"

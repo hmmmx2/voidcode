@@ -1,0 +1,80 @@
+slug: tokenizer-fertility
+title: Tokens per word, and why cost is not counted in words
+difficulty: easy
+categories:
+- LLM
+concepts:
+- tokenization
+description: 'Input: `n_words n_tokens`.
+
+
+  Fertility is tokens divided by words. Return it rounded to 3 decimal places, then the percentage overhead
+  against a hypothetical one-token-per-word tokenizer, rounded to 1 decimal place, as `fertility overhead_pct`.
+
+
+  Fertility varies sharply by language and domain: code, non-Latin scripts and rare proper nouns all fragment
+  more. Since context limits and cost are denominated in TOKENS, a budget estimated in words is wrong
+  by exactly this factor.
+
+
+  Return `0.0 0.0` when `n_words` is 0.'
+order_index: 54
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def fertility(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().fertility(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def fertility(self, tokens):\n        w = float(tokens[0]);\
+  \ t = float(tokens[1])\n        if w == 0:\n            return '0.0 0.0'\n        f = t / w\n      \
+  \  return str(round(f, 3)) + ' ' + str(round((f - 1) * 100, 1))\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 100 130
+  expected_output: 1.3 30.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 100 100
+  expected_output: 1.0 0.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 0 50
+  expected_output: 0.0 0.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 100 250
+  expected_output: 2.5 150.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 100 80
+  expected_output: 0.8 -20.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 3 7
+  expected_output: 2.333 133.3
+  is_hidden: true
+hints:
+- Fertility of 1.0 means one token per word and 0% overhead.
+- Overhead is (fertility - 1) * 100.
+- Fertility below 1 is possible when a tokenizer merges common phrases.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

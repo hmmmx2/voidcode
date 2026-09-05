@@ -1,0 +1,44 @@
+slug: dequantization-placement-design
+title: Where should a W4A16 kernel dequantize?
+difficulty: hard
+categories:
+- CUDA
+concepts:
+- quantization_schemes
+- memory_hierarchy
+- tiled_matmul
+grading: rubric
+description: "A weight-only 4-bit quantized linear layer (W4A16) stores weights as packed 4-bit integers\
+  \ with per-group scales, and activations in fp16. Somewhere in the kernel the weights must become fp16\
+  \ to be multiplied.\n\nCompare two placements:\n\n  A. Dequantize the full weight tile into HBM, then\
+  \ run a normal fp16 gemm.\n  B. Load packed 4-bit weights into SRAM and dequantize in-register, inside\
+  \ the main loop.\n\nArgue which one preserves the benefit of quantizing at all, using an arithmetic-intensity\
+  \ argument rather than a benchmark. Then say what W4A16 does and does not speed up, and why that differs\
+  \ between the prefill and decode phases of inference."
+hints:
+- Ask what the actual goal of weight-only quantization is. It is not fewer FLOPs.
+- Design A moves fp16 weights through HBM. Compare that traffic to the unquantized case.
+- Decode is memory-bound per token; prefill is compute-bound.
+hint_ladder:
+  level_0: Ask what the actual goal of weight-only quantization is. It is not fewer FLOPs.
+  level_1: Design A moves fp16 weights through HBM. Compare that traffic to the unquantized case.
+  level_2: Decode is memory-bound per token; prefill is compute-bound.
+rubric:
+- criterion: States the goal of weight-only quantization as reducing weight MEMORY TRAFFIC and footprint,
+    not reducing arithmetic — the multiply still happens in fp16.
+  weight: 0.25
+- criterion: 'Shows design A defeats that goal: writing dequantized fp16 weights to HBM restores the full-precision
+    traffic and adds a pass, so nothing is saved at run time.'
+  weight: 0.25
+- criterion: 'Chooses B and describes it concretely: packed weights read from HBM, unpacked and scaled
+    in registers or SRAM inside the loop, so only 4-bit data crosses the slow link.'
+  weight: 0.25
+- criterion: 'Distinguishes decode from prefill: decode is memory-bandwidth-bound so weight traffic dominates
+    and W4A16 helps most; prefill is compute-bound and benefits far less.'
+  weight: 0.15
+- criterion: Mentions a real cost — group scales add overhead, and accuracy depends on group size and
+    outlier handling.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

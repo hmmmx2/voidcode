@@ -1,0 +1,10 @@
+{
+  "backend": "vllm_per_prompt",
+  "prompts": 12,
+  "tokens": 23820,
+  "seconds": 21.09,
+  "tokens_per_s": 1129.3,
+  "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "group": 16,
+  "max_new": 640
+}

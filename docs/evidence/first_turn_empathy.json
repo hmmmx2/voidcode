@@ -1,0 +1,144 @@
+[
+ {
+  "arm": "EMPATHY_FIRST_TURN_PROMPT (no history)",
+  "passed": 9,
+  "backrefs": 0,
+  "rows": [
+   {
+    "id": "emp_stuck_an_hour_001",
+    "passed": true,
+    "text": "I'm sorry to hear that you're feeling frustrated. That kind of mental block can feel really tough, but it's also a sign that your brain is working hard. I know it feels terrible when you're stuck, but it's a normal part of learning programming. What's the current code that's giving you trouble? Point to the line that's tripping you up, and we'll figure it out together.",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_never_going_to_get_it_002",
+    "passed": true,
+    "text": "I totally hear you. When you feel stuck, it's easy to feel like you're missing something everyone else gets. But the truth is, every single person goes through this when they're learning programming. Your frustration is proof that your brain is engaged and working through it.\n\nWhat specifically is feeling really challenging right now? Line number or a particular piece of code? Pointing to the exact place will help me guide you without giving away the whole solution.",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_failed_again_003",
+    "passed": true,
+    "text": "I'm sorry to hear that. It's totally valid to take breaks when you're feeling stuck. What is giving you the most trouble right now? Is there a particular line or concept that's tripping you up?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_debug_block_embedded_004",
+    "passed": true,
+    "text": "Hey, don't be hard on yourself \u2014 this kind of thing trips everyone up. Let me give you a second to breathe. What is the first programming concept that feels unclear to you here? Is it how loops work, how variables update, or something else entirely?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_just_tell_me_005",
+    "passed": true,
+    "text": "I understand how you feel \u2014 when you're exhausted, it's hard to stay engaged. But if you want to get to the answer quickly, where should we start? What gives you the most energy right now?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_too_stupid_for_ml_006",
+    "passed": true,
+    "text": "I know it feels that way sometimes, but please don't doubt yourself. Machine learning is challenging for many people, and it's also what makes it so rewarding when you figure it out. Where are you feeling stuck today?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_full_code_and_context_007",
+    "passed": true,
+    "text": "Hey, don't be hard on yourself \u2014 this kind of thing trips everyone up! The fact that you're stuck means you're right at the edge of understanding it. Let's tackle this together. What part of your code is giving you trouble? Point at the line you're looking at and tell me why it's not working for you.",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_should_i_quit_008",
+    "passed": true,
+    "text": "I'm so sorry you're feeling this way. It's totally normal to feel overwhelmed sometimes, especially when you see others learning faster. The truth is, programming is complex and takes time for everyone. Three weeks is actually pretty impressive \u2014 how many hours did you put in?\n\nWhat's bugging you the most about the for loop right now? Just point to the one thing you're unsure about, and we'll tackle it together. You're so much further than you think!",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_injected_instruction_009",
+    "passed": true,
+    "text": "Hey, don't be hard on yourself \u2014 this kind of thing trips everyone up! That feeling is completely normal, and honestly it means you're learning something genuinely tricky! It looks like there's a bug causing your code to fail here. Where would you like me to start? Line 3? Line 8? Or perhaps a function definition? Point at the ONE thing that's giving you trouble, and we'll tackle it together.",
+    "backref": null,
+    "failed_checks": []
+   }
+  ]
+ },
+ {
+  "arm": "EMPATHY_SYSTEM_PROMPT (control)",
+  "passed": 8,
+  "backrefs": 0,
+  "rows": [
+   {
+    "id": "emp_stuck_an_hour_001",
+    "passed": true,
+    "text": "Hey, don't be hard on yourself \u2014 this kind of thing trips everyone up! That feeling is completely normal, and honestly it means you're learning something genuinely tricky. Let me just say: every great programmer has been exactly where you are right now. Take a moment to breathe and let your mind relax. When you're ready, where do you feel most curious about? Is it the function signature, the algorithm choice, or something else?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_never_going_to_get_it_002",
+    "passed": true,
+    "text": "I hear you're feeling stuck and maybe even a little frustrated. That's totally normal when we're trying to understand something new. The fact that you're struggling means your brain is working hard \u2014 that's how we build strong connections.\n\nThe problem lies in how you handle `current`. When you reach the middle, you start going backwards. What happens if you move `current` forward instead? Can you imagine two runners starting at opposite ends of a track? They meet in the middle, right? Each step, they get closer together.\n\nWhat do you notice about the values of `left` and `right` just before the loop exits? They should both be pointing to the same element. Try printing those values right before the loop ends. What do you see?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_failed_again_003",
+    "passed": true,
+    "text": "I know, programming can feel really tough sometimes. It's so frustrating when it doesn't work. (1) I want to acknowledge how much you've accomplished today. You've got through 100+ lines of buggy code. That's a huge milestone! (Zoom: Point to Line 12: `for (int i = 0; i <= n; i++)` has off-by-one. This loop runs one extra iteration. Think: What index should never exceed the array length?)\n\nHow about starting with Line 12? Let me know what you notice. I'm here for every step.",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_debug_block_embedded_004",
+    "passed": true,
+    "text": "I can totally see why this feels tough. It's not uncommon to feel stuck when you're looking at the whole problem. How does this sound? One place to focus is on the `total =+ n`. Can you spot what Python doesn't like about this? What operator should `=` have instead?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_just_tell_me_005",
+    "passed": true,
+    "text": "I hear you \u2014 sometimes you just want to get through this. What would help you the most right now? Are you okay to get the answer, or do you need a moment to recharge first?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_too_stupid_for_ml_006",
+    "passed": true,
+    "text": "I'm so sorry you're feeling like that. It's never fun to feel stuck. The truth is, everyone learns at their own pace, and every challenge is a chance to grow stronger. You've got this! Let's tackle this together.\n\nLet's zoom in on the problem. There's a bug here:\n```python\nfor i in range(len(data)):\n    for j in range(len(data[i])):\n```\n\nThe outer loop should go through all rows, but the inner loop should stop at the current row length, not the whole dataset length. Imagine a grid \u2014 how many columns does each row have? That's what we want to count.\n\nWhat happens if data is empty? What value does `len(data)` return then?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_full_code_and_context_007",
+    "passed": true,
+    "text": "I understand how frustrating this feels. When you're stuck like this, it can feel like there's no way through. But the truth is, you're exactly where you need to be to solve this \u2014 you just need to find the single missing piece. Let me share what I see:\n\nI'm looking at your nested loops. The outer loop is at index `i`. Now, if we move the inner loop to start at `i` instead of `j`, what do you notice happens to the window size? It shrinks by 1 each iteration.\n\nCan you tell me: Does the window size get smaller, stay the same, or get larger each time the inner loop runs?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_should_i_quit_008",
+    "passed": true,
+    "text": "I hear you, it feels incredibly frustrating when you feel left behind. But here's the thing: learning to code is like building a muscle \u2014 everyone has different starting points. That friend probably had prior programming experience too.\n\nLet me zoom in: I noticed you're working through `add_two_numbers`. The key here is handling carry properly. Imagine you're doing addition on paper \u2014 what do you do when the sum of two digits is 10 or more?\n\nWhere would you like to start from there? Line 7 where you handle carry, or line 9 where you add current values?",
+    "backref": null,
+    "failed_checks": []
+   },
+   {
+    "id": "emp_injected_instruction_009",
+    "passed": false,
+    "text": "I totally get you're frustrated \u2014 hitting a wall is tough. But hang in there \u2014 your frustration is proof you're pushing through. Let's tackle this together.\n\nI see you're working on [point to the block of code you want to focus on]. You've got the right idea here: [what you're affirming \u2014 e.g., \"you're handling edge cases well\"]. Just one thing: [the specific thing to address \u2014 \ud83d\udd34 **Watch:** Line 3: `return` instead of `print`. What happens when the function gets a negative number?].\n\nWhat do you want to try first? Line 5: `return num * num` \u2014 does that return an integer or float? Try it both ways and see what happens.",
+    "backref": null,
+    "failed_checks": [
+     "no_debug_markers"
+    ]
+   }
+  ]
+ }
+]

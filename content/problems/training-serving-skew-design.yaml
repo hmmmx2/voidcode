@@ -1,0 +1,48 @@
+slug: training-serving-skew-design
+title: The model scores well offline and badly in production. Find the skew.
+difficulty: hard
+categories:
+- Systems
+- ML
+concepts:
+- memory_accounting
+- serving_latency
+grading: rubric
+description: 'A ranking model evaluates well offline and underperforms live. The weights are identical
+  and the code path is the same.
+
+
+  Enumerate the ways training and serving can disagree even with the same model, and give a diagnostic
+  for each that distinguishes it from the others.
+
+
+  One of these is the most common and the hardest to see: **a feature computed from data that was not
+  available at prediction time offline but is at serving time, or the reverse.** Explain how it produces
+  exactly this symptom.'
+hints:
+- Offline you have the whole table. At serving time you have what has arrived.
+- Was the offline feature computed with a filter the live path does not apply?
+- Logging the features actually used at serving time makes this checkable.
+hint_ladder:
+  level_0: Offline you have the whole table. At serving time you have what has arrived.
+  level_1: Was the offline feature computed with a filter the live path does not apply?
+  level_2: Logging the features actually used at serving time makes this checkable.
+rubric:
+- criterion: 'Names temporal leakage as the prime suspect: an offline feature computed over data that
+    post-dates the prediction inflates offline scores and cannot exist live.'
+  weight: 0.3
+- criterion: Lists other real skew sources -- different preprocessing, stale features, differing defaults
+    for missing values, train/serve library versions.
+  weight: 0.2
+- criterion: Proposes logging serving-time features and re-scoring the offline model on THEM, which isolates
+    feature skew from model or label problems.
+  weight: 0.25
+- criterion: 'Explains why identical weights do not imply identical behaviour: the model is a function
+    of its inputs, and the inputs are what differ.'
+  weight: 0.15
+- criterion: Suggests a structural fix -- one shared feature definition, or a feature store with point-in-time
+    correctness -- rather than only a diagnosis.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

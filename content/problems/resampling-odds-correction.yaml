@@ -1,0 +1,46 @@
+slug: resampling-odds-correction
+title: Undo resampling with an odds correction
+difficulty: hard
+categories:
+- ML
+concepts:
+- tensors_and_shapes
+description: You trained on a resampled set whose positive rate is pi_train but you need probabilities
+  for a population whose rate is pi_true. Write the correction that maps every model output back. It is
+  a constant multiplier on the odds, not on the probability, and the endpoints 0 and 1 must not divide
+  by zero.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Meta
+- NVIDIA
+prompt: You trained on a resampled set whose positive rate is pi_train but you need probabilities for
+  a population whose rate is pi_true. Write the correction that maps every model output back. It is a
+  constant multiplier on the odds, not on the probability, and the endpoints 0 and 1 must not divide by
+  zero.
+approach: 'Write Bayes in both worlds and divide: the class-conditional density is untouched by resampling,
+  so the likelihood ratio cancels and only the prior odds ratio survives. Convert each probability to
+  odds, scale by that constant, convert back, and special-case the two endpoints.'
+model_answer: "Resampling reweights classes but leaves p(x|y) untouched. By Bayes, in each world:\n  \
+  \  odds_train(x) = [p(x|1)/p(x|0)] * [pi_train/(1-pi_train)]\n    odds_true(x)  = [p(x|1)/p(x|0)] *\
+  \ [pi_true /(1-pi_true )]\n\nThe likelihood ratio is identical, so dividing kills it:\n\n    odds_true\
+  \ = odds_train * [pi_true/(1-pi_true)] / [pi_train/(1-pi_train)]\n\nWith pi_true = 0.01 and pi_train\
+  \ = 0.5:\n    r = (0.01/0.99) / (0.5/0.5) = 0.010101\n\nCORRECTING p = 0.9:\n    odds_train = 0.9/0.1\
+  \ = 9\n    odds_true  = 9 * 0.010101 = 0.0909\n    p_true     = 0.0909/1.0909 = 0.0833\n\nA confident\
+  \ 0.9 is really about 8%. Anything downstream that multiplies the score — expected value, a cost threshold,\
+  \ a bid — is wrong by an order of magnitude without this.\n\nNote what is unchanged: the correction\
+  \ is monotone, so ranking and AUC are identical either way. That is why resampling looks harmless when\
+  \ you evaluate with AUC and breaks everything when you threshold.\n\nClass weights in the loss achieve\
+  \ the same reweighting without duplicating rows, and are the better default — the real benefit of oversampling\
+  \ is optimisation, not statistics: at 1% positives many minibatches contain no positive at all."
+follow_ups:
+- Show this is equivalent to shifting the logit by log(r).
+- Why are ranking metrics unaffected?
+- Would you resample the validation set? What breaks if you do?
+red_flags:
+- Reporting post-resampling probabilities as calibrated.
+- Resampling the validation or test set, destroying the metric's meaning.
+- Applying SMOTE before the train/test split.
+source_kind: interview_question

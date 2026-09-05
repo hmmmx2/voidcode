@@ -1,0 +1,51 @@
+slug: derive-rope-relative
+title: Rotate q and k by position, then dot them
+difficulty: hard
+categories:
+- LLM
+concepts:
+- positional_encoding
+description: 'Write `rope_dot(q, k, m, n, base)`: apply rotary position embedding to `q` at position `m`
+  and to `k` at position `n`, then return their dot product. The trap is the pairing and the frequency
+  schedule -- get either wrong and the result stops depending only on `m - n`, which the hidden cases
+  check by shifting both positions by the same amount.'
+inferred_concepts: true
+review_needed: true
+domain: llm
+kind: code
+companies:
+- OpenAI
+- Anthropic
+- Meta
+- NVIDIA
+prompt: 'Write `rope_dot(q, k, m, n, base)`: apply rotary position embedding to `q` at position `m` and
+  to `k` at position `n`, then return their dot product. The trap is the pairing and the frequency schedule
+  -- get either wrong and the result stops depending only on `m - n`, which the hidden cases check by
+  shifting both positions by the same amount.'
+approach: Split each vector into adjacent 2-D pairs, give pair i the angle pos * base^(-2i/d), and rotate
+  every pair by that angle before dotting. Because a 2-D rotation is orthogonal and rotations compose
+  by adding angles, R(m)^T R(n) collapses to R(n - m), so the absolute positions cancel and only the offset
+  survives.
+model_answer: "Take one 2D slice with rotation matrix R(t) for angle t*theta.\n    q_m = R(m) q,   k_n\
+  \ = R(n) k\n\n    <q_m, k_n> = (R(m) q)^T (R(n) k)\n               = q^T R(m)^T R(n) k\n           \
+  \    = q^T R(-m) R(n) k        (R orthogonal: R^T = R^-1)\n               = q^T R(n - m) k         \
+  \ (rotations add angles)\n\nThe absolute positions m and n appear nowhere in the result — only their\
+  \ difference. Repeat over every 2D subspace, each with its own frequency theta_i = base^(-2i/d), and\
+  \ sum: the full dot product is a function of (n - m) alone.\n\nWHY THAT SHAPE IS CHOSEN. Applying it\
+  \ to q and k rather than adding to the embedding means zero parameters and, crucially, compatibility\
+  \ with the KV cache: a cached key was rotated by its own absolute position when written and stays valid\
+  \ forever, because only the difference ever matters at read time.\n\nWHERE IT DEGRADES. RoPE is *defined*\
+  \ at any position, so it does not crash beyond the training length — but the high-frequency subspaces\
+  \ rotate into angular ranges never seen in training, and quality drops. That is what the extension methods\
+  \ address: position interpolation squeezes positions into the trained range; NTK-aware and YaRN scaling\
+  \ stretch low frequencies more than high ones. All typically need a short fine-tune, so RoPE makes context\
+  \ extension cheap, not free."
+follow_ups:
+- Why does raising the theta base help at longer context?
+- Show why RoPE is compatible with the KV cache but learned absolute positions are not.
+- How does ALiBi get relative position differently, and what does it give up?
+red_flags:
+- Claiming RoPE extrapolates to any length with no loss.
+- Not using orthogonality, so R(m)^T R(n) never simplifies.
+- Thinking it is added to the embedding rather than applied to q and k.
+source_kind: interview_question

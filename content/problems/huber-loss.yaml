@@ -1,0 +1,79 @@
+slug: huber-loss
+title: Huber loss and the point where it switches
+difficulty: medium
+categories:
+- DL
+concepts:
+- loss_functions
+description: "Input: `delta`, then pairs of `prediction target`.\n\nHuber loss is quadratic for small\
+  \ errors and linear for large ones:\n\n    |e| <= delta   ->  0.5 * e^2\n    |e| >  delta   ->  delta\
+  \ * (|e| - 0.5 * delta)\n\nReturn the MEAN over all pairs, rounded to 4 decimal places.\n\nThe second\
+  \ branch is not an arbitrary formula — it is the line that makes the loss continuous AND differentiable\
+  \ at `|e| = delta`. Substituting `|e| = delta` into both branches gives the same value, which is worth\
+  \ checking as you write it."
+order_index: 50
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def huber(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().huber(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def huber(self, tokens):\n        d = float(tokens[0])\n\
+  \        rest = [float(x) for x in tokens[1:]]\n        n = len(rest) // 2\n        if n == 0:\n   \
+  \         return 0.0\n        total = 0.0\n        for i in range(n):\n            e = abs(rest[2 *\
+  \ i] - rest[2 * i + 1])\n            total += 0.5 * e * e if e <= d else d * (e - 0.5 * d)\n       \
+  \ return round(total / n, 4)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 1.0 0 0
+  expected_output: '0.0'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 1.0 3 0
+  expected_output: '2.5'
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 1.0 1 0
+  expected_output: '0.5'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 2.0 5 0 0 0
+  expected_output: '4.0'
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 0.5 0.25 0
+  expected_output: '0.0312'
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 1.0 -3 0
+  expected_output: '2.5'
+  is_hidden: true
+hints:
+- At |e| = delta both branches equal 0.5 * delta^2. Use that as your own test.
+- Squared error explodes on outliers; the linear tail is the whole point.
+- Return the mean, not the sum.
+hint_ladder:
+  level_0: At |e| = delta both branches equal 0.5 * delta^2. Use that as your own test.
+  level_1: Squared error explodes on outliers; the linear tail is the whole point.
+  level_2: Return the mean, not the sum.
+inferred_concepts: false
+review_needed: false
+source_kind: problem

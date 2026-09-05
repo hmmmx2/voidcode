@@ -1,0 +1,46 @@
+slug: derive-logistic-gradient
+title: Gradient of the logistic log-loss
+difficulty: medium
+categories:
+- ML
+concepts:
+- backpropagation
+- loss_functions
+description: Write the gradient of the mean log-loss for logistic regression with respect to the weights
+  and the bias, with an L2 penalty on the weights. One derivative of the sigmoid collapses the whole chain
+  rule to a single residual; the traps are that the penalty must not touch the bias, and that a strongly
+  negative logit overflows the naive sigmoid.
+inferred_concepts: true
+review_needed: true
+domain: ml
+kind: code
+companies:
+- Meta
+- Google DeepMind
+prompt: Write the gradient of the mean log-loss for logistic regression with respect to the weights and
+  the bias, with an L2 penalty on the weights. One derivative of the sigmoid collapses the whole chain
+  rule to a single residual; the traps are that the penalty must not touch the bias, and that a strongly
+  negative logit overflows the naive sigmoid.
+approach: 'Differentiate the sigmoid once and everything cancels: dL/dz is just p - y, so each weight
+  gradient is a residual-weighted feature sum averaged over the batch. Add l2*w to the weight gradients
+  only, and branch on the sign of z so the exponential never blows up.'
+model_answer: "Let z = w^T x, p = sigma(z) = 1/(1+e^-z), and for one example\n    L = -[y log p + (1-y)\
+  \ log(1-p)]\n\nKEY IDENTITY.  sigma'(z) = sigma(z)(1 - sigma(z)) = p(1-p).\n\n    dL/dp = -y/p + (1-y)/(1-p)\
+  \ = (p - y) / (p(1-p))\n    dL/dz = dL/dp * p(1-p) = p - y\n    dL/dw = (p - y) x\n\nOver a dataset,\
+  \ dL/dw = X^T (p - y). Same shape as softmax with cross-entropy — that is not a coincidence, it is the\
+  \ binary case of it.\n\nCONVEXITY. Differentiate again:\n    d²L/dw² = x x^T * p(1-p)\n    H = X^T S\
+  \ X,   S = diag(p_i(1-p_i))\n\nFor any v: v^T H v = (Xv)^T S (Xv) = sum_i s_i (Xv)_i² >= 0, since every\
+  \ s_i = p_i(1-p_i) > 0. So H is PSD and L is convex — meaning any local minimum is global, which is\
+  \ why logistic regression has no seed sensitivity and no initialisation strategy.\n\nWorth adding: on\
+  \ separable data the MLE does not exist. The likelihood increases monotonically as ||w|| -> infinity,\
+  \ so weights diverge. That is the practical reason L2 regularisation is on by default in every library\
+  \ implementation — it makes H strictly positive definite and the optimum finite."
+follow_ups:
+- Show sigma'(z) = sigma(z)(1 - sigma(z)).
+- What does adding L2 do to the Hessian?
+- Why does the MLE fail to exist on linearly separable data?
+red_flags:
+- Not knowing sigma' = sigma(1-sigma), so the derivation stalls immediately.
+- Claiming convexity without producing the Hessian.
+- Unaware that separable data drives the weights to infinity.
+source_kind: interview_question

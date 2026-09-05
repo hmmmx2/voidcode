@@ -1,0 +1,105 @@
+slug: lora-parameter-savings
+title: What fraction of the model does LoRA actually train?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- peft_lora
+- memory_accounting
+description: 'Given a layer''s input and output dimensions, a LoRA rank, and how many such layers are
+  adapted,
+
+  return the fraction of the original parameters that LoRA actually trains.
+
+
+  Write `lora_trainable_fraction(d_in, d_out, rank, n_layers)`.
+
+
+  LoRA freezes `W` (d_in x d_out) and learns `B @ A` where `A` is `rank x d_in` and `B` is
+
+  `d_out x rank`. So each adapted layer trains `rank * (d_in + d_out)` parameters against
+
+  `d_in * d_out` frozen ones.
+
+
+  Return the fraction rounded to 6 decimal places.
+
+
+  **Why the memory saving is larger than this fraction suggests.** The frozen weights still occupy
+
+  memory, so LoRA does not shrink the model — it shrinks the *optimizer state and gradients*, which
+
+  under AdamW are 12 bytes per trainable parameter against 2 for a frozen bf16 weight. That is the
+
+  real reason a 7B fits on one card with LoRA and not without, and it is a better answer than "fewer
+
+  parameters".
+
+
+  There is a second saving worth naming: toggling the adapter off recovers the reference policy for
+
+  free, which removes an entire model copy from any RL setup.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 18
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def lora_trainable_fraction(self, d_in, d_out, rank, n_layers):\n\
+    \        \"\"\"\n        :rtype: float  # rounded to 6dp\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().lora_trainable_fraction(int(_p[0]), int(_p[1]), int(_p[2]), int(_p[3])))
+
+    '
+reference_solution: "class Solution(object):\n    def lora_trainable_fraction(self, d_in, d_out, rank,\
+  \ n_layers):\n        trainable = n_layers * rank * (d_in + d_out)\n        frozen = n_layers * d_in\
+  \ * d_out\n        return round(trainable / frozen, 6)\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 3584 3584 8 28
+  expected_output: '0.004464'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 3584 18944 16 28
+  expected_output: '0.005309'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 4096 4096 64 32
+  expected_output: '0.03125'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 1024 1024 1 1
+  expected_output: '0.001953'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 3584 3584 3584 28
+  expected_output: '2.0'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 8192 1024 32 40
+  expected_output: '0.035156'
+  is_hidden: true
+hints:
+- Trainable per layer is rank * (d_in + d_out); frozen is d_in * d_out.
+- n_layers cancels. If your answer depends on it, check the algebra.
+- The fraction is small; 6 decimal places matters.
+hint_ladder:
+  level_0: Trainable per layer is rank * (d_in + d_out); frozen is d_in * d_out.
+  level_1: n_layers cancels. If your answer depends on it, check the algebra.
+  level_2: The fraction is small; 6 decimal places matters.

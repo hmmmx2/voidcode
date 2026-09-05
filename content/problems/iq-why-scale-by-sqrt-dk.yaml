@@ -1,0 +1,212 @@
+slug: iq-why-scale-by-sqrt-dk
+title: Size the attention score divisor from head width
+difficulty: easy
+categories:
+- DL
+- LLM
+concepts:
+- attention_scaled_dot
+description: 'A transformer of width `d_model` with `n_heads` heads gives each head `d_k = d_model //
+  n_heads` dimensions. One raw score is the dot product of a query and a key over those `d_k` dimensions:
+
+
+  ```
+
+  s = sum_{i=1..d_k} q_i * k_i
+
+  ```
+
+
+  Assume the components are independent and zero-mean with `Var(q_i) = var_q` and `Var(k_i) = var_k` for
+  every `i`. Return `[d_k, sd_raw, divisor, sd_scaled]`:
+
+
+  - `d_k` — the per-head width, using integer floor division.
+
+  - `sd_raw` — the standard deviation of `s`. Each term has `E[q_i k_i] = 0` and `Var(q_i k_i) = var_q
+  * var_k`; the terms are independent so the variances add over all `d_k` of them. Take the square root.
+
+  - `divisor` — what the model divides the score by: `sqrt(d_k)`. This is a constant of the architecture
+  and does **not** depend on `var_q` or `var_k`.
+
+  - `sd_scaled` — the standard deviation after dividing, `sd_raw / divisor`.
+
+
+  `sd_scaled` comes out at exactly 1 when `var_q * var_k == 1`, and only then. Learned projections are
+  not unit-variance, so the fixed divisor over- or under-corrects — which is the gap QK-norm closes.
+
+
+  Round the three floats to 6 decimal places; `d_k` is returned as an integer.
+
+
+  Standard library only -- no numpy, no torch.'
+inferred_concepts: true
+review_needed: true
+order_index: 17
+examples:
+- input: d_model = 512, n_heads = 8, var_q = 1.0, var_k = 1.0
+  output: '[64, 8.0, 8.0, 1.0]'
+  explanation: d_k = 64, so Var(s) = 64 * 1 * 1 = 64 and sd_raw = 8. The divisor sqrt(64) = 8 is exactly
+    right here, leaving unit standard deviation. Note the divisor is 8, not sqrt(512) = 22.6.
+- input: d_model = 768, n_heads = 12, var_q = 4.0, var_k = 1.0
+  output: '[64, 16.0, 8.0, 2.0]'
+  explanation: The same head width, but Var(s) = 64 * 4 * 1 = 256 so sd_raw = 16. The divisor is still
+    sqrt(64) = 8, so the scaled score has standard deviation 2 — the architectural constant under-corrects
+    when the components are not unit-variance.
+constraints:
+- 1 <= n_heads <= d_model <= 2^16
+- var_q > 0 and var_k > 0
+- d_k is d_model // n_heads (floor division).
+- divisor depends only on d_k.
+- Round the three floats to 6 decimal places.
+- Standard library only -- no numpy, no torch.
+hints: []
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs:
+  - name: d_model
+    value: '512'
+  - name: n_heads
+    value: '8'
+  - name: var_q
+    value: '1.0'
+  - name: var_k
+    value: '1.0'
+  stdin: '512
+
+    8
+
+    1.0
+
+    1.0'
+  expected_output: '[64, 8.0, 8.0, 1.0]'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs:
+  - name: d_model
+    value: '768'
+  - name: n_heads
+    value: '12'
+  - name: var_q
+    value: '4.0'
+  - name: var_k
+    value: '1.0'
+  stdin: '768
+
+    12
+
+    4.0
+
+    1.0'
+  expected_output: '[64, 16.0, 8.0, 2.0]'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs:
+  - name: d_model
+    value: '4096'
+  - name: n_heads
+    value: '16'
+  - name: var_q
+    value: '1.0'
+  - name: var_k
+    value: '1.0'
+  stdin: '4096
+
+    16
+
+    1.0
+
+    1.0'
+  expected_output: '[256, 16.0, 16.0, 1.0]'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs:
+  - name: d_model
+    value: '64'
+  - name: n_heads
+    value: '64'
+  - name: var_q
+    value: '9.0'
+  - name: var_k
+    value: '1.0'
+  stdin: '64
+
+    64
+
+    9.0
+
+    1.0'
+  expected_output: '[1, 3.0, 1.0, 3.0]'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs:
+  - name: d_model
+    value: '1024'
+  - name: n_heads
+    value: '16'
+  - name: var_q
+    value: '0.25'
+  - name: var_k
+    value: '0.25'
+  stdin: '1024
+
+    16
+
+    0.25
+
+    0.25'
+  expected_output: '[64, 2.0, 8.0, 0.25]'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs:
+  - name: d_model
+    value: '512'
+  - name: n_heads
+    value: '8'
+  - name: var_q
+    value: '1.0'
+  - name: var_k
+    value: '4.0'
+  stdin: '512
+
+    8
+
+    1.0
+
+    4.0'
+  expected_output: '[64, 16.0, 8.0, 2.0]'
+  is_hidden: true
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "import math\n\nclass Solution(object):\n    def score_stats(self, d_model, n_heads,\
+    \ var_q, var_k):\n        \"\"\"\n        :type d_model: int\n        :type n_heads: int\n       \
+    \ :type var_q: float\n        :type var_k: float\n        :rtype: List  -- [d_k, sd_raw, divisor,\
+    \ sd_scaled]\n        \"\"\"\n"
+  driver_code: 'import sys, json
+
+    _in = sys.stdin.read().split("\n")
+
+    d_model = int(_in[0])
+
+    n_heads = int(_in[1])
+
+    var_q = float(_in[2])
+
+    var_k = float(_in[3])
+
+    _r = Solution().score_stats(d_model, n_heads, var_q, var_k)
+
+    print([int(_r[0]), round(float(_r[1]), 6), round(float(_r[2]), 6), round(float(_r[3]), 6)])
+
+    '
+source_kind: interview_problem
+reference_solution: "import math\n\nclass Solution(object):\n    def score_stats(self, d_model, n_heads,\
+  \ var_q, var_k):\n        d_k = d_model // n_heads\n        sd_raw = math.sqrt(d_k * var_q * var_k)\n\
+  \        divisor = math.sqrt(d_k)\n        return [d_k, sd_raw, divisor, sd_raw / divisor]\n"

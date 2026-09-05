@@ -1,0 +1,102 @@
+slug: recompute-memory-tradeoff
+title: What does gradient checkpointing actually buy?
+difficulty: medium
+categories:
+- Systems
+concepts:
+- gradient_checkpointing
+- memory_accounting
+description: 'Return the peak activation memory held during backward, with and without gradient checkpointing.
+
+
+  Write `activation_bytes(layers, bytes_per_layer, n_checkpoints)`. With `n_checkpoints <= 0`,
+
+  every layer''s activations are stored: `layers * bytes_per_layer`. Otherwise you store
+
+  `n_checkpoints` boundary activations and recompute one segment at a time, so peak is
+
+  `n_checkpoints * bytes_per_layer + ceil(layers / n_checkpoints) * bytes_per_layer`.
+
+
+  **The trade is memory for compute, and the exchange rate is worth knowing.** Recomputing a segment
+
+  means running its forward pass twice, so the classic sqrt(L) checkpointing costs roughly 33% extra
+
+  forward FLOPs — one extra forward against a forward-plus-backward that is about 3x a forward — to
+
+  turn O(L) activation memory into O(sqrt(L)).
+
+
+  **Where it stops being the obvious win.** If the model is already memory-bound rather than
+
+  compute-bound, that 33% is nearly free and you should take it. If you are compute-bound on a fast
+
+  card with memory to spare, you are paying a third of your throughput for nothing. This project
+
+  measured a 7.6B fitting in 37.17 GiB *with* checkpointing on a 44.42 GiB card - so it was load-
+
+  bearing there, and dropping it would not have fit.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem
+order_index: 27
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def activation_bytes(self, layers, bytes_per_layer, n_checkpoints):\n\
+    \        \"\"\"\n        :rtype: int\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = [int(x) for x in sys.stdin.read().split()]
+
+    print(Solution().activation_bytes(*_p))
+
+    '
+reference_solution: "class Solution(object):\n    def activation_bytes(self, layers, bytes_per_layer,\
+  \ n_checkpoints):\n        if n_checkpoints <= 0:\n            return layers * bytes_per_layer\n   \
+  \     seg = -(-layers // n_checkpoints)\n        return n_checkpoints * bytes_per_layer + seg * bytes_per_layer\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 28 100 0
+  expected_output: '2800'
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 28 100 5
+  expected_output: '1100'
+  is_hidden: false
+- label: Hidden 1
+  order_index: 2
+  inputs: []
+  stdin: 28 100 28
+  expected_output: '2900'
+  is_hidden: true
+- label: Hidden 2
+  order_index: 3
+  inputs: []
+  stdin: 100 1 10
+  expected_output: '20'
+  is_hidden: true
+- label: Hidden 3
+  order_index: 4
+  inputs: []
+  stdin: 1 50 1
+  expected_output: '100'
+  is_hidden: true
+- label: Hidden 4
+  order_index: 5
+  inputs: []
+  stdin: 36 100 6
+  expected_output: '1200'
+  is_hidden: true
+hints:
+- No checkpointing means every layer stored.
+- Peak is the stored boundaries plus one recomputed segment, not plus all of them.
+- ceil division for the segment length.
+hint_ladder:
+  level_0: No checkpointing means every layer stored.
+  level_1: Peak is the stored boundaries plus one recomputed segment, not plus all of them.
+  level_2: ceil division for the segment length.

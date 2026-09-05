@@ -1,0 +1,48 @@
+slug: response-caching-design
+title: Can you cache LLM responses for a tutor?
+difficulty: medium
+categories:
+- Systems
+- LLM
+concepts:
+- serving_latency
+- kv_cache
+grading: rubric
+description: 'A proposal: cache tutor responses keyed by the learner''s message, to cut cost and latency
+  on repeated questions.
+
+
+  Decide whether to do it. Cover what the cache key must include beyond the message text, the hit rate
+  you would expect, and the failure mode specific to teaching: **two learners asking the same question
+  may need different answers.**
+
+
+  Then describe prefix caching, which is a different idea with a different risk profile, and say why it
+  is the safer win.'
+hints:
+- Is the tutor's reply a function of the message alone?
+- What is in the system prompt, and does it vary?
+- Prefix caching reuses computation, not output.
+hint_ladder:
+  level_0: Is the tutor's reply a function of the message alone?
+  level_1: What is in the system prompt, and does it vary?
+  level_2: Prefix caching reuses computation, not output.
+rubric:
+- criterion: 'Identifies that the response depends on more than the message: conversation history, detected
+    mode, retrieved documents, the learner''s own progress.'
+  weight: 0.25
+- criterion: Argues the pedagogical risk -- an identical answer to a learner at a different stage is the
+    wrong answer even when the text matches.
+  weight: 0.25
+- criterion: Explains prefix caching as reusing the KV cache for a shared prompt prefix, which cuts prefill
+    cost without changing what is generated.
+  weight: 0.25
+- criterion: 'Reaches a defensible verdict: prefix caching yes, response caching only for narrow deterministic
+    paths, with a reason.'
+  weight: 0.15
+- criterion: Mentions cache invalidation on a prompt or model version change, since a stale cached answer
+    outlives the model that made it.
+  weight: 0.1
+inferred_concepts: false
+review_needed: false
+source_kind: problem

@@ -1,0 +1,118 @@
+# apps/api/Dockerfile.gpu
+# ──────────────────────────────────────────────────────────────────────────────
+# VoidCode AI — GPU-Enabled Backend
+#
+# Base : NVIDIA CUDA 12.8 + Ubuntu 24.04 (Python 3.12 native — no PPA needed)
+# Stack: vLLM AsyncLLMEngine + FastAPI + Uvicorn (uvloop)
+# Model: Qwen 2.5 7B W4A16 AWQ (mounted as a read-only volume at /models/awq_model)
+#
+# Build context: repo root  (not apps/api/)
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml build vllm-api
+#
+# Image size: ~10–14 GB (CUDA toolkit + PyTorch CUDA + vLLM + app deps)
+# ──────────────────────────────────────────────────────────────────────────────
+
+FROM nvidia/cuda:12.8.0-devel-ubuntu24.04 AS base
+
+# ── System setup ──────────────────────────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3.12 is the default on Ubuntu 24.04 (no deadsnakes PPA required).
+# gcc / build-essential are needed for Triton JIT kernel compilation at runtime.
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3.12-dev \
+    python3-venv \
+    build-essential \
+    gcc \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Isolated virtualenv — avoids Ubuntu 24.04's "externally managed" pip restriction
+RUN python3.12 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+# ── Python dependencies ───────────────────────────────────────────────────────
+# Step 1: Install CUDA-enabled PyTorch BEFORE vLLM.
+# vLLM's PyPI package depends on `torch` but doesn't pin the CUDA index URL,
+# so plain `pip install vllm` would pull the CPU-only torch wheel.
+# Pre-installing the CUDA build first ensures vLLM uses it.
+#
+# RTX 5060 Ti = Blackwell architecture = sm_120.
+# Versions pinned to match the working local WSL2 vllm-env (pip freeze verified).
+# torch 2.9.1 + cu128 → full sm_120 support. cu126 only compiles up to sm_90.
+# PyTorch explicitly warns: "install PyTorch with CUDA 12.8 or 13.0" for sm_120.
+RUN pip install --no-cache-dir --timeout 300 \
+    "torch==2.9.1" \
+    "torchaudio==2.9.1" \
+    "torchvision==0.24.1" \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# Step 2: Install vLLM (AsyncLLMEngine + PagedAttention + continuous batching)
+# Pinned to local working version — 0.15.1 has full Blackwell (sm_120) support.
+RUN pip install --no-cache-dir --timeout 300 "vllm==0.15.1" "uvloop==0.22.1"
+
+# Step 3: Backend app dependencies.
+# requirements.gpu.txt excludes torch / bitsandbytes / peft / accelerate —
+# those are already in vLLM's dependency tree; reinstalling would cause conflicts.
+COPY apps/api/requirements.gpu.txt ./requirements.gpu.txt
+RUN pip install --no-cache-dir --timeout 300 -r requirements.gpu.txt
+
+# ── Application code ──────────────────────────────────────────────────────────
+# Copy only what is needed at runtime — model weights are mounted as a volume.
+COPY apps/api/src/ ./apps/api/src/
+COPY llm/scripts/prompts.py ./llm/scripts/prompts.py
+
+# The API imports from `features/` at request time — retrieval grounding, mastery, the recommender
+# and the taxonomy. None of it was in the image, so `from features.retrieval import ...` raised
+# ImportError, was swallowed by the broad except that keeps grounding fail-open, and every answer
+# came back ungrounded with only a log line to say why. The recommendations endpoint had the same
+# hole via `features.taxonomy`, which also needs data/concepts.yaml.
+#
+# The whole tree is copied rather than the four modules actually imported today. It is ~350 KB of
+# pure-Python source (the heavy Spark and IRT modules are never imported here, and nothing
+# auto-imports them: features/__init__.py is empty). Cherry-picking would mean the next new import
+# fails the same silent way, which is the failure this is fixing.
+COPY features/ ./features/
+COPY data/concepts.yaml ./data/concepts.yaml
+
+# ── Environment defaults ──────────────────────────────────────────────────────
+# All values can be overridden in docker-compose.gpu.yml or .env.docker.
+ENV USE_VLLM=true
+ENV PYTHONPATH=/app
+
+# Model is mounted at runtime — default path matches docker-compose.gpu.yml volume
+ENV MODEL_PATH=/models/awq_model
+ENV GPU_MEMORY_UTILIZATION=0.90
+ENV MAX_MODEL_LEN=8192
+ENV VLLM_QUANTIZATION=compressed-tensors
+ENV VLLM_DTYPE=float16
+
+# HuggingFace: write cache to /tmp (tmpfs) to avoid cluttering the app layer;
+# disable telemetry and noisy progress bars in container logs.
+ENV HF_HOME=/tmp/hf_cache
+ENV HF_HUB_DISABLE_TELEMETRY=1
+ENV TRANSFORMERS_VERBOSITY=warning
+
+# ── Port ──────────────────────────────────────────────────────────────────────
+EXPOSE 8000
+
+# ── Health check ──────────────────────────────────────────────────────────────
+# start-period=120s: allow for vLLM CUDA graph capture on cold start (~85 s).
+# interval=30s / retries=3: load balancer marks service healthy after 3 passes.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# ── Entrypoint ────────────────────────────────────────────────────────────────
+# Single worker — vLLM AsyncLLMEngine is NOT safe to share across uvicorn
+# workers (each would load the model separately, causing OOM on 16 GB VRAM).
+# Concurrency is managed internally by vLLM's PagedAttention + continuous batching.
+CMD ["uvicorn", "apps.api.src.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--loop", "uvloop", \
+     "--log-level", "info"]

@@ -1,0 +1,182 @@
+###############################################################################
+# VoidCode AI — SGLang Inference Backend (Docker Compose override)
+#
+# Replaces vLLM with SGLang for faster inference via RadixAttention.
+# Splits into two containers:
+#   sglang-server  — GPU container running the LLM (SGLang)
+#   voidcode-api  — CPU container running FastAPI (calls SGLang via HTTP)
+#
+# Key advantages over vLLM setup:
+#   1. RadixAttention caches the 11K system prompt KV across all students
+#      → 3-4x lower latency after warmup (system prompt prefill computed once)
+#   2. Native structured output (constrained decoding) for format compliance
+#   3. Separation of concerns — restart API without reloading the model
+#   4. Smaller FastAPI image (~200 MB vs ~10 GB with GPU deps)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.sglang.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.sglang.yml build voidcode-api
+#   docker compose -f docker-compose.yml -f docker-compose.sglang.yml down
+#
+# Prerequisites:
+#   1. NVIDIA Container Toolkit installed and configured
+#      (sudo nvidia-ctk runtime configure --runtime=docker)
+#   2. Model present at MODEL_HOST_PATH (default: WSL2 HuggingFace cache)
+#   3. apps/api/.env.docker present (copy from .env.docker.example)
+#
+# Model: Qwen3.5-9B (multimodal VL arch — used text-only, vision encoder idles)
+#   SGLang v0.5.9 lists qwen3_5 as supported. Text-only requests never pass
+#   image tokens so the vision encoder loads into VRAM but never executes.
+#   Hybrid linear+full attention in the text decoder is handled by SGLang's
+#   qwen3_5 model implementation.
+#
+# Memory breakdown on RTX 5060 Ti (16 GB VRAM):
+#   fp8 weights:   9B × 1 byte  = ~9 GB   → fits ✓  (FP8 native on Blackwell)
+#   vision encoder (idle):        ~1-2 GB
+#   KV cache @16K context ≈ 2 GB fp8      → total ~12-13 GB, comfortable
+###############################################################################
+
+# ── Model path (edit these to match your model location) ─────────────────────
+# Mount the FULL model cache dir so HuggingFace symlinks resolve inside container.
+# HuggingFace stores files as symlinks in snapshots/ pointing to ../../blobs/.
+# Mounting only the snapshot dir breaks those symlinks inside the container.
+x-model-cache: &model-cache-host-path
+  /home/alwin/.cache/huggingface/hub/models--Qwen--Qwen3.5-9B
+x-model-snapshot: &model-snapshot-path
+  /model_cache/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a
+
+services:
+
+  # ── SGLang Model Server ─────────────────────────────────────────────────────
+  # Serves the LLM via OpenAI-compatible API at http://sglang-server:30000/v1
+  # RadixAttention automatically caches shared system prompt KV across requests.
+  sglang-server:
+    image: lmsysorg/sglang:v0.5.9-cu130-amd64  # CUDA 13.0 stable — supports Blackwell sm_120 (RTX 5060 Ti)
+    container_name: voidcode-sglang-server
+    restart: unless-stopped
+    ipc: host                               # Required for SGLang shared memory
+
+    # ── GPU Access ────────────────────────────────────────────────────────────
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # ── Model Volume ──────────────────────────────────────────────────────────
+    # IMPORTANT: Mount the FULL model cache dir (not just the snapshot subdir).
+    # HuggingFace stores files as symlinks in snapshots/ pointing to ../../blobs/.
+    # Mounting only the snapshot dir breaks all symlinks inside the container.
+    # Mounting the parent (models--Qwen--...) keeps blobs/ reachable at /model_cache/blobs/.
+    volumes:
+      - /home/alwin/.cache/huggingface/hub/models--Qwen--Qwen3.5-9B:/model_cache:ro
+
+    # ── SGLang Server Command ─────────────────────────────────────────────────
+    # --quantization fp8:
+    #   Qwen3.5-9B bf16 = ~18 GB — exceeds 16 GB VRAM.
+    #   FP8 halves weight storage to ~9 GB. Blackwell (sm_120) runs FP8
+    #   natively at full throughput. No accuracy loss in practice for text.
+    #
+    # --context-length 16384:
+    #   KV cache at fp8 @16K ≈ 2 GB. Total VRAM ~12-13 GB, leaves ~3 GB
+    #   headroom for CUDA kernels + activations.
+    #
+    # --kv-cache-dtype fp8_e5m2:
+    #   Further halves KV cache memory. Minimal quality impact for text tutor.
+    command: >
+      python -m sglang.launch_server
+      --model-path /model_cache/snapshots/c202236235762e1c871ad0ccb60c8ee5ba337b9a
+      --served-model-name default
+      --host 0.0.0.0
+      --port 30000
+      --mem-fraction-static 0.90
+      --context-length 16384
+      --quantization fp8
+      --kv-cache-dtype fp8_e5m2
+      --dtype bfloat16
+      --trust-remote-code
+      --attention-backend triton
+      --enable-metrics
+      --log-level info
+
+    # ── Environment ───────────────────────────────────────────────────────────
+    environment:
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - TRANSFORMERS_VERBOSITY=warning
+
+    # ── Ports (internal only — voidcode-api calls via Docker network) ────────
+    # Expose 30000 to host only for local testing/debugging.
+    ports:
+      - "30000:30000"
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    # Qwen3.5-9B: ~90-120s to load (fp8 + triton backend warmup on first start).
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:30000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s
+      retries: 5
+
+    shm_size: "4gb"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
+  # Lightweight CPU container — mode detection, prompt injection, routing.
+  # Delegates all LLM inference to sglang-server via HTTP.
+  voidcode-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.sglang
+    image: voidcode-sglang-api:latest
+    container_name: voidcode-sglang-api
+    restart: unless-stopped
+
+    # ── Ports ─────────────────────────────────────────────────────────────────
+    ports:
+      - "8000:8000"
+
+    # ── Volumes ───────────────────────────────────────────────────────────────
+    volumes:
+      - ./apps/api/.env.docker:/app/.env:ro
+
+    # ── Environment ───────────────────────────────────────────────────────────
+    environment:
+      # SGLang backend
+      - USE_SGLANG=true
+      - SGLANG_BASE_URL=http://sglang-server:30000/v1
+      - SGLANG_MODEL_NAME=default
+
+      # Database — use Docker service hostnames + internal ports
+      - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - DATABASE_URL_SYNC=postgresql://alwin:alwin_dev@postgres:5432/alwin_tutor
+      - REDIS_URL=redis://redis:6379/0
+      - JUDGE0_BASE_URL=http://judge0-server:2358
+
+      # Model info (for /health endpoint metadata only — not used for inference)
+      - BASE_MODEL_ID=Qwen/Qwen3.5-9B
+
+      # SGLang handles concurrency internally; this limits FastAPI queue depth
+      - MAX_CONCURRENT_REQUESTS=16
+
+    # ── Wait for SGLang to be healthy before starting FastAPI ─────────────────
+    depends_on:
+      sglang-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # ── Health Check ──────────────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3

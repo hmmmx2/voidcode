@@ -1,0 +1,88 @@
+slug: int8-vs-fp16-speedup
+title: What int8 buys, and what it does not
+difficulty: medium
+categories:
+- CUDA
+concepts:
+- quantization_basics
+- roofline_analysis
+description: 'Input: `fp16_tops int8_tops bytes_moved_fp16 bandwidth_gbs`.
+
+
+  Return the compute speedup, the memory-time ratio, and the achievable overall speedup as the MINIMUM
+  of the two, as `compute_x memory_x overall_x`, each rounded to 2 decimal places.
+
+
+  int8 halves the bytes moved relative to fp16, so the memory term is always exactly 2.00. The compute
+  term is whatever the hardware offers, commonly 2x.
+
+
+  Taking the minimum is the point: a kernel that is memory-bound gains nothing from faster int8 arithmetic,
+  and quoting the compute ratio as the expected speedup is how int8 gets oversold. Return zeros for non-positive
+  inputs.'
+order_index: 86
+code_templates:
+- language: Python
+  judge0_language_id: 71
+  template_code: "class Solution(object):\n    def speedup(self, tokens):\n        \"\"\"\n        :rtype:\
+    \ see the description\n        \"\"\"\n"
+  driver_code: 'import sys
+
+    _p = sys.stdin.read().split()
+
+    print(Solution().speedup(_p))
+
+    '
+reference_solution: "class Solution(object):\n    def speedup(self, tokens):\n        f = float(tokens[0]);\
+  \ i = float(tokens[1])\n        by = float(tokens[2]); bw = float(tokens[3])\n        if f <= 0 or by\
+  \ <= 0 or bw <= 0:\n            return '0.0 0.0 0.0'\n        comp = i / f\n        mem = 2.0\n    \
+  \    return ' '.join([str(round(comp, 2)), str(round(mem, 2)),\n                         str(round(min(comp,\
+  \ mem), 2))])\n"
+test_cases:
+- label: Case 1
+  order_index: 0
+  inputs: []
+  stdin: 312 624 1000 900
+  expected_output: 2.0 2.0 2.0
+  is_hidden: false
+- label: Case 2
+  order_index: 1
+  inputs: []
+  stdin: 312 312 1000 900
+  expected_output: 1.0 2.0 1.0
+  is_hidden: false
+- label: Hidden 3
+  order_index: 2
+  inputs: []
+  stdin: 312 1248 1000 900
+  expected_output: 4.0 2.0 2.0
+  is_hidden: true
+- label: Hidden 4
+  order_index: 3
+  inputs: []
+  stdin: 0 624 1000 900
+  expected_output: 0.0 0.0 0.0
+  is_hidden: true
+- label: Hidden 5
+  order_index: 4
+  inputs: []
+  stdin: 312 624 0 900
+  expected_output: 0.0 0.0 0.0
+  is_hidden: true
+- label: Hidden 6
+  order_index: 5
+  inputs: []
+  stdin: 100 150 500 500
+  expected_output: 1.5 2.0 1.5
+  is_hidden: true
+hints:
+- compute_x = int8_tops / fp16_tops.
+- int8 moves half the bytes, so the memory ratio is 2.00 by construction.
+- 'The overall bound is the min: the slower half decides.'
+hint_ladder:
+  level_0: compute_x = int8_tops / fp16_tops.
+  level_1: int8 moves half the bytes, so the memory ratio is 2.00 by construction.
+  level_2: 'The overall bound is the min: the slower half decides.'
+inferred_concepts: false
+review_needed: false
+source_kind: problem

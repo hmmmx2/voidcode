@@ -1,0 +1,10 @@
+{
+  "device": "NVIDIA GeForce RTX 5060 Ti",
+  "capability": "12.0",
+  "total_gib": 15.93,
+  "util": 0.28,
+  "stage": "trainer_loaded",
+  "trainer_loaded_gib": 3.12,
+  "vllm_error": "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}",
+  "fits": false
+}
