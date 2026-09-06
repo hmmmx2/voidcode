@@ -127,12 +127,15 @@ def extract_code(text: str) -> str:
 
 @torch.no_grad()
 def generate_group(model, tok, prompt: str, group: int, max_new: int, temperature: float,
-                   greedy: bool = False) -> list[str]:
+                   greedy: bool = False, engine=None) -> list[str]:
     """Sample `group` completions, or take the single greedy one when `greedy`.
 
     Greedy decoding is **deterministic**: the same policy on the same prompt gives the same string
     every time. That makes it the only eval metric here whose movement cannot be sampling noise.
     """
+    if engine is not None:
+        # vLLM path: same prompt, same sampling parameters, ~86x the throughput.
+        return engine.generate(tok, prompt, group, max_new, temperature, greedy=greedy)
     chat = tok.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
     enc = tok(chat, return_tensors="pt").to(model.device)
@@ -191,7 +194,7 @@ def sequence_logp(model, tok, prompt: str, completion: str) -> torch.Tensor:
 
 
 def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
-             temperature: float, timeout_s: float, seed: int = 1234) -> dict:
+             temperature: float, timeout_s: float, seed: int = 1234, engine=None) -> dict:
     """Pass rate and mean case fraction on the held-out 60. Never used for a gradient.
 
     Uses the catalogue grading path, not the stdio one — see the import block. Grades the whole
@@ -232,9 +235,10 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     greedy_fractions = []
     fractions = []
     for p in problems:
-        texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature)
+        texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature,
+                               engine=engine)
         g_text = generate_group(model, tok, eval_build_prompt(p), 1, max_new, temperature,
-                                greedy=True)
+                                greedy=True, engine=engine)
         sources = [eval_extract_code(t, p["entry"]) for t in texts + g_text]
         try:
             verdicts = run_isolated_batch(p, sources, timeout_s=timeout_s)
@@ -297,6 +301,73 @@ def save_policy(model, tok, dest: str, step: int) -> None:
         print(f"  WARNING: could not save policy at step {step}: {exc}", flush=True)
 
 
+class VLLMRollouts:
+    """vLLM-backed rollout generation for the GRPO loop.
+
+    Two responsibilities beyond calling generate():
+
+    1. **Keeping generation on-policy.** The policy is base + adapter, so the adapter is written to
+       disk after every optimiser step and handed to vLLM under a FRESH LoRA id. vLLM caches
+       adapters by id, so reusing an id would silently keep serving the stale adapter and every
+       rollout after step 1 would be off-policy -- with no error to notice.
+
+    2. **Sharing one GPU with the trainer.** sleep(level=1) evicts the engine's weights to CPU
+       between generations, so the trainer gets the card back for forward/backward. Costs a few
+       seconds of PCIe traffic per step and removes the risk of the two models racing for VRAM.
+    """
+
+    def __init__(self, model: str, gpu_util: float, max_len: int, max_lora_rank: int,
+                 workdir: Path):
+        from vllm import LLM
+        self.workdir = workdir
+        self.workdir.mkdir(parents=True, exist_ok=True)
+        self.lora_id = 0
+        self.adapter_dir: str | None = None
+        self.llm = LLM(
+            model=model, dtype="float16", gpu_memory_utilization=gpu_util,
+            max_model_len=max_len, trust_remote_code=True,
+            enable_lora=True, max_lora_rank=max_lora_rank, max_loras=1,
+            enable_sleep_mode=True,
+        )
+        self.asleep = False
+        print(f"vLLM engine up: {model} (gpu_util={gpu_util}, lora rank {max_lora_rank})",
+              flush=True)
+
+    def publish(self, model) -> None:
+        """Write the current adapter and bump the id so vLLM reloads it."""
+        self.lora_id += 1
+        d = self.workdir / f"adapter-{self.lora_id}"
+        model.save_pretrained(str(d))
+        self.adapter_dir = str(d)
+
+    def wake(self) -> None:
+        if self.asleep:
+            self.llm.wake_up()
+            self.asleep = False
+
+    def sleep(self) -> None:
+        if not self.asleep:
+            self.llm.sleep(level=1)
+            self.asleep = True
+
+    def generate(self, tok, prompt: str, group: int, max_new: int, temperature: float,
+                 greedy: bool = False) -> list[str]:
+        from vllm import SamplingParams
+        from vllm.lora.request import LoRARequest
+        chat = tok.apply_chat_template(
+            [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
+        sp = SamplingParams(
+            n=1 if greedy else group,
+            temperature=0.0 if greedy else temperature,
+            top_p=1.0 if greedy else 0.95,
+            max_tokens=max_new,
+        )
+        req = (LoRARequest(f"step{self.lora_id}", self.lora_id, self.adapter_dir)
+               if self.adapter_dir else None)
+        out = self.llm.generate([chat], sp, lora_request=req, use_tqdm=False)
+        return [c.text for c in out[0].outputs]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", required=True, help="filter_corpus.py summary JSON (metrics only)")
@@ -324,7 +395,34 @@ def main() -> int:
     # possible, only the fp16 adapter on top of them is trained.
     ap.add_argument("--load-4bit", action="store_true",
                     help="load the base in 4-bit NF4 (QLoRA). Requires --lora-r > 0")
+    # vLLM-backed rollout generation.
+    #
+    # MEASURED on this project, Qwen3-Coder-30B-A3B on an A40:
+    #   transformers eager   15.1 tok/s   (17% GPU utilisation, no fused MoE kernels)
+    #   vLLM 0.11 + AWQ    1295.7 tok/s   85.8x faster
+    # A 200-step rollout budget goes from 18.8 h to about 13 minutes. Generation is the dominant
+    # cost in GRPO, so this is the single highest-leverage change available to the loop.
+    #
+    # The policy is base + adapter, so vLLM must generate WITH the current adapter or the rollouts
+    # are off-policy. Verified working: vLLM applies an attention-only LoRA on top of a quantized
+    # (AWQ) MoE base. Verified by output change, not by absence of an exception -- a silently
+    # ignored adapter loads without error and returns base-model text.
+    #
+    # NOTE the adapter must NOT target expert weights: vLLM does not support fused MoE LoRA. Use
+    # --lora-targets attn, which is also what keeps the adapter small.
+    ap.add_argument("--vllm-model", default="",
+                    help="model id for vLLM rollout generation, e.g. an AWQ build of --model. "
+                         "Empty disables vLLM and generation stays in transformers.")
+    ap.add_argument("--vllm-gpu-util", type=float, default=0.45,
+                    help="fraction of VRAM for the vLLM engine; the trainer needs the rest")
+    ap.add_argument("--vllm-max-len", type=int, default=2048)
     ap.add_argument("--lora-alpha", type=int, default=32)
+    # peft matches target_modules by NAME SUFFIX, which is a trap on a Mixture-of-Experts model:
+    # "gate_proj" matches every expert's gate in every layer, so a 128-expert MoE grows 128x the
+    # intended adapters and the parameter count explodes. On MoE pass --lora-targets attn to adapt
+    # only the attention projections, which are shared across experts.
+    ap.add_argument("--lora-targets", choices=["all", "attn"], default="all",
+                    help="'all' = attention + MLP (dense models); 'attn' = attention only (MoE)")
     ap.add_argument("--lora-dropout", type=float, default=0.05)
     ap.add_argument("--band", type=float, nargs=2, default=[0.1, 0.9])
     ap.add_argument("--group", type=int, default=8)
@@ -405,8 +503,9 @@ def main() -> int:
         from peft import LoraConfig, get_peft_model
         model = get_peft_model(model, LoraConfig(
             r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                            "gate_proj", "up_proj", "down_proj"],
+            target_modules=(["q_proj", "k_proj", "v_proj", "o_proj"] if args.lora_targets == "attn"
+                            else ["q_proj", "k_proj", "v_proj", "o_proj",
+                                  "gate_proj", "up_proj", "down_proj"]),
             task_type="CAUSAL_LM"))
         if args.load_4bit:
             # Without this the adapter receives no gradient: the 4-bit base produces no grad_fn,
@@ -428,9 +527,22 @@ def main() -> int:
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=args.lr)
 
+    engine = None
+    if args.vllm_model:
+        if args.lora_r <= 0:
+            print("--vllm-model currently requires --lora-r > 0: the engine serves a frozen base "
+                  "plus a hot-reloaded adapter, which is how the policy reaches it.", flush=True)
+            return 2
+        engine = VLLMRollouts(args.vllm_model, args.vllm_gpu_util, args.vllm_max_len,
+                              args.lora_r, Path(args.save_to or ".") .parent / "vllm_adapters")
+        engine.publish(model)   # step-0 adapter, so even the baseline eval is on-policy
+
     # Baseline before any step, so a flat curve is provably flat rather than merely unmeasured.
+    if engine is not None:
+        engine.wake()
     history = [{"step": 0, **evaluate(model, tok, eval_problems, args.eval_group,
-                                     args.max_new, args.temperature, args.grade_timeout)}]
+                                     args.max_new, args.temperature, args.grade_timeout,
+                                     engine=engine)}]
     print(f"step 0 eval: {history[0]}", flush=True)
 
     dead = 0
@@ -440,7 +552,10 @@ def main() -> int:
         prompt = build_prompt(problem["prompt"])
 
         model.eval()
-        texts = generate_group(model, tok, prompt, args.group, args.max_new, args.temperature)
+        if engine is not None:
+            engine.wake()
+        texts = generate_group(model, tok, prompt, args.group, args.max_new, args.temperature,
+                               engine=engine)
         rewards = reward_for_group([extract_code(t) for t in texts],
                                    problem["tests"][: args.max_cases], args.grade_timeout)
         if not rewards:
@@ -476,6 +591,9 @@ def main() -> int:
         # lr=2e-5 run produced a history of steps 0, 50, 150 with **100 missing**, and nothing in
         # the output said so. The eval schedule must not depend on whether one sampled problem
         # happened to yield a gradient.
+        if engine is not None:
+            engine.sleep()      # give the card back to the trainer for forward/backward
+
         is_dead = dead_group_rate(r) > 0
         if is_dead:
             dead += 1
@@ -512,6 +630,12 @@ def main() -> int:
             opt.step()
             opt.zero_grad(set_to_none=True)
 
+            if engine is not None:
+                # The policy just moved, so the engine's adapter is stale. Republishing under a new
+                # id is what keeps the next step's rollouts on-policy -- vLLM caches by id, so
+                # reusing one would serve the old adapter with no error to notice.
+                engine.publish(model)
+
         if step % 10 == 0:
             kl = stats.get("kl", float("nan"))
             print(f"step {step}  reward={r.mean():.3f}  dead_so_far={dead}  kl={kl:.4f}",
@@ -519,8 +643,11 @@ def main() -> int:
 
         if step % args.eval_every == 0:
             model.eval()
+            if engine is not None:
+                engine.wake()
             e = {"step": step, **evaluate(model, tok, eval_problems, args.eval_group,
-                                          args.max_new, args.temperature, args.grade_timeout)}
+                                          args.max_new, args.temperature, args.grade_timeout,
+                                          engine=engine)}
             history.append(e)
             print(f"step {step} eval: {e}", flush=True)
             Path(args.out).write_text(
