@@ -208,6 +208,24 @@ def reward_for_group(sources: list[str], tests: list, timeout_s: float) -> list[
         # run once reported 0/4 on problems that were in fact solved.
         print(f"  harness error, group skipped: {exc}", flush=True)
         return []
+
+    # A MANUFACTURED DEAD GROUP IS ARITHMETICALLY IDENTICAL TO A REAL ONE.
+    #
+    # `run_isolated_stdio_batch` does not raise on a batch timeout: it returns one dead verdict PER
+    # SOURCE, every one with `case_fraction` 0.0. Read through `.case_fraction` alone -- which is
+    # all this function used to do -- that is a group where all G completions scored the same, i.e.
+    # zero advantage and a `dead_group_rate` tick. `dead_groups` is the PRIMARY diagnostic of this
+    # run, and the whole G=16 hypothesis is a prediction about it, so a grading stall silently
+    # inflating it would corrupt the one number the run exists to produce.
+    #
+    # The join is `timeout_s * len(sources)`, so at --group 16 a single non-terminating completion
+    # zeroes the other fifteen. Skipping the step is the honest response: no reward signal was
+    # observed, so there is nothing to learn from and nothing to count.
+    bad = [r for r in results if r.outcome in ("timeout", "died")]
+    if bad and len(bad) == len(results):
+        print(f"  grading returned all {len(results)} sources as {results[0].outcome} "
+              f"({results[0].error}); step SKIPPED, not counted as a dead group", flush=True)
+        return []
     return [r.case_fraction for r in results]
 
 
@@ -274,8 +292,10 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
 
     solved = 0
     greedy_solved = 0
+    stalled = 0
     greedy_fractions = []
     fractions = []
+    problem_means: list[float] = []
     for i, p in enumerate(problems, 1):
         texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature,
                                engine=engine, seed=seed)
@@ -288,23 +308,33 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
             print(f"[dbg] {p['id']} raw[0] ({len(texts[0])} ch): {texts[0][:200]!r}", flush=True)
             print(f"[dbg] {p['id']} src[0] ({len(sources[0])} ch): {sources[0][:200]!r}", flush=True)
         try:
-            verdicts = run_isolated_batch(p, sources, timeout_s=timeout_s)
+            # Greedy graded alone -- see evaluate_holdout for why. This eval is MORE exposed than
+            # it was: --grade-timeout 60 -> 20 cut the batch wall from 300s to 100s.
+            verdicts = run_isolated_batch(p, sources[:-1], timeout_s=timeout_s)
+            greedy = run_isolated_batch(p, sources[-1:], timeout_s=timeout_s)[0]
         except RuntimeError as exc:
             # A harness bug, surfaced rather than scored. Scoring it zero is how the base
             # pass-rate run once reported 0/4 on problems that were actually solved.
             print(f"  eval harness error on {p['id']}: {exc}", flush=True)
             continue
-        rewards = [v.case_fraction for v in verdicts[:-1]]
-        greedy = verdicts[-1]
         if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
             print(f"[dbg] {p['id']} greedy outcome={greedy.outcome} cf={greedy.case_fraction} "
                   f"err={greedy.error}", flush=True)
-        greedy_fractions.append(greedy.case_fraction)
-        if greedy.case_fraction >= 1.0:
-            greedy_solved += 1
+        if greedy.outcome in ("timeout", "died"):
+            stalled += 1
+        else:
+            greedy_fractions.append(greedy.case_fraction)
+            if greedy.case_fraction >= 1.0:
+                greedy_solved += 1
+        # A stalled batch is an absence of measurement, not a score of zero.
+        if all(v.outcome in ("timeout", "died") for v in verdicts):
+            stalled += 1
+            continue
+        rewards = [v.case_fraction for v in verdicts]
         if not rewards:
             continue
         fractions.extend(rewards)
+        problem_means.append(sum(rewards) / len(rewards))
         if max(rewards) >= 1.0:
             solved += 1
 
@@ -316,14 +346,30 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     mean = sum(fractions) / n
     var = sum((f - mean) ** 2 for f in fractions) / max(n - 1, 1)
     se = (var / n) ** 0.5
+    # Clustered SE, reported ALONGSIDE the per-completion one rather than replacing it.
+    #
+    # `fractions` holds `group` values per problem, which are one cluster, not `group` independent
+    # draws -- so `case_fraction_se` is understated by up to sqrt(group). The clustered figure is
+    # the one to compare movement against. The original stays because METRICS.md already records
+    # per-completion values (0.0558 at step 0, 0.0574 at step 50) and silently redefining a metric
+    # mid-ledger would make this run incomparable to the runs it exists to be compared with.
+    pm = problem_means or [mean]
+    p_mean = sum(pm) / len(pm)
+    p_var = sum((x - p_mean) ** 2 for x in pm) / max(len(pm) - 1, 1)
+    se_problems = (p_var / len(pm)) ** 0.5
     gn = max(len(greedy_fractions), 1)
     return {
         "problems": len(problems),
+        "graded": len(problem_means),
+        "greedy_graded": len(greedy_fractions),
+        "stalled": stalled,
         "solved_any": solved,
         "solve_rate": round(solved / max(len(problems), 1), 4),
         "mean_case_fraction": round(mean, 4),
-        # Compare any movement against this. A change smaller than ~2 SE is not a result.
+        # Per-completion, kept for continuity with the runs already in METRICS.md.
         "case_fraction_se": round(se, 4),
+        # Compare any movement against THIS one. A change smaller than ~2 SE is not a result.
+        "case_fraction_se_problems": round(se_problems, 4),
         # Deterministic: movement here cannot be sampling noise.
         "greedy_solved": greedy_solved,
         "greedy_case_fraction": round(sum(greedy_fractions) / gn, 4),
@@ -361,9 +407,11 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    solved = greedy_solved = 0
+    solved = greedy_solved = stalled = 0
     fractions: list[float] = []
+    problem_means: list[float] = []
     greedy_fractions: list[float] = []
+    cases = lambda p: p["tests"][:max_cases]  # noqa: E731 - same slice the reward uses
     for p in problems:
         prompt = build_prompt(p["prompt"])
         texts = generate_group(model, tok, prompt, group, max_new, temperature,
@@ -372,21 +420,37 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
                                 greedy=True, engine=engine, seed=seed)
         sources = [extract_code(t) for t in texts + g_text]
         try:
-            # Same slice the reward uses, so an in-domain number is comparable to the training
-            # signal rather than to a different subset of the same problems.
-            verdicts = run_isolated_stdio_batch(sources, p["tests"][:max_cases],
-                                                timeout_s=timeout_s)
+            # GREEDY IS GRADED IN ITS OWN CHILD, and that is the whole point of the split.
+            #
+            # A batch timeout does not raise -- it returns one dead verdict per source, all at
+            # case_fraction 0.0. Grading greedy alongside its sampled siblings therefore meant one
+            # looping SAMPLE zeroed the DETERMINISTIC metric, the one chosen because its movement
+            # "cannot be sampling noise". It silently could. The extra child costs ~1.7s now that
+            # the grader no longer re-imports __main__.
+            verdicts = run_isolated_stdio_batch(sources[:-1], cases(p), timeout_s=timeout_s)
+            greedy = run_isolated_stdio_batch(sources[-1:], cases(p), timeout_s=timeout_s)[0]
         except RuntimeError as exc:
             print(f"  holdout harness error on {p['id']}: {exc}", flush=True)
             continue
-        rewards = [v.case_fraction for v in verdicts[:-1]]
-        greedy = verdicts[-1]
-        greedy_fractions.append(greedy.case_fraction)
-        if greedy.case_fraction >= 1.0:
-            greedy_solved += 1
+
+        if greedy.outcome in ("timeout", "died"):
+            stalled += 1
+        else:
+            greedy_fractions.append(greedy.case_fraction)
+            if greedy.case_fraction >= 1.0:
+                greedy_solved += 1
+
+        # A stalled batch is an absence of measurement, not a score of zero. Folding its
+        # manufactured zeros into the mean would move the metric for reasons unrelated to the
+        # policy -- by more, on a 40-problem holdout, than the effect the run is looking for.
+        if all(v.outcome in ("timeout", "died") for v in verdicts):
+            stalled += 1
+            continue
+        rewards = [v.case_fraction for v in verdicts]
         if not rewards:
             continue
         fractions.extend(rewards)
+        problem_means.append(sum(rewards) / len(rewards))
         if max(rewards) >= 1.0:
             solved += 1
 
@@ -396,13 +460,28 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
 
     n = max(len(fractions), 1)
     mean = sum(fractions) / n
-    var = sum((f - mean) ** 2 for f in fractions) / max(n - 1, 1)
+    # SE OVER PROBLEMS, NOT OVER COMPLETIONS.
+    #
+    # `fractions` holds group x problem values: 4 completions from the same problem are one
+    # cluster, not four independent draws. Dividing by 160 instead of 40 understates the SE by up
+    # to 2x, and this run's conclusion is literally "movement versus SE" -- the previous run moved
+    # +0.0115 against 0.0574. An SE that is half its true size is how a null gets read as a result.
+    pm = problem_means or [mean]
+    p_mean = sum(pm) / len(pm)
+    p_var = sum((x - p_mean) ** 2 for x in pm) / max(len(pm) - 1, 1)
+    se = (p_var / len(pm)) ** 0.5
     gn = max(len(greedy_fractions), 1)
     return {
         "holdout_problems": len(problems),
+        # Explicit denominators: solved/greedy counts are over problems that actually GRADED, and
+        # reporting them beside len(problems) without saying so overstates both.
+        "holdout_graded": len(problem_means),
+        "holdout_greedy_graded": len(greedy_fractions),
+        "holdout_stalled": stalled,
         "holdout_solved_any": solved,
         "holdout_mean_case_fraction": round(mean, 4),
-        "holdout_case_fraction_se": round((var / n) ** 0.5, 4),
+        # Clustered SE -- see the comment above. NOT comparable to a per-completion SE.
+        "holdout_case_fraction_se": round(se, 4),
         "holdout_greedy_solved": greedy_solved,
         "holdout_greedy_case_fraction": round(sum(greedy_fractions) / gn, 4),
     }
@@ -775,8 +854,12 @@ def main() -> int:
     print(f"step 0 eval: {history[0]}", flush=True)
 
     dead = 0
-    stats: dict = {}                      # survives a dead step, which skips the update entirely
+    skipped_steps = 0
+    stats: dict = {}
     for step in range(1, args.steps + 1):
+        # Reset per step. Carrying the previous step's stats forward meant a dead or abandoned
+        # step printed a `kl=` belonging to a DIFFERENT step -- or to an update that was discarded.
+        stats = {}
         problem = random.choice(train)
         prompt = build_prompt(problem["prompt"])
 
@@ -787,10 +870,15 @@ def main() -> int:
                                engine=engine)
         rewards = reward_for_group([extract_code(t) for t in texts],
                                    problem["tests"][: args.max_cases], args.grade_timeout)
-        if not rewards:
-            continue
+        # NOT `continue`. The eval block lives at the bottom of this loop, so skipping the rest of
+        # the iteration also skips the eval -- and with --eval-every 25 over 50 steps, one harness
+        # error on step 50 would silently delete the run's ONLY post-training measurement. The
+        # update is what has to be skipped, not the measurement.
+        usable = bool(rewards)
+        if not usable:
+            skipped_steps += 1
 
-        if args.log_completions and step % args.log_every == 0:
+        if usable and args.log_completions and step % args.log_every == 0:
             # Highest and lowest scoring completion of the group. The extremes are where hacking
             # shows: a suspiciously perfect score on a problem the group otherwise fails is the
             # shape to look for. Appended so a crash still leaves what was collected.
@@ -802,103 +890,115 @@ def main() -> int:
             with open(args.log_completions, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(sample) + "\n")
 
-        if len(rewards) < 2:
+        if usable and len(rewards) < 2:
             dead += 1                     # group_advantages rejects G<2: no within-group baseline
-            continue
+            usable = False                # NOT `continue` -- the eval block is below this loop body
 
-        # (n_groups, group_size). Both helpers require 2-D and raise on a flat tensor rather than
-        # broadcasting something meaningless -- one prompt per step is still one *group*, not a
-        # batch of scalars.
-        r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(0)
+        if usable:
+            # Everything from here is the UPDATE. A step with no usable reward still
+            # falls through to the eval block below, which is the only reason this is a
+            # guard and not a `continue`.
+            r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(0)
 
-        # Counted in BOTH directions. The filter measured always_solved=0 and a 0.024 mean pass
-        # rate, so on this corpus the dead groups will be all-fail rather than the all-pass that
-        # P3-CORPUS-SCOPE anticipated. Either way the group carries no gradient.
-        #
-        # `continue` here would skip the eval block at the bottom of the loop as well as the
-        # update. At a 33% dead rate that silently dropped a third of the scheduled evals -- the
-        # lr=2e-5 run produced a history of steps 0, 50, 150 with **100 missing**, and nothing in
-        # the output said so. The eval schedule must not depend on whether one sampled problem
-        # happened to yield a gradient.
-        if engine is not None:
-            engine.sleep()      # give the card back to the trainer for forward/backward
-
-        is_dead = dead_group_rate(r) > 0
-        if is_dead:
-            dead += 1
-
-        # The update is skipped for a dead group, but the eval below is NOT. Skipping the update
-        # matters on its own terms: with zero advantages the clipped surrogate contributes nothing,
-        # but `grpo_loss` still adds `beta * kl`, so stepping anyway would drag the policy toward
-        # the reference on the strength of a group that carried no information.
-        if not is_dead:
-            adv = group_advantages(r)[0]  # back to (group_size,) for per-completion indexing
-            model.train()
-            opt.zero_grad(set_to_none=True)
-            step_corrupted = False
-
-            # backward() PER COMPLETION, not once over an accumulated sum. Summing the losses
-            # first keeps every completion's autograd graph alive simultaneously -- at --group 16
-            # that is 16 graphs, and it OOM'd a 46 GB A40 at 44.24 GiB. Gradients accumulate into
-            # .grad either way, so this is identical maths and frees each graph as it is used.
-            n = len(texts)
-            for i, text in enumerate(texts):
-                # OOM GUARD.
-                #
-                # A single long completion can exhaust the trainer's share of a shared card, and
-                # losing the whole run to one bad rollout is unacceptable when the eval before it
-                # cost 25 minutes. On OOM: drop this completion's graph, return its blocks to the
-                # driver, and carry on with the rest of the group.
-                #
-                # Skips are COUNTED and reported, never swallowed. A run that quietly dropped half
-                # its completions would still produce a smooth-looking curve computed from a
-                # different batch size than the one recorded, which is a silent-corruption bug of
-                # exactly the kind this project keeps finding.
-                try:
-                    logp = sequence_logp(model, tok, prompt, text)
-                    with torch.no_grad():
-                        if ref is not None:
-                            ref_logp = sequence_logp(ref, tok, prompt, text)
-                        else:
-                            # Adapter off == the base policy == the reference, no extra memory.
-                            with model.disable_adapter():
-                                ref_logp = sequence_logp(model, tok, prompt, text)
-                    old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
-                    loss, stats = grpo_loss(logp, old_logp, ref_logp,
-                                            adv[i].to(logp.device).expand_as(logp), beta=args.beta)
-                    (loss / n).backward()
-                except torch.OutOfMemoryError:
-                    # ABANDON THE STEP, do not salvage it.
-                    #
-                    # The first version of this handler called opt.zero_grad() and continued, which
-                    # is wrong twice over: it throws away the gradient already accumulated from the
-                    # group's earlier completions, and then opt.step() fires on whatever came after
-                    # the OOM. Group-relative advantages sum to zero ACROSS THE GROUP by
-                    # construction, so a partial subset carries a non-zero mean -- the update would
-                    # push the policy in a direction no completion voted for, and the run would
-                    # still look healthy in the logs.
-                    oom_skipped += 1
-                    step_corrupted = True
-                    print(f"  OOM on completion {i} of step {step} ({len(text)} chars); "
-                          f"ABANDONING this step, total OOM steps {oom_skipped}", flush=True)
-                    opt.zero_grad(set_to_none=True)
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    break
-
-            if step_corrupted:
-                # A partial group is not a smaller group; it is a biased one.
-                opt.zero_grad(set_to_none=True)
-            else:
-                torch.nn.utils.clip_grad_norm_(params, 1.0)
-                opt.step()
-                opt.zero_grad(set_to_none=True)
-
+            # Counted in BOTH directions. The filter measured always_solved=0 and a 0.024 mean pass
+            # rate, so on this corpus the dead groups will be all-fail rather than the all-pass that
+            # P3-CORPUS-SCOPE anticipated. Either way the group carries no gradient.
+            #
+            # `continue` here would skip the eval block at the bottom of the loop as well as the
+            # update. At a 33% dead rate that silently dropped a third of the scheduled evals -- the
+            # lr=2e-5 run produced a history of steps 0, 50, 150 with **100 missing**, and nothing in
+            # the output said so. The eval schedule must not depend on whether one sampled problem
+            # happened to yield a gradient.
             if engine is not None:
-                # The policy just moved, so the engine's adapter is stale. Republishing under a new
-                # id is what keeps the next step's rollouts on-policy -- vLLM caches by id, so
-                # reusing one would serve the old adapter with no error to notice.
-                engine.publish(model)
+                engine.sleep()      # give the card back to the trainer for forward/backward
+
+            is_dead = dead_group_rate(r) > 0
+            if is_dead:
+                dead += 1
+
+            # The update is skipped for a dead group, but the eval below is NOT. Skipping the update
+            # matters on its own terms: with zero advantages the clipped surrogate contributes nothing,
+            # but `grpo_loss` still adds `beta * kl`, so stepping anyway would drag the policy toward
+            # the reference on the strength of a group that carried no information.
+            if not is_dead:
+                adv = group_advantages(r)[0]  # back to (group_size,) for per-completion indexing
+                model.train()
+                opt.zero_grad(set_to_none=True)
+                step_corrupted = False
+
+                # backward() PER COMPLETION, not once over an accumulated sum. Summing the losses
+                # first keeps every completion's autograd graph alive simultaneously -- at --group 16
+                # that is 16 graphs, and it OOM'd a 46 GB A40 at 44.24 GiB. Gradients accumulate into
+                # .grad either way, so this is identical maths and frees each graph as it is used.
+                n = len(texts)
+                for i, text in enumerate(texts):
+                    # OOM GUARD.
+                    #
+                    # A single long completion can exhaust the trainer's share of a shared card, and
+                    # losing the whole run to one bad rollout is unacceptable when the eval before it
+                    # cost 25 minutes. On OOM: drop this completion's graph, return its blocks to the
+                    # driver, and carry on with the rest of the group.
+                    #
+                    # Skips are COUNTED and reported, never swallowed. A run that quietly dropped half
+                    # its completions would still produce a smooth-looking curve computed from a
+                    # different batch size than the one recorded, which is a silent-corruption bug of
+                    # exactly the kind this project keeps finding.
+                    try:
+                        logp = sequence_logp(model, tok, prompt, text)
+                        with torch.no_grad():
+                            if ref is not None:
+                                ref_logp = sequence_logp(ref, tok, prompt, text)
+                            else:
+                                # Adapter off == the base policy == the reference, no extra memory.
+                                with model.disable_adapter():
+                                    ref_logp = sequence_logp(model, tok, prompt, text)
+                        old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
+                        loss, stats = grpo_loss(logp, old_logp, ref_logp,
+                                                adv[i].to(logp.device).expand_as(logp), beta=args.beta)
+                        (loss / n).backward()
+                    except (torch.OutOfMemoryError, RuntimeError) as exc:
+                        # RuntimeError is here because not every allocation failure on this path is a
+                        # torch.OutOfMemoryError: bitsandbytes' 4-bit matmul and cuBLAS surface theirs
+                        # as a plain RuntimeError ("CUBLAS_STATUS_ALLOC_FAILED", "CUDA error: out of
+                        # memory"). Catching only the typed one meant the most likely way this 4-bit
+                        # 30B run dies was also the one way the guard could not see. Anything that is
+                        # NOT an allocation failure is re-raised -- swallowing real bugs here would
+                        # turn a crash into 50 silently abandoned steps.
+                        msg = str(exc).lower()
+                        if not isinstance(exc, torch.OutOfMemoryError) and not any(
+                                s in msg for s in ("out of memory", "alloc_failed", "cuda error")):
+                            raise
+                        # ABANDON THE STEP, do not salvage it.
+                        #
+                        # The first version of this handler called opt.zero_grad() and continued, which
+                        # is wrong twice over: it throws away the gradient already accumulated from the
+                        # group's earlier completions, and then opt.step() fires on whatever came after
+                        # the OOM. Group-relative advantages sum to zero ACROSS THE GROUP by
+                        # construction, so a partial subset carries a non-zero mean -- the update would
+                        # push the policy in a direction no completion voted for, and the run would
+                        # still look healthy in the logs.
+                        oom_skipped += 1
+                        step_corrupted = True
+                        print(f"  OOM on completion {i} of step {step} ({len(text)} chars); "
+                              f"ABANDONING this step, total OOM steps {oom_skipped}", flush=True)
+                        opt.zero_grad(set_to_none=True)
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                        break
+
+                if step_corrupted:
+                    # A partial group is not a smaller group; it is a biased one.
+                    opt.zero_grad(set_to_none=True)
+                else:
+                    torch.nn.utils.clip_grad_norm_(params, 1.0)
+                    opt.step()
+                    opt.zero_grad(set_to_none=True)
+
+                if engine is not None:
+                    # The policy just moved, so the engine's adapter is stale. Republishing under a new
+                    # id is what keeps the next step's rollouts on-policy -- vLLM caches by id, so
+                    # reusing one would serve the old adapter with no error to notice.
+                    engine.publish(model)
 
         if step % 10 == 0:
             kl = stats.get("kl", float("nan"))
@@ -916,7 +1016,12 @@ def main() -> int:
             print(f"step {step} eval: {e}", flush=True)
             Path(args.out).write_text(
                 json.dumps({"model": args.model, "train_problems": len(train),
-                            "dead_groups": dead, "oom_skipped": oom_skipped, "history": history}, indent=2) + "\n",
+                            "group": args.group, "max_new": args.max_new, "signal": args.signal,
+                            "holdout": len(holdout), "band": args.corpus,
+                            "dead_groups": dead, "oom_skipped": oom_skipped,
+                            "skipped_steps": skipped_steps,
+                            "truncated": engine.truncated if engine else 0,
+                            "history": history}, indent=2) + "\n",
                 encoding="utf-8")
             if args.save_to:
                 save_policy(model, tok, args.save_to, step)
@@ -924,11 +1029,20 @@ def main() -> int:
     if args.save_to:
         save_policy(model, tok, args.save_to, args.steps)
 
+    # The FINAL write is the artefact that outlives the pod, so it must not carry FEWER health
+    # fields than the incremental one. Dropping oom_skipped here made an OOM-degraded run
+    # indistinguishable from a clean one in the only file that survives the machine.
     Path(args.out).write_text(
         json.dumps({"model": args.model, "train_problems": len(train),
-                    "dead_groups": dead, "history": history}, indent=2) + "\n",
+                    "group": args.group, "max_new": args.max_new, "signal": args.signal,
+                    "holdout": len(holdout), "band": args.corpus,
+                    "dead_groups": dead, "oom_skipped": oom_skipped,
+                    "skipped_steps": skipped_steps,
+                    "truncated": engine.truncated if engine else 0,
+                    "history": history}, indent=2) + "\n",
         encoding="utf-8")
-    print(f"\nwrote {args.out}  (dead groups: {dead}/{args.steps})", flush=True)
+    print(f"\nwrote {args.out}  (dead groups: {dead}/{args.steps}, "
+          f"skipped {skipped_steps}, oom {oom_skipped})", flush=True)
     return 0
 
 

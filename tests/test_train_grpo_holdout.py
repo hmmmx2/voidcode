@@ -172,3 +172,83 @@ def test_drop_over_context_keeps_everything_when_the_budget_is_ample():
         "print(json.dumps({'n': len(kept), 'dropped': dropped}))\n"
     )
     assert result == {"n": 5, "dropped": 0}
+
+
+# ── a grading stall must not masquerade as a measurement ───────────────────────────────────────
+#
+# run_isolated_stdio_batch does NOT raise on a batch timeout: it returns one dead verdict per
+# source, every one with case_fraction 0.0. Read through .case_fraction alone that is
+# indistinguishable from "every completion scored the same" -- a dead group. dead_groups is the
+# primary diagnostic of the G=16 run and the whole hypothesis is a prediction about it, so a stall
+# inflating it would corrupt the one number the run exists to produce.
+
+LOOP = "```python\nwhile True:\n    pass\n```"
+GOOD_SUM = "```python\na, b = map(int, input().split())\nprint(a + b)\n```"
+ZERO = "```python\nprint(0)\n```"
+SUM_TESTS = [{"input": "2 3\n", "output": "5\n"}]
+SUM_PROBLEM = {"id": "sum", "prompt": "add two numbers", "tests": SUM_TESTS}
+
+
+def test_reward_for_group_skips_a_stalled_batch_instead_of_scoring_it_a_dead_group():
+    result = run_in_subprocess(
+        "from scripts.train_grpo import reward_for_group\n"
+        f"LOOP = {LOOP!r}\n"
+        f"GOOD = {GOOD_SUM!r}\n"
+        "from scripts.train_grpo import extract_code\n"
+        f"tests = {SUM_TESTS!r}\n"
+        "r = reward_for_group([extract_code(GOOD), extract_code(LOOP)], tests, timeout_s=2.0)\n"
+        "print(json.dumps({'rewards': r}))\n"
+    )
+    # [] means "skip this step". [0.0, 0.0] would have been counted as a dead group.
+    assert result["rewards"] == [], (
+        "a stalled batch was returned as all-zero rewards, which reward_for_group's caller "
+        "counts as a dead group")
+
+
+def test_holdout_greedy_survives_a_sampled_sibling_that_hangs():
+    """greedy_solved is justified as 'cannot be sampling noise'. Shared-batch grading broke that."""
+    result = run_in_subprocess(
+        "import torch\n"
+        "from scripts.train_grpo import evaluate_holdout\n"
+        f"LOOP = {LOOP!r}\n"
+        f"GOOD = {GOOD_SUM!r}\n"
+        "class FakeEngine:\n"
+        "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        # greedy is CORRECT; one sampled sibling never terminates\n"
+        "        return [GOOD] if greedy else [GOOD, LOOP][:group]\n"
+        f"problems = [{SUM_PROBLEM!r}]\n"
+        "m = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                     timeout_s=2.0, engine=FakeEngine())\n"
+        "print(json.dumps(m))\n"
+    )
+    assert result["holdout_greedy_solved"] == 1, (
+        "a hanging SAMPLE zeroed the deterministic greedy metric -- the exact defect the "
+        "separate greedy child exists to prevent")
+    assert result["holdout_greedy_case_fraction"] == pytest.approx(1.0)
+    assert result["holdout_stalled"] >= 1, "the stall must be reported, not silently absorbed"
+
+
+def test_holdout_se_is_clustered_over_problems_not_completions():
+    """Two problems x 4 identical-within-problem scores: per-completion SE would be far smaller."""
+    result = run_in_subprocess(
+        "import torch, statistics\n"
+        "from scripts.train_grpo import evaluate_holdout\n"
+        f"ALL = {GOOD_SUM!r}\n"
+        f"NONE = {ZERO!r}\n"
+        "class FakeEngine:\n"
+        "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        # problem A solved by every completion, problem B by none\n"
+        "        src = ALL if 'AAA' in prompt else NONE\n"
+        "        return [src] * (1 if greedy else group)\n"
+        f"problems = [dict({SUM_PROBLEM!r}, id='a', prompt='AAA'),\n"
+        f"            dict({SUM_PROBLEM!r}, id='b', prompt='BBB')]\n"
+        "m = evaluate_holdout(None, None, problems, group=4, max_new=64, temperature=0.8,\n"
+        "                     timeout_s=30.0, engine=FakeEngine())\n"
+        "print(json.dumps(m))\n"
+    )
+    # Problem means are 1.0 and 0.0 -> SE over 2 problems = 0.5. A per-completion SE over the
+    # 8 values (four 1.0s, four 0.0s) would be 0.5345/sqrt(8) = 0.189, i.e. 2.6x too small.
+    assert result["holdout_mean_case_fraction"] == pytest.approx(0.5)
+    assert result["holdout_case_fraction_se"] == pytest.approx(0.5, abs=0.01), (
+        f"SE {result['holdout_case_fraction_se']} looks per-completion, not clustered")
+    assert result["holdout_graded"] == 2
