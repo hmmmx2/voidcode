@@ -19,9 +19,11 @@ harness, which is CPU-only by design.
 | **`MemoryGuard`, multipack** (`training/`) | Ported, and now actually wired into `trainer.py` |
 | **Packing correctness** (`training/collate.py`, `numerics/`) | **Proved on CPU.** Packed and unpacked gradients agree exactly |
 | **Fault tolerance** (`training/faulttol/`) | **Proved on CPU.** Process killed mid-run, resumed, curve identical |
-| Platform measurement (P0) | **Not run** — needs a RunPod pod |
+| Platform measurement (P0) | **Run 2026-09-06** on `a40_x2_secure`. busbw **7.72 GB/s** over **SHM** (`PXB` topology, no NVLink); the default P2P transport **deadlocks** and needs `NCCL_P2P_DISABLE=1`. Route: **ZeRO-2 / `SHARD_GRAD_OP` only**. Record `docs/rl/probe-a40_x2_secure.json`. Note the fabric varies per pod — see METRICS.md |
 | Parallelism benchmarks (P2b/P2c) | Not started — needs 2 and 4 GPUs |
-| GRPO (P3) | Not started |
+| **GRPO (P3a)** | **Built and RUN.** 200 steps, lr=5e-6, on 1060 filtered DeepCoder problems. `dead_groups` 51/200 (25.5%). **No measurable transfer** — `mean_case_fraction` range 0.0062 against a 0.0214 threshold. A result, not an absence: the eval was shown deterministic and the policy demonstrably moved (KL 0.001–0.008 vs ~1e-4 frozen at lower lr). See `METRICS.md` |
+| GRPO reward-hacking audit | **Could not be performed, and that is the finding** — completions were never persisted. See `RL_FINDINGS.md` |
+| P3b physical split (trainer + `vllm-serve`) | Sampler speedup measured at **3.17x**; the split itself not run |
 | Kernels and FP8 (P4) | Not started |
 
 69 tests, all CPU-only. `docs/METRICS.md` is the ledger; every GPU row in it currently reads

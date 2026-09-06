@@ -218,8 +218,18 @@ rl-bench-parallel: ## NOT BUILT: P2b — needs a40 x2 and the route chosen from 
 rl-bench-scaling: ## NOT BUILT: P2c — a curve needs three points, so needs a40 x4
 	@echo "NOT BUILT: P2c. Needs a40 x4 — a curve needs three points."; exit 1
 
-rl-eval: ## NOT BUILT: P3 — the reward function is built, the loop is not
-	@echo "NOT BUILT: P3. The reward function it grades against is built; the loop is not."; exit 1
+rl-eval: ## P3 held-out pass@1, base vs post-RL — the ONE P3 row still unmeasured
+	@echo "NOT BUILT: the standalone base-vs-post-RL pass@1 harness."
+	@echo ""
+	@echo "This stub used to say 'the loop is not built'. That was false and understated the"
+	@echo "work: rl/grpo.py and scripts/train_grpo.py are built, tested, and were RUN for 200"
+	@echo "steps at lr=5e-6 (dead_groups 51/200, no measurable transfer). See docs/rl/METRICS.md"
+	@echo "section P3 and docs/rl/RL_FINDINGS.md."
+	@echo ""
+	@echo "What is genuinely missing is only this target: the standalone held-out pass@1"
+	@echo "comparison (METRICS.md rows 'Base pass@1' / 'Post-RL pass@1', both NOT MEASURED)."
+	@echo "The in-loop eval already reports greedy_solved and mean_case_fraction per step."
+	exit 1
 
 rl-kernel-bench: ## NOT BUILT: P4a
 	@echo "NOT BUILT: P4a."; exit 1
