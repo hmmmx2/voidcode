@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -38,56 +37,10 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from reward.limits import run_isolated_batch
+from rl.estimators import bootstrap_ci, pass_at_k, wilson
 from scripts.base_pass_rate import build_prompt as eval_build_prompt
 from scripts.base_pass_rate import extract_code as eval_extract_code
 from scripts.train_grpo import generate_group
-
-
-def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score interval. Used for the GREEDY arm only, which is a genuine binomial:
-    one deterministic sample per problem, so k successes out of n problems."""
-    if n == 0:
-        return (0.0, 0.0)
-    p = k / n
-    d = 1 + z * z / n
-    centre = (p + z * z / (2 * n)) / d
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    # A Wilson interval always contains the point estimate: at k=0 the lower bound is exactly 0 and
-    # at k=n the upper bound is exactly 1. In floating point the k=n case lands on
-    # 0.9999999999999999, which would report an interval that excludes its own estimate. Clamping
-    # against p restores the invariant and moves the bounds by at most a few ULP.
-    lo = max(0.0, min(centre - half, p))
-    hi = min(1.0, max(centre + half, p))
-    return (lo, hi)
-
-
-def pass_at_k(n: int, c: int, k: int) -> float:
-    """Unbiased pass@k for one problem: 1 - C(n-c, k) / C(n, k).
-
-    Chen et al. 2021, the HumanEval estimator. NOT `c/n >= 1` and NOT `any(correct)` — both are
-    biased upward at k < n, which is exactly why an aggregate `solved_any` count cannot be turned
-    into pass@1 after the fact.
-    """
-    if n - c < k:
-        return 1.0
-    return 1.0 - math.comb(n - c, k) / math.comb(n, k)
-
-
-def bootstrap_ci(values: list[float], iters: int = 10000, seed: int = 0,
-                 alpha: float = 0.05) -> tuple[float, float]:
-    """Percentile bootstrap over PROBLEMS. The sampled estimator is a mean of per-problem rates,
-    not a binomial, so Wilson does not apply to it and would understate the width."""
-    if not values:
-        return (0.0, 0.0)
-    rng = torch.Generator().manual_seed(seed)
-    n = len(values)
-    t = torch.tensor(values, dtype=torch.float64)
-    means = []
-    for _ in range(iters):
-        idx = torch.randint(0, n, (n,), generator=rng)
-        means.append(float(t[idx].mean()))
-    means.sort()
-    return (means[int(alpha / 2 * iters)], means[int((1 - alpha / 2) * iters)])
 
 
 def eval_arm(name: str, model_path: str, problems: list[dict], group: int, max_new: int,

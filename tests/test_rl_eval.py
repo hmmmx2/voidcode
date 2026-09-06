@@ -17,11 +17,15 @@ from pathlib import Path
 import pytest
 
 # Repo convention: tests put the root on sys.path themselves rather than relying on how pytest
-# was invoked. pytest.ini sets pythonpath=apps/api only, so `scripts.*` is not importable without
-# this line when pytest is run as a bare command instead of `python -m pytest`.
+# was invoked.
+#
+# Import `rl.estimators`, NOT `scripts.rl_eval`. Two `scripts` packages exist (root and
+# apps/api), pytest.ini puts apps/api on the path, and whichever is imported first wins for the
+# whole session — importing scripts.rl_eval here broke test_seeders_use_loader.py three tests
+# later with ModuleNotFoundError: No module named 'scripts.seed_problems'.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.rl_eval import bootstrap_ci, pass_at_k, wilson
+from rl.estimators import bootstrap_ci, pass_at_k, wilson
 
 
 def test_pass_at_1_is_exactly_c_over_n():
