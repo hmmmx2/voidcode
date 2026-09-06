@@ -94,13 +94,20 @@ def eval_arm(name: str, model_path: str, problems: list[dict], group: int, max_n
              temperature: float, timeout_s: float, seed: int) -> dict:
     print(f"\n=== arm '{name}': {model_path} ===", flush=True)
     tok = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    # BFLOAT16, NOT FLOAT16 — matching train_grpo.py line 368.
+    #
+    # This was found the hard way. With fp16 the base arm scored greedy 3/60 where the loop's own
+    # step-0 recorded 4/60. Greedy decoding is deterministic, so that gap is not sampling noise:
+    # fp16 and bf16 have different mantissa/exponent splits, the logits differ, and argmax lands
+    # somewhere else on at least one problem. A harness that silently evaluates a
+    # differently-rounded model is not measuring the same policy the trainer trained.
     load = {"device_map": "cuda:0", "trust_remote_code": True}
     try:
-        model = AutoModelForCausalLM.from_pretrained(model_path, dtype=torch.float16, **load)
+        model = AutoModelForCausalLM.from_pretrained(model_path, dtype=torch.bfloat16, **load)
     except TypeError as exc:                    # same 4.x/5.x kwarg split as merge_lora.py
         if "dtype" not in str(exc):
             raise
-        model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16, **load)
+        model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16, **load)
     model.eval()
 
     # Common random numbers: every arm sees the same draws.
@@ -173,10 +180,23 @@ def main() -> int:
     ap.add_argument("--arm", action="append", required=True, metavar="NAME=PATH",
                     help="repeatable, e.g. --arm base=Qwen/Qwen2.5-Coder-1.5B-Instruct "
                          "--arm post=/workspace/policy-step200")
-    ap.add_argument("--group", type=int, default=8, help="samples per problem (n for pass@k)")
-    ap.add_argument("--max-new", type=int, default=512)
-    ap.add_argument("--temperature", type=float, default=0.8)
-    ap.add_argument("--grade-timeout", type=float, default=10.0)
+    # DEFAULTS ARE COPIED FROM train_grpo.py ON PURPOSE.
+    #
+    # They were not, at first, and it showed immediately: with max_new=512 the base arm scored
+    # greedy 3/60 where the loop's own step-0 recorded 4/60. Greedy decoding is deterministic, so a
+    # difference there is not noise -- it was the shorter generation budget truncating a solution
+    # that 640 tokens completes. A harness whose "base" number cannot be compared to the loop's
+    # step 0 defeats its own purpose, so any change to these must be made in both files.
+    #
+    # --group is the deliberate exception: the loop evaluates at 4 to keep training cheap, while 8
+    # halves the variance of the pass@k estimates this harness exists to produce. Pass --group 4
+    # when the goal is a strict like-for-like against a specific in-loop step.
+    ap.add_argument("--group", type=int, default=8,
+                    help="samples per problem (the n in pass@k). train_grpo evaluates at 4; "
+                         "use --group 4 for a strict like-for-like with an in-loop step")
+    ap.add_argument("--max-new", type=int, default=640, help="matches train_grpo.py")
+    ap.add_argument("--temperature", type=float, default=0.8, help="matches train_grpo.py")
+    ap.add_argument("--grade-timeout", type=float, default=8.0, help="matches train_grpo.py")
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--out", default="rl_eval.json")
     args = ap.parse_args()

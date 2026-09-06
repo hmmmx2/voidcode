@@ -490,7 +490,9 @@ finding out about.
 
 | Metric | Value | Spec key | Command |
 |---|---|---|---|
-| Base **greedy** pass@1 on held-out | **4/60 = 0.0667** [0.026, 0.159] | | `grpo-runs/grpo-run-lr5e-6.json`, step 0 |
+| Base **greedy** pass@1 on held-out | **4/60 = 0.0667** [0.026, 0.159] | | `grpo-runs/grpo-run-lr5e-6.json`, step 0 — **re-measured 2026-09-06 by `make rl-eval`, reproduced exactly** |
+| Base **sampled** pass@1 (unbiased) | **0.0396** [0.0083, 0.075] | | `make rl-eval`, `docs/rl/rl-eval-base-only.json` |
+| Base pass@k (n=8) | **@1 0.0396 · @2 0.0625 · @4 0.0805 · @8 0.0833** | | same record |
 | Post-RL **greedy** pass@1 on held-out | **3/60 = 0.0500** [0.017, 0.137] | | same record, step 200 |
 | Prompts surviving the 10–90% base-pass filter | **184 (9.2%)** in-band; **1060** with any signal — the run trained on the 1060 | | `filter_corpus.py` summary |
 | Dead-group rate, start and end | **51/200 = 25.5%** aggregate; start/end **not logged separately** | | `grpo-run-lr5e-6.json` |
@@ -509,6 +511,35 @@ finding out about.
 > **Neither interval excludes the other, and the change is one problem.** At n=60 a single problem
 > moves pass@1 by 0.0167, so the instrument cannot resolve anything finer. The `-0.0167` delta is
 > exactly that one problem and must not be read as a regression.
+>
+> ### Re-measured 2026-09-06 with the standalone harness (`scripts/rl_eval.py`)
+>
+> The sampled estimator is **no longer derived** — it is measured. The harness stores per-problem
+> `c` and `n`, so pass@k for any k is now recomputable offline, which is exactly what the original
+> run could not do.
+>
+> **It reproduces the loop's step 0 exactly:** greedy **4/60**, Wilson **[0.0262, 0.1593]**, against
+> the `[0.026, 0.159]` published above. Getting there required matching the trainer on four points,
+> and each mismatch changed the answer:
+>
+> | | trainer | first harness attempt |
+> |---|---|---|
+> | `max_new` | 640 | 512 |
+> | `grade_timeout` | 8.0 | 10.0 |
+> | dtype | **bfloat16** | float16 |
+> | eval group | 4 | 8 |
+>
+> fp16-vs-bf16 alone moved greedy from 4/60 to 3/60. The eval set was **not** a factor: the
+> catalogue sha256 is still `baa73a0cfb17bad4…`, byte-identical to the pinned value.
+>
+> **Open caveat — greedy determinism is conditional on batch shape.** The `--group 4` run scored
+> greedy **3/60** and the `--group 8` run **4/60**, from an identical greedy call
+> (`do_sample=False`, `num_return_sequences=1`, same prompt, same weights); only the sampling batch
+> run alongside it differed. So `greedy_solved` is reproducible *within* a fixed configuration but
+> not *across* configurations. This matters more than it looks: **one flipped problem is 0.0167**,
+> which is the entire size of the "no measurable transfer" delta the headline run reported. The
+> greedy metric's claim that "any change in it is a real change in the policy" holds only when
+> batch shape is held fixed too.
 >
 > Only the **lr=5e-6** run supports these rows. The 1e-6, 2e-6 and 2e-5 runs predate the
 > `greedy_solved` metric and record only `solved_any` / `solve_rate` / `mean_case_fraction`, so

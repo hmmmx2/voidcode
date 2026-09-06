@@ -1,0 +1,513 @@
+{
+ "arms": [
+  {
+   "arm": "base_g4",
+   "model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+   "problems": 60,
+   "group": 4,
+   "greedy_pass@1": {
+    "solved": 3,
+    "n": 60,
+    "value": 0.05,
+    "wilson95": [
+     0.0171,
+     0.137
+    ]
+   },
+   "sampled_pass@1_unbiased": {
+    "value": 0.0375,
+    "bootstrap95": [
+     0.0083,
+     0.075
+    ]
+   },
+   "pass@k": {
+    "pass@1": 0.0375,
+    "pass@2": 0.0611,
+    "pass@4": 0.0833
+   },
+   "per_problem": [
+    {
+     "id": "stable-softmax",
+     "n": 4,
+     "c": 2,
+     "greedy_solved": true,
+     "greedy_case_fraction": 1.0,
+     "mean_case_fraction": 0.5
+    },
+    {
+     "id": "cross-entropy-loss",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.2,
+     "mean_case_fraction": 0.2
+    },
+    {
+     "id": "layer-norm",
+     "n": 4,
+     "c": 2,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.5
+    },
+    {
+     "id": "sgd-momentum-step",
+     "n": 4,
+     "c": 1,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.6,
+     "mean_case_fraction": 0.25
+    },
+    {
+     "id": "scaled-dot-product-attention",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "top-p-sampling",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.25
+    },
+    {
+     "id": "bpe-merge",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.2,
+     "mean_case_fraction": 0.15
+    },
+    {
+     "id": "iou-nms",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "broadcast-shapes",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.4,
+     "mean_case_fraction": 0.3
+    },
+    {
+     "id": "batchnorm-inference",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.4
+    },
+    {
+     "id": "parallel-reduction",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "thread-index-mapping",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "sigmoid",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.25,
+     "mean_case_fraction": 0.25
+    },
+    {
+     "id": "min-max-scale",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.5,
+     "mean_case_fraction": 0.375
+    },
+    {
+     "id": "layer-norm-backward",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "online-softmax",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-implement-auc",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-implement-adam-update",
+     "n": 4,
+     "c": 1,
+     "greedy_solved": true,
+     "greedy_case_fraction": 1.0,
+     "mean_case_fraction": 0.3125
+    },
+    {
+     "id": "iq-implement-grad-clip",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.4,
+     "mean_case_fraction": 0.8
+    },
+    {
+     "id": "iq-derive-logistic-gradient",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-compute-metrics-from-confusion",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.1
+    },
+    {
+     "id": "iq-bayes-optimal-threshold",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-resampling-odds-correction",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.2,
+     "mean_case_fraction": 0.15
+    },
+    {
+     "id": "iq-bias-variance-decomposition",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-count-transformer-params",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-activation-memory-budget",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-residual-jacobian",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-fp16-update-underflow",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-warmup-adam-variance",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-why-cross-entropy-not-mse",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-eigenvalues-of-the-hessian",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-kl-divergence-asymmetry",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.1667,
+     "mean_case_fraction": 0.0417
+    },
+    {
+     "id": "iq-why-scale-by-sqrt-dk",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-matrix-calculus-backprop",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-expectation-of-dropout",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-derive-layernorm-backward",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-derive-rope-relative",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0833
+    },
+    {
+     "id": "iq-attention-vs-ffn-crossover",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-logsumexp-stability",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0417
+    },
+    {
+     "id": "iq-decode-throughput-arithmetic",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-perplexity-and-loss",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-derive-infonce",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0417
+    },
+    {
+     "id": "iq-vit-token-budget",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-modality-gap-invariance",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-patch-embedding-cost",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-arithmetic-intensity-roofline",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-coalescing-transaction-count",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.1667,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-kv-cache-memory",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-occupancy-from-resources",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-pipeline-bubble-fraction",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-implement-stratified-split",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-implement-causal-mask",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.2,
+     "mean_case_fraction": 0.15
+    },
+    {
+     "id": "iq-interpolate-pos-embed",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.2,
+     "mean_case_fraction": 0.1
+    },
+    {
+     "id": "iq-implement-warp-reduction",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.05
+    },
+    {
+     "id": "iq-weighted-distribution-moments",
+     "n": 4,
+     "c": 3,
+     "greedy_solved": true,
+     "greedy_case_fraction": 1.0,
+     "mean_case_fraction": 0.8333
+    },
+    {
+     "id": "iq-ulp-and-absorption",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.1667,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-matmul-chain-order",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.3333,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-reverse-mode-fan-out",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0417
+    },
+    {
+     "id": "iq-int8-scale-and-zero-point",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    },
+    {
+     "id": "iq-fusion-memory-traffic",
+     "n": 4,
+     "c": 0,
+     "greedy_solved": false,
+     "greedy_case_fraction": 0.0,
+     "mean_case_fraction": 0.0
+    }
+   ]
+  }
+ ]
+}
