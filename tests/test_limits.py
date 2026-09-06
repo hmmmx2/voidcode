@@ -6,6 +6,8 @@ So the test that matters is not "does a good solution still pass" — it is "doe
 
 from __future__ import annotations
 
+import ast
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -125,3 +127,61 @@ def test_works_when_the_parent_has_cuda_initialised() -> None:
     r = run_isolated(PROBLEM, "def add(a, b):\n    return a + b\n")
     assert r.solved is True, f"grading broke with CUDA live in the parent: {r.outcome} {r.error}"
     assert r.outcome == "ran"
+
+
+# ── the child must not re-import the parent's __main__ ────────────────────────────────────────
+#
+# This is a performance property, but it is worth a correctness test because it fails SILENTLY and
+# expensively: 21.8s per grading call instead of 1.7s, which turned a 60-problem eval into 25
+# minutes of 0% GPU. It also already regressed once -- a `forkserver` + `set_forkserver_preload([])`
+# fix looked right, passed review, and measured 24.3s on the pod because the preload list governs
+# only the server process, not each `Process.start()`. A green test suite said nothing either way.
+
+
+def test_light_main_hides_the_parent_main_and_restores_it():
+    """`get_preparation_data` is what the child obeys, so assert against that, not against a timing."""
+    from multiprocessing import spawn
+
+    from reward import limits
+
+    before = spawn.get_preparation_data("probe")
+    with limits._light_main():
+        during = spawn.get_preparation_data("probe")
+    after = spawn.get_preparation_data("probe")
+
+    # Either key would make the child rebuild the real __main__; `-m` takes the by-name branch.
+    assert during.get("init_main_from_name") is None
+    assert Path(during["init_main_from_path"]).name == "_mp_stub.py"
+    assert after == before, "the parent's own __main__ must survive the swap"
+
+
+def test_the_stub_main_is_empty():
+    """`_light_main` is only cheap while the module it points at stays trivial."""
+    from reward import limits
+
+    tree = ast.parse(Path(limits._MP_STUB).read_text(encoding="utf-8"))
+    assert [type(n) for n in tree.body] == [ast.Expr], "the stub must hold nothing but its docstring"
+
+
+def test_grading_child_does_not_execute_a_heavy_parent_main(tmp_path):
+    """End-to-end: run a grader from a __main__ that records every time it is executed."""
+    solution = "def add(a, b):\n    return a + b\n"
+    marker = tmp_path / "imports.log"
+    main = tmp_path / "heavy_main.py"
+    main.write_text(
+        "import sys\n"
+        f"sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
+        f"open({str(marker)!r}, 'a').write('x')\n"
+        "from reward.limits import run_isolated\n"
+        f"PROBLEM = {PROBLEM!r}\n"
+        "if __name__ == '__main__':\n"
+        f"    r = run_isolated(PROBLEM, {solution!r})\n"
+        "    print('SOLVED', r.solved, r.outcome)\n",
+        encoding="utf-8",
+    )
+
+    out = subprocess.run([sys.executable, str(main)], capture_output=True, text=True, timeout=300)
+    assert "SOLVED True ran" in out.stdout, f"grading itself broke: {out.stdout} {out.stderr}"
+    # One 'x' for the parent. A second means the child re-ran the parent's __main__ -- which for
+    # train_grpo.py means a torch import, per grading call.
+    assert marker.read_text() == "x", "the grading child re-executed the parent's __main__"

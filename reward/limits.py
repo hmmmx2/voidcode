@@ -29,7 +29,11 @@ run this on the open internet's output without something stronger underneath.
 """
 from __future__ import annotations
 
+import contextlib
 import multiprocessing as mp
+import pathlib
+import sys
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,6 +72,90 @@ class IsolatedResult:
         return len(self.passed) / total if total else 0.0
 
 
+# ── how the grading child is started ──────────────────────────────────────────────
+#
+# MEASURED, on the training pod: 21.8s per grading call with a heavy `__main__`, 1.7s with a light
+# one. Identical work; a 13x difference. train_grpo.py and filter_corpus.py import torch at module
+# scope, and the child re-runs the parent's `__main__` before it unpickles the target, so every
+# grading call paid a full torch import. A 60-problem eval spent ~25 minutes on it at 0% GPU.
+#
+# The first attempt at this was `forkserver` with `set_forkserver_preload([])`, on the theory that
+# the ['__main__'] default preload was the culprit. It measured 24.3s -- no change -- because the
+# preload list only governs the forkserver SERVER process. Each individual `Process.start()` calls
+# `spawn.get_preparation_data`, which records how to rebuild `__main__` unconditionally
+# (`init_main_from_name` when the parent was run with `-m`, else `init_main_from_path`), and the
+# child runs it through `runpy` regardless of start method. Verified on the pod: start method
+# `forkserver`, preload `[]`, and the child still reported 1081 modules with torch among them.
+#
+# So the fix has to remove the import itself, not the mechanism that triggers it: point `__main__`
+# at an empty module for the duration of `start()`. See `_light_main`.
+#
+# `forkserver` is kept anyway -- one clean server process, children forked from THAT rather than a
+# fresh interpreter each time -- but it is now the smaller half of the saving, not the fix.
+#
+# Forking stays safe here for the same reason `spawn` was chosen originally -- a CUDA context does
+# not survive fork -- because the forkserver is a clean process that never imports torch or touches
+# a device. It is the TRAINER that must never be forked, and it never is.
+#
+# forkserver is POSIX-only, so Windows keeps `spawn`. Same platform split the rlimits already have.
+def _grading_context():
+    """A context whose children fork from a clean server rather than re-exec the interpreter."""
+    try:
+        ctx = mp.get_context("forkserver")
+        ctx.set_forkserver_preload([])
+        return ctx
+    except (ValueError, AttributeError, OSError):
+        return mp.get_context("spawn")
+
+
+#: Empty module the grading child runs in place of the parent's `__main__`.
+_MP_STUB = str(pathlib.Path(__file__).with_name("_mp_stub.py"))
+
+#: `_light_main` mutates a global (`sys.modules['__main__']`), so two threads starting grading
+#: children at once could restore each other's `__file__`. Grading is single-threaded in the
+#: trainer; this makes it safe anyway, and costs nothing because it is held only across `start()`.
+_MAIN_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _light_main():
+    """Swap `__main__` for an empty file while a child is started, so the child does not re-import it.
+
+    Only `Process.start()` needs wrapping: that is where `get_preparation_data` reads `__main__`
+    and pickles the answer into the child's payload.
+
+    `__file__` is REPOINTED rather than deleted because `get_preparation_data` dereferences it
+    unguarded on win32 (`main_module.__file__.endswith('.exe')`); deleting it would trade a slow
+    grader on Linux for a crashing one on Windows. `__spec__` is cleared as well, or a parent
+    launched with `python -m ...` takes the `init_main_from_name` branch and re-imports by name.
+    """
+    main = sys.modules.get("__main__")
+    if main is None:  # pragma: no cover - no interpreter without one
+        yield
+        return
+    had_file = hasattr(main, "__file__")
+    prev_file = getattr(main, "__file__", None)
+    prev_spec = getattr(main, "__spec__", None)
+    main.__file__ = _MP_STUB
+    main.__spec__ = None
+    try:
+        yield
+    finally:
+        main.__spec__ = prev_spec
+        if had_file:
+            main.__file__ = prev_file
+        else:
+            del main.__file__
+
+
+def _start_child(ctx, target, args):
+    """Construct and start a grading child, paying the light-`__main__` dance once per call site."""
+    proc = ctx.Process(target=target, args=args)
+    with _MAIN_LOCK, _light_main():
+        proc.start()
+    return proc
+
+
 def _apply_rlimits(memory_mb: int, cpu_seconds: int) -> None:
     """POSIX only. Best effort: a platform without `resource` still gets the wall-clock bound."""
     try:
@@ -89,7 +177,7 @@ def _child_tests(queue, source: str, test_code: str, memory_mb: int, cpu_seconds
 
         r = grade_by_tests(source, test_code)
         queue.put(("ok", r.solved, r.passed, r.total, r.outcome, r.error))
-    except BaseException as exc:  # noqa: BLE001
+    except BaseException as exc:
         queue.put(("harness_error", False, 0, 0, "harness_error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -100,11 +188,10 @@ def run_isolated_tests(source: str, test_code: str, timeout_s: float = DEFAULT_T
     Public-corpus tests are the reward for a policy being actively pushed toward unusual output, so
     the isolation matters more here than for authored content, not less.
     """
-    ctx = mp.get_context("spawn")          # never fork: see run_isolated
+    ctx = _grading_context()               # see _grading_context above
     queue = ctx.Queue()
-    proc = ctx.Process(target=_child_tests,
-                       args=(queue, source, test_code, memory_mb, int(timeout_s) + 1))
-    proc.start()
+    proc = _start_child(ctx, _child_tests,
+                        (queue, source, test_code, memory_mb, int(timeout_s) + 1))
     proc.join(timeout_s)
 
     if proc.is_alive():
@@ -136,7 +223,7 @@ def _child_stdio_batch(queue, sources: list, tests: list, memory_mb: int, cpu_se
             r = grade_by_stdio(src, tests)
             out.append((r.solved, r.passed, r.total, r.outcome, r.error))
         queue.put(("ok", out))
-    except BaseException as exc:  # noqa: BLE001
+    except BaseException as exc:
         queue.put(("harness_error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -154,7 +241,7 @@ def run_isolated_stdio_batch(sources: list, tests: list, timeout_s: float = DEFA
     The timeout is per *problem* rather than per completion, so a single non-terminating candidate
     still bounds the batch instead of the run.
     """
-    ctx = mp.get_context("spawn")
+    ctx = _grading_context()
     queue = ctx.Queue()
     # CPU budget must scale with the BATCH, not one source.
     #
@@ -164,10 +251,9 @@ def run_isolated_stdio_batch(sources: list, tests: list, timeout_s: float = DEFA
     # allowance. When RLIMIT_CPU fires the queue is empty and dead("died") is returned for ALL
     # sources, so a group that merely ran slowly is recorded as uniformly zero: a manufactured dead
     # group, indistinguishable from a genuine one because reward_for_group discards outcome.
-    proc = ctx.Process(target=_child_stdio_batch,
-                       args=(queue, sources, tests, memory_mb,
-                             int(timeout_s * max(len(sources), 1)) + 1))
-    proc.start()
+    proc = _start_child(ctx, _child_stdio_batch,
+                        (queue, sources, tests, memory_mb,
+                         int(timeout_s * max(len(sources), 1)) + 1))
     proc.join(timeout_s * max(len(sources), 1))
 
     def dead(outcome: str, error: str) -> list:
@@ -196,7 +282,7 @@ def _child_stdio(queue, source: str, tests: list, memory_mb: int, cpu_seconds: i
 
         r = grade_by_stdio(source, tests)
         queue.put(("ok", r.solved, r.passed, r.total, r.outcome, r.error))
-    except BaseException as exc:  # noqa: BLE001
+    except BaseException as exc:
         queue.put(("harness_error", False, 0, 0, "harness_error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -207,11 +293,10 @@ def run_isolated_stdio(source: str, tests: list, timeout_s: float = DEFAULT_TIME
     A competitive-programming solution that loops forever on one edge case is *more* likely than an
     authored one doing so, so this path needs the timeout most.
     """
-    ctx = mp.get_context("spawn")          # never fork: see run_isolated
+    ctx = _grading_context()               # see _grading_context above
     queue = ctx.Queue()
-    proc = ctx.Process(target=_child_stdio,
-                       args=(queue, source, tests, memory_mb, int(timeout_s) + 1))
-    proc.start()
+    proc = _start_child(ctx, _child_stdio,
+                        (queue, source, tests, memory_mb, int(timeout_s) + 1))
     proc.join(timeout_s)
 
     if proc.is_alive():
@@ -240,7 +325,7 @@ def _child_batch(queue, problem: dict, sources: list, memory_mb: int, cpu_second
             v = grade(problem, src)
             out.append((bool(v.solved), list(v.passed), list(v.failed), v.outcome, v.error))
         queue.put(("ok", out))
-    except BaseException as exc:  # noqa: BLE001 - the child must never hang holding the queue
+    except BaseException as exc:
         queue.put(("harness_error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -261,13 +346,12 @@ def run_isolated_batch(problem: dict[str, Any], sources: list,
     The timeout is per *problem* rather than per completion, so one non-terminating candidate
     bounds the batch instead of the run.
     """
-    ctx = mp.get_context("spawn")
+    ctx = _grading_context()
     queue = ctx.Queue()
     # Same per-source-budget-for-a-whole-batch mismatch as the stdio path above.
-    proc = ctx.Process(target=_child_batch,
-                       args=(queue, problem, sources, memory_mb,
-                             int(timeout_s * max(len(sources), 1)) + 1))
-    proc.start()
+    proc = _start_child(ctx, _child_batch,
+                        (queue, problem, sources, memory_mb,
+                         int(timeout_s * max(len(sources), 1)) + 1))
     proc.join(timeout_s * max(len(sources), 1))
 
     def dead(outcome: str, error: str) -> list:
@@ -301,7 +385,7 @@ def _child(queue, problem: dict, source: str, memory_mb: int, cpu_seconds: int) 
         verdict = grade(problem, source)
         queue.put(("ok", bool(verdict.solved), list(verdict.passed), list(verdict.failed),
                    verdict.outcome, verdict.error))
-    except BaseException as exc:  # noqa: BLE001 - the child must never hang holding the queue
+    except BaseException as exc:
         queue.put(("harness_error", False, [], [], "harness_error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -322,11 +406,10 @@ def run_isolated(
     # Every completion in the first isolated pass-rate run failed that way, turning a working
     # sandbox into a machine for producing zeros. spawn re-execs a clean interpreter and costs
     # roughly a second per call, which is the correct price for the result being real.
-    ctx = mp.get_context("spawn")
+    ctx = _grading_context()
     queue = ctx.Queue()
-    proc = ctx.Process(target=_child,
-                       args=(queue, problem, source, memory_mb, int(timeout_s) + 1))
-    proc.start()
+    proc = _start_child(ctx, _child,
+                        (queue, problem, source, memory_mb, int(timeout_s) + 1))
     proc.join(timeout_s)
 
     if proc.is_alive():
