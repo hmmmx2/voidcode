@@ -306,6 +306,26 @@ def main() -> int:
                     help="'band' = strict 10-90%% pass rate; 'any' also keeps partial-credit problems")
     ap.add_argument("--eval-set", required=True, help="the 60 local problems (data/catalogue.json)")
     ap.add_argument("--model", default="Qwen/Qwen2.5-Coder-1.5B-Instruct")
+    # LoRA. Off by default so existing runs reproduce exactly; --lora-r 16 turns it on.
+    #
+    # This is what makes a 7B policy fit a 48 GB card. Full-parameter 7.6B needs roughly
+    # 15 GB policy + 15 GB frozen reference + 15 GB grads + ~61 GB fp32 AdamW moments ~= 107 GB.
+    # With LoRA only the adapter trains (~40M params at r=16), and the reference is the SAME
+    # weights with the adapter switched off -- so the second 15 GB copy disappears entirely and the
+    # reference is exactly the base policy by construction rather than by a separate load.
+    ap.add_argument("--lora-r", type=int, default=0,
+                    help="LoRA rank; 0 disables LoRA and trains full-parameter")
+    # 4-bit base (QLoRA). This is what puts a 32B policy on a 48 GB card.
+    #
+    # Measured on this project: 7B + LoRA in bf16 peaks at 15.7 GiB of a 46 GiB A40, so bf16 has
+    # room for ~7B and no more. A 32B in bf16 is ~64 GiB of weights alone and does not fit at any
+    # batch size. At 4-bit NF4 the same 32B is ~18 GiB, leaving ~26 GiB for the adapter, the
+    # rollout batch and activations. Requires --lora-r > 0: training 4-bit weights directly is not
+    # possible, only the fp16 adapter on top of them is trained.
+    ap.add_argument("--load-4bit", action="store_true",
+                    help="load the base in 4-bit NF4 (QLoRA). Requires --lora-r > 0")
+    ap.add_argument("--lora-alpha", type=int, default=32)
+    ap.add_argument("--lora-dropout", type=float, default=0.05)
     ap.add_argument("--band", type=float, nargs=2, default=[0.1, 0.9])
     ap.add_argument("--group", type=int, default=8)
     ap.add_argument("--steps", type=int, default=200)
@@ -364,15 +384,49 @@ def main() -> int:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, device_map="cuda")
-    ref = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, device_map="cuda")
-    ref.eval()
-    for p in ref.parameters():
-        p.requires_grad_(False)
 
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    if args.load_4bit and args.lora_r <= 0:
+        print("--load-4bit requires --lora-r > 0: 4-bit weights cannot be trained directly, "
+              "only an fp16 adapter on top of them.", flush=True)
+        return 2
+
+    load_kw = {"torch_dtype": torch.bfloat16, "device_map": "cuda"}
+    if args.load_4bit:
+        from transformers import BitsAndBytesConfig
+        load_kw["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+    model = AutoModelForCausalLM.from_pretrained(args.model, **load_kw)
+
+    if args.lora_r > 0:
+        from peft import LoraConfig, get_peft_model
+        model = get_peft_model(model, LoraConfig(
+            r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                            "gate_proj", "up_proj", "down_proj"],
+            task_type="CAUSAL_LM"))
+        if args.load_4bit:
+            # Without this the adapter receives no gradient: the 4-bit base produces no grad_fn,
+            # so nothing upstream of the adapter is differentiable.
+            model.enable_input_require_grads()
+        # No second copy: the reference is these weights with the adapter disabled.
+        ref = None
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        print(f"LoRA r={args.lora_r}: {trainable/1e6:.1f}M trainable of {total/1e9:.2f}B "
+              f"({100*trainable/total:.3f}%); reference = adapter-disabled base", flush=True)
+    else:
+        ref = AutoModelForCausalLM.from_pretrained(
+            args.model, torch_dtype=torch.bfloat16, device_map="cuda")
+        ref.eval()
+        for p in ref.parameters():
+            p.requires_grad_(False)
+
+    params = [p for p in model.parameters() if p.requires_grad]
+    opt = torch.optim.AdamW(params, lr=args.lr)
 
     # Baseline before any step, so a flat curve is provably flat rather than merely unmeasured.
     history = [{"step": 0, **evaluate(model, tok, eval_problems, args.eval_group,
@@ -443,13 +497,18 @@ def main() -> int:
             for i, text in enumerate(texts):
                 logp = sequence_logp(model, tok, prompt, text)
                 with torch.no_grad():
-                    ref_logp = sequence_logp(ref, tok, prompt, text)
+                    if ref is not None:
+                        ref_logp = sequence_logp(ref, tok, prompt, text)
+                    else:
+                        # Adapter off == the base policy == the reference, no extra memory.
+                        with model.disable_adapter():
+                            ref_logp = sequence_logp(model, tok, prompt, text)
                 old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
                 loss, stats = grpo_loss(logp, old_logp, ref_logp,
                                         adv[i].to(logp.device).expand_as(logp), beta=args.beta)
                 (loss / n).backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(params, 1.0)
             opt.step()
             opt.zero_grad(set_to_none=True)
 

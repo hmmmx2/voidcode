@@ -116,6 +116,61 @@ Start at 7B. The task is "read this diagram and ask a Socratic question about it
 
 ---
 
+## 3d. The measured anchor: what actually fits on one 48 GB card
+
+Measured on the A40 on 2026-09-06, not estimated:
+
+| Config | VRAM | Verdict |
+|---|---|---|
+| **7B + LoRA r=16, bf16, group 8** | **15.7 GiB of 46** | **Runs. 34% of the card.** |
+| 7B full-parameter | ~107 GB (15 policy + 15 ref + 15 grads + ~61 AdamW fp32) | Impossible on one A40 |
+
+LoRA removes three of those four terms: only a 40.4M-param adapter trains (0.527% of 7.66B), and
+the reference is the same weights with the adapter switched off, so the second 15 GB copy vanishes.
+
+Weights dominate, so the rest of the table extrapolates from that anchor:
+
+| Model class | bf16 + LoRA | **4-bit NF4 + LoRA (QLoRA)** | Serving, AWQ 4-bit |
+|---|---|---|---|
+| 7B | **16 GB — fits A40** | ~7 GB | 5.2 GB *(measured)* |
+| 14B | ~30 GB — fits A40 | ~12 GB | ~10 GB |
+| **32B** | ~64 GB — **does not fit** | **~25 GB — fits A40** | ~20 GB |
+| 70B | ~140 GB — no | ~45 GB — 80 GB card | ~40 GB |
+| **480B-A35B** | no | **~250 GB — 4× 80 GB** | ~250 GB — 4× 80 GB |
+
+**This is why the answer is a bigger model on one card, not more cards.** A 32B trains on the A40 we
+already have, via 4-bit base + fp16 adapter (`--load-4bit --lora-r 16`).
+
+## 3e. On the 480B, honestly
+
+Qwen3-Coder-480B-A35B is Apache-2.0 with repository-scale context, and as a *tutor* it would be
+excellent. The problem is arithmetic, not licensing:
+
+- **~250 GB of weights at 4-bit.** Minimum **4× H100 80 GB ≈ $13.96/hr**, or 2× B200 ≈ $13.58/hr,
+  before KV cache. That is **~$335/day** to keep a tutor online for a non-commercial project.
+- **It cannot be GRPO-trained on any sane budget.** The loop is rollout-dominated — thousands of
+  generations per run. At $14/hr a single 200-step run costs more than every experiment in this
+  repo combined.
+- MoE helps *speed* (35B active), not *residency*: all 480B of weights must be in VRAM regardless.
+
+**Verdict: serving-only, and only if a 32B is first shown to be insufficient on a real eval.** There
+is currently no trustworthy tutor accuracy number, so that comparison cannot yet be made — which is
+the strongest argument for measuring before buying.
+
+## 3f. Recommended pick
+
+**Qwen3-Coder-32B (or any ~27–32B dense coder) at 4-bit.** It is the largest class that:
+
+- **trains** on one A40 via QLoRA (~25 GB of 46), and
+- **serves** on one A40 via AWQ (~20 GB), and
+- costs **$0.49/hr** rather than $14/hr.
+
+Verify the exact checkpoint name and licence on its model card before pulling it — I cannot confirm
+availability of specific revisions offline, and the sizing above is by parameter class, not by a
+specific tag.
+
+---
+
 ## 4. GPU recommendations, per workload
 
 Grounded in this project's own P0 findings, including the ones that rule options out.
