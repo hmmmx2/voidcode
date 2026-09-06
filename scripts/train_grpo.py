@@ -308,7 +308,8 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
 
 
 def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
-                     temperature: float, timeout_s: float, seed: int = 1234, engine=None) -> dict:
+                     temperature: float, timeout_s: float, seed: int = 1234, engine=None,
+                     max_cases: int = 20) -> dict:
     """The same measurement as `evaluate`, on held-out problems from the TRAINING distribution.
 
     WHY THIS EXISTS
@@ -348,7 +349,10 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
                                 greedy=True, engine=engine, seed=seed)
         sources = [extract_code(t) for t in texts + g_text]
         try:
-            verdicts = run_isolated_stdio_batch(sources, p["tests"][:20], timeout_s=timeout_s)
+            # Same slice the reward uses, so an in-domain number is comparable to the training
+            # signal rather than to a different subset of the same problems.
+            verdicts = run_isolated_stdio_batch(sources, p["tests"][:max_cases],
+                                                timeout_s=timeout_s)
         except RuntimeError as exc:
             print(f"  holdout harness error on {p['id']}: {exc}", flush=True)
             continue
@@ -726,7 +730,8 @@ def main() -> int:
                                            engine=engine)}
         if holdout:
             row.update(evaluate_holdout(model, tok, holdout, args.eval_group, args.max_new,
-                                        args.temperature, args.grade_timeout, engine=engine))
+                                        args.temperature, args.grade_timeout, engine=engine,
+                                        max_cases=args.max_cases))
         return row
 
     history = [eval_all(0)]
