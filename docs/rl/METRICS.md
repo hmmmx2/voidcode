@@ -490,12 +490,29 @@ finding out about.
 
 | Metric | Value | Spec key | Command |
 |---|---|---|---|
-| Base pass@1 on held-out | NOT MEASURED | | `make rl-eval` |
-| Post-RL pass@1 on held-out | NOT MEASURED | | `make rl-eval` |
-| Prompts surviving the 10–90% base-pass filter | NOT MEASURED | | `make rl-eval` |
-| Dead-group rate, start and end | NOT MEASURED | | `make rl-eval` |
-| KL divergence at convergence | NOT MEASURED | | `make rl-eval` |
-| Weight-sync overhead, % of step | NOT MEASURED | | `make rl-eval` |
+| Base **greedy** pass@1 on held-out | **4/60 = 0.0667** [0.026, 0.159] | | `grpo-runs/grpo-run-lr5e-6.json`, step 0 |
+| Post-RL **greedy** pass@1 on held-out | **3/60 = 0.0500** [0.017, 0.137] | | same record, step 200 |
+| Prompts surviving the 10–90% base-pass filter | **184 (9.2%)** in-band; **1060** with any signal — the run trained on the 1060 | | `filter_corpus.py` summary |
+| Dead-group rate, start and end | **51/200 = 25.5%** aggregate; start/end **not logged separately** | | `grpo-run-lr5e-6.json` |
+| KL divergence at convergence | **0.0033** at step 200 (0.0010–0.0040 across the five evals) | | P3 step table above |
+| Weight-sync overhead, % of step | NOT MEASURED — needs the P3b trainer/`vllm-serve` split, never run | | `make rl-eval` |
+
+> **These five were derived from the run records already on disk, not from a new `make rl-eval`.**
+> They sat at `NOT MEASURED` while the numbers existed in `grpo-runs/` — a bookkeeping gap, not a
+> measurement gap.
+>
+> **Read "greedy" literally.** `greedy_solved / problems` is pass@1 under *greedy* decoding: one
+> deterministic sample per problem. It is **not** the sampled unbiased pass@1 estimator, and the two
+> are not interchangeable. The sampled variant is not recoverable from these records, because only
+> the aggregate `solved_any` was stored, never per-problem success counts.
+>
+> **Neither interval excludes the other, and the change is one problem.** At n=60 a single problem
+> moves pass@1 by 0.0167, so the instrument cannot resolve anything finer. The `-0.0167` delta is
+> exactly that one problem and must not be read as a regression.
+>
+> Only the **lr=5e-6** run supports these rows. The 1e-6, 2e-6 and 2e-5 runs predate the
+> `greedy_solved` metric and record only `solved_any` / `solve_rate` / `mean_case_fraction`, so
+> greedy pass@1 is genuinely unavailable for them rather than merely unreported.
 | Own GRPO loop vs TRL, agreement | NOT MEASURED | | `make rl-eval` |
 | Reward-hacking attempts found | NOT MEASURED | | `docs/RL_FINDINGS.md` |
 
