@@ -156,8 +156,17 @@ def run_isolated_stdio_batch(sources: list, tests: list, timeout_s: float = DEFA
     """
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
+    # CPU budget must scale with the BATCH, not one source.
+    #
+    # This passed int(timeout_s) + 1 -- a per-source budget -- to a child that grades every source
+    # in the batch, while the parent below joins at timeout_s * len(sources). At --grade-timeout 60
+    # with 4 sources that is 61 CPU-seconds to grade 4 sources x 20 cases inside a 240s wall
+    # allowance. When RLIMIT_CPU fires the queue is empty and dead("died") is returned for ALL
+    # sources, so a group that merely ran slowly is recorded as uniformly zero: a manufactured dead
+    # group, indistinguishable from a genuine one because reward_for_group discards outcome.
     proc = ctx.Process(target=_child_stdio_batch,
-                       args=(queue, sources, tests, memory_mb, int(timeout_s) + 1))
+                       args=(queue, sources, tests, memory_mb,
+                             int(timeout_s * max(len(sources), 1)) + 1))
     proc.start()
     proc.join(timeout_s * max(len(sources), 1))
 
@@ -254,8 +263,10 @@ def run_isolated_batch(problem: dict[str, Any], sources: list,
     """
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
+    # Same per-source-budget-for-a-whole-batch mismatch as the stdio path above.
     proc = ctx.Process(target=_child_batch,
-                       args=(queue, problem, sources, memory_mb, int(timeout_s) + 1))
+                       args=(queue, problem, sources, memory_mb,
+                             int(timeout_s * max(len(sources), 1)) + 1))
     proc.start()
     proc.join(timeout_s * max(len(sources), 1))
 

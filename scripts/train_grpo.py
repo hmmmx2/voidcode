@@ -129,7 +129,7 @@ def extract_code(text: str) -> str:
 
 @torch.no_grad()
 def generate_group(model, tok, prompt: str, group: int, max_new: int, temperature: float,
-                   greedy: bool = False, engine=None) -> list[str]:
+                   greedy: bool = False, engine=None, seed: int | None = None) -> list[str]:
     """Sample `group` completions, or take the single greedy one when `greedy`.
 
     Greedy decoding is **deterministic**: the same policy on the same prompt gives the same string
@@ -137,7 +137,7 @@ def generate_group(model, tok, prompt: str, group: int, max_new: int, temperatur
     """
     if engine is not None:
         # vLLM path: same prompt, same sampling parameters, ~86x the throughput.
-        return engine.generate(tok, prompt, group, max_new, temperature, greedy=greedy)
+        return engine.generate(tok, prompt, group, max_new, temperature, greedy=greedy, seed=seed)
     chat = tok.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
     enc = tok(chat, return_tensors="pt").to(model.device)
@@ -238,9 +238,9 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     fractions = []
     for i, p in enumerate(problems, 1):
         texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature,
-                               engine=engine)
+                               engine=engine, seed=seed)
         g_text = generate_group(model, tok, eval_build_prompt(p), 1, max_new, temperature,
-                                greedy=True, engine=engine)
+                                greedy=True, engine=engine, seed=seed)
         sources = [eval_extract_code(t, p["entry"]) for t in texts + g_text]
         if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
             # Dump exactly what the policy produced and what the extractor kept. An all-zero eval
@@ -333,6 +333,7 @@ class VLLMRollouts:
         self.workdir = workdir
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.lora_id = 0
+        self.truncated = 0
         self.adapter_dir: str | None = None
         self.llm = LLM(
             model=model, dtype="float16", gpu_memory_utilization=gpu_util,
@@ -376,20 +377,35 @@ class VLLMRollouts:
             self.asleep = True
 
     def generate(self, tok, prompt: str, group: int, max_new: int, temperature: float,
-                 greedy: bool = False) -> list[str]:
+                 greedy: bool = False, seed: int | None = None) -> list[str]:
         from vllm import SamplingParams
         from vllm.lora.request import LoRARequest
         chat = tok.apply_chat_template(
             [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
+        # SEED THE SAMPLER HERE, not with torch.manual_seed.
+        #
+        # evaluate() reseeds torch before every eval so two checkpoints see the same sampling draws
+        # (common random numbers) and their difference reflects the policy rather than two doses of
+        # noise. That reseed became INERT the moment generation moved to vLLM: sampling happens in
+        # the engine's own worker process, which torch.manual_seed in this process cannot reach.
+        # A per-request seed restores the property the eval was designed around.
         sp = SamplingParams(
             n=1 if greedy else group,
             temperature=0.0 if greedy else temperature,
             top_p=1.0 if greedy else 0.95,
             max_tokens=max_new,
+            seed=seed,
         )
         req = (LoRARequest(f"step{self.lora_id}", self.lora_id, self.adapter_dir)
                if self.adapter_dir else None)
         out = self.llm.generate([chat], sp, lora_request=req, use_tqdm=False)
+        # Count completions that hit the token wall rather than stopping. A completion truncated
+        # mid-prose reaches the grader as unparseable source and scores 0 for every sample in the
+        # group -- a dead group caused by max_new, not by the corpus. Without this counter the two
+        # are indistinguishable after the fact.
+        for c in out[0].outputs:
+            if getattr(c, "finish_reason", None) == "length":
+                self.truncated += 1
         return [c.text for c in out[0].outputs]
 
 
@@ -665,6 +681,7 @@ def main() -> int:
             adv = group_advantages(r)[0]  # back to (group_size,) for per-completion indexing
             model.train()
             opt.zero_grad(set_to_none=True)
+            step_corrupted = False
 
             # backward() PER COMPLETION, not once over an accumulated sum. Summing the losses
             # first keeps every completion's autograd graph alive simultaneously -- at --group 16
@@ -697,17 +714,31 @@ def main() -> int:
                                             adv[i].to(logp.device).expand_as(logp), beta=args.beta)
                     (loss / n).backward()
                 except torch.OutOfMemoryError:
+                    # ABANDON THE STEP, do not salvage it.
+                    #
+                    # The first version of this handler called opt.zero_grad() and continued, which
+                    # is wrong twice over: it throws away the gradient already accumulated from the
+                    # group's earlier completions, and then opt.step() fires on whatever came after
+                    # the OOM. Group-relative advantages sum to zero ACROSS THE GROUP by
+                    # construction, so a partial subset carries a non-zero mean -- the update would
+                    # push the policy in a direction no completion voted for, and the run would
+                    # still look healthy in the logs.
                     oom_skipped += 1
-                    print(f"  OOM on completion {i} of step {step} "
-                          f"({len(text)} chars); skipped, total skipped {oom_skipped}", flush=True)
+                    step_corrupted = True
+                    print(f"  OOM on completion {i} of step {step} ({len(text)} chars); "
+                          f"ABANDONING this step, total OOM steps {oom_skipped}", flush=True)
                     opt.zero_grad(set_to_none=True)
                     gc.collect()
                     torch.cuda.empty_cache()
-                    continue
+                    break
 
-            torch.nn.utils.clip_grad_norm_(params, 1.0)
-            opt.step()
-            opt.zero_grad(set_to_none=True)
+            if step_corrupted:
+                # A partial group is not a smaller group; it is a biased one.
+                opt.zero_grad(set_to_none=True)
+            else:
+                torch.nn.utils.clip_grad_norm_(params, 1.0)
+                opt.step()
+                opt.zero_grad(set_to_none=True)
 
             if engine is not None:
                 # The policy just moved, so the engine's adapter is stale. Republishing under a new
@@ -718,7 +749,8 @@ def main() -> int:
         if step % 10 == 0:
             kl = stats.get("kl", float("nan"))
             print(f"step {step}  reward={r.mean():.3f}  dead_so_far={dead}  "
-                  f"oom_skipped={oom_skipped}  kl={kl:.4f}",
+                  f"oom_skipped={oom_skipped}  "
+                  f"truncated={engine.truncated if engine else 0}  kl={kl:.4f}",
                   flush=True)
 
         if step % args.eval_every == 0:
