@@ -290,6 +290,80 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     }
 
 
+def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
+                     temperature: float, timeout_s: float, seed: int = 1234, engine=None) -> dict:
+    """The same measurement as `evaluate`, on held-out problems from the TRAINING distribution.
+
+    WHY THIS EXISTS
+    ---------------
+    The 30B run moved the policy (KL 0 -> 0.0771) and the eval did not move at all (greedy 18/60 at
+    step 0 and at step 50). That has two very different explanations and the run as built could not
+    tell them apart:
+
+      1. GRPO learned nothing.
+      2. GRPO learned something that does not transfer from DeepCoder's stdin/stdout competitive
+         problems to the catalogue's 60 authored function-entry problems.
+
+    `evaluate` only ever measured (2)'s failure mode, because `--eval-set` is a different task
+    format reached through a different prompt builder, a different extractor and a different
+    grading path. A flat curve there is consistent with a policy that improved substantially
+    in-distribution. This function closes that gap: same prompt, same extractor and same stdio
+    grader the reward uses, on problems the loop is never trained on.
+
+    It is emphatically NOT a replacement for the catalogue eval. Transfer is the thing the project
+    ultimately cares about, and an in-domain gain with no transfer is a real and reportable
+    negative result. It is a replacement for not knowing which of the two happened.
+    """
+    cpu_rng = torch.get_rng_state()
+    cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    solved = greedy_solved = 0
+    fractions: list[float] = []
+    greedy_fractions: list[float] = []
+    for p in problems:
+        prompt = build_prompt(p["prompt"])
+        texts = generate_group(model, tok, prompt, group, max_new, temperature,
+                               engine=engine, seed=seed)
+        g_text = generate_group(model, tok, prompt, 1, max_new, temperature,
+                                greedy=True, engine=engine, seed=seed)
+        sources = [extract_code(t) for t in texts + g_text]
+        try:
+            verdicts = run_isolated_stdio_batch(sources, p["tests"][:20], timeout_s=timeout_s)
+        except RuntimeError as exc:
+            print(f"  holdout harness error on {p['id']}: {exc}", flush=True)
+            continue
+        rewards = [v.case_fraction for v in verdicts[:-1]]
+        greedy = verdicts[-1]
+        greedy_fractions.append(greedy.case_fraction)
+        if greedy.case_fraction >= 1.0:
+            greedy_solved += 1
+        if not rewards:
+            continue
+        fractions.extend(rewards)
+        if max(rewards) >= 1.0:
+            solved += 1
+
+    torch.set_rng_state(cpu_rng)
+    if cuda_rng is not None:
+        torch.cuda.set_rng_state_all(cuda_rng)
+
+    n = max(len(fractions), 1)
+    mean = sum(fractions) / n
+    var = sum((f - mean) ** 2 for f in fractions) / max(n - 1, 1)
+    gn = max(len(greedy_fractions), 1)
+    return {
+        "holdout_problems": len(problems),
+        "holdout_solved_any": solved,
+        "holdout_mean_case_fraction": round(mean, 4),
+        "holdout_case_fraction_se": round((var / n) ** 0.5, 4),
+        "holdout_greedy_solved": greedy_solved,
+        "holdout_greedy_case_fraction": round(sum(greedy_fractions) / gn, 4),
+    }
+
+
 def save_policy(model, tok, dest: str, step: int) -> None:
     """Write the policy so the run leaves something behind besides a curve.
 
@@ -478,6 +552,11 @@ def main() -> int:
     # carry 255 cases -- 12x the work, which the per-problem timeout would simply cut short at an
     # arbitrary point. Same cap, same reward.
     ap.add_argument("--max-cases", type=int, default=20)
+    ap.add_argument("--holdout", type=int, default=0,
+                    help="band problems reserved from training and evaluated IN-DOMAIN; "
+                         "0 disables. See evaluate_holdout for why this is not optional in "
+                         "practice: without it a flat catalogue curve cannot be told apart "
+                         "from a real in-distribution gain that simply did not transfer.")
     ap.add_argument("--eval-every", type=int, default=50)
     ap.add_argument("--eval-group", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
@@ -518,7 +597,24 @@ def main() -> int:
         print(f"ABORT: {len(overlap)} training problems share an id with the eval set", flush=True)
         return 1
 
-    print(f"train={len(train)} in-band, eval={len(eval_problems)} held out", flush=True)
+    # In-domain holdout, carved out of the band BEFORE any training sees it. Shuffled with the
+    # run seed rather than sliced off the end, because `load_band` preserves corpus order and the
+    # corpus is grouped by source — an unshuffled tail would be one source's problems, not a
+    # sample of the training distribution.
+    holdout: list[dict] = []
+    if args.holdout:
+        if args.holdout >= len(train):
+            print(f"ABORT: --holdout {args.holdout} leaves nothing to train on "
+                  f"({len(train)} in-band)", flush=True)
+            return 1
+        order = list(range(len(train)))
+        random.Random(args.seed).shuffle(order)
+        held = set(order[:args.holdout])
+        holdout = [train[i] for i in sorted(held)]
+        train = [p for i, p in enumerate(train) if i not in held]
+
+    print(f"train={len(train)} in-band, eval={len(eval_problems)} held out"
+          + (f", holdout={len(holdout)} in-domain" if holdout else ""), flush=True)
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -615,9 +711,17 @@ def main() -> int:
     if engine is not None:
         engine.wake()
     oom_skipped = 0
-    history = [{"step": 0, **evaluate(model, tok, eval_problems, args.eval_group,
-                                     args.max_new, args.temperature, args.grade_timeout,
-                                     engine=engine)}]
+    def eval_all(step_no: int) -> dict:
+        """Catalogue eval (transfer) plus, when asked for, the in-domain holdout."""
+        row = {"step": step_no, **evaluate(model, tok, eval_problems, args.eval_group,
+                                           args.max_new, args.temperature, args.grade_timeout,
+                                           engine=engine)}
+        if holdout:
+            row.update(evaluate_holdout(model, tok, holdout, args.eval_group, args.max_new,
+                                        args.temperature, args.grade_timeout, engine=engine))
+        return row
+
+    history = [eval_all(0)]
     print(f"step 0 eval: {history[0]}", flush=True)
 
     dead = 0
@@ -757,9 +861,7 @@ def main() -> int:
             model.eval()
             if engine is not None:
                 engine.wake()
-            e = {"step": step, **evaluate(model, tok, eval_problems, args.eval_group,
-                                          args.max_new, args.temperature, args.grade_timeout,
-                                          engine=engine)}
+            e = eval_all(step)
             history.append(e)
             print(f"step {step} eval: {e}", flush=True)
             Path(args.out).write_text(
