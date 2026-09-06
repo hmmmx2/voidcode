@@ -783,6 +783,31 @@ either run alone.
 > violated that. **The fix is to re-run `filter_corpus.py --model <the 30B>` and train on its own band**,
 > not to train longer or scale further.
 
+### Band provenance: which band files were measured off-template ⚠️
+
+`scripts/filter_corpus.py` originally passed raw strings to `LLM.generate(list[str])`, which tokenizes
+them verbatim. Every other stage of the pipeline — `train_grpo.VLLMRollouts.generate` and
+`scripts/base_pass_rate.py`, which produced the 0.4604 / 18-of-60 numbers the band is reasoned
+against — wraps the prompt in `apply_chat_template`. So the one measurement that *defines the
+training set* was the only one taken off an -Instruct model's own template. Its `extract_code` also
+required a **closing** ``` fence where the trainer's tolerates a missing one; at `--max-new 640` a
+truncated completion therefore scored 0 in the filter and partial credit in training.
+
+Both divergences push the same way: the filter **understates** the policy's pass rate, so problems it
+records as in-band may be always-solved under the templated policy — dead from the top, which is the
+failure this whole re-band exists to remove.
+
+| band file | model | prompting | status |
+|---|---|---|---|
+| `data/deepcoder-band.json` | Qwen2.5-Coder-1.5B-Instruct | off-template, strict extractor | superseded |
+| `data/deepcoder-band-30b.json` | Qwen3-Coder-30B-A3B-Instruct-AWQ | **off-template, strict extractor** | in use, caveat stands |
+| future runs | — | templated, fence-tolerant | after this fix |
+
+The fix is in `filter_corpus.py` now, but `deepcoder-band-30b.json` was produced by the run already in
+flight when it was found, so **it carries the caveat**. The two band files stay comparable to each
+other (both off-template); what neither is, is a measurement of the policy as the trainer prompts it.
+`dead_group_rate` in the G=16 run is the readout that settles how much this cost.
+
 ### The grader was spending 24s per call re-importing the trainer ✅ — 2026-09-06
 
 Found while costing the re-filter the section above calls for. Measured on the pod, same grading work,

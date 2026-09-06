@@ -632,6 +632,35 @@ def main() -> int:
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
+    # Drop problems whose prompt cannot leave room for a completion.
+    #
+    # vLLM REJECTS a request longer than max_model_len rather than truncating it, and the rejection
+    # is an exception in the middle of the step loop -- a crash at step 37 of 50 loses the whole
+    # run. Measured on this corpus with the 30B tokenizer: 18 of 2000 problems exceed at
+    # --vllm-max-len 2048, 1 at 4096, 0 at 5120. So at the flags this is launched with, nothing is
+    # dropped and this loop is pure insurance; at a tighter --vllm-max-len it turns a crash into a
+    # smaller, reported training set. Silence would be the bug, so the count is printed.
+    if args.vllm_model:
+        budget = args.vllm_max_len - args.max_new
+
+        def fits(p: dict) -> bool:
+            chat = tok.apply_chat_template(
+                [{"role": "user", "content": build_prompt(p["prompt"])}],
+                tokenize=False, add_generation_prompt=True)
+            return len(tok(chat)["input_ids"]) <= budget
+
+        before_train, before_hold = len(train), len(holdout)
+        train = [p for p in train if fits(p)]
+        holdout = [p for p in holdout if fits(p)]
+        dropped = (before_train - len(train)) + (before_hold - len(holdout))
+        if dropped:
+            print(f"  dropped {dropped} problem(s) whose prompt exceeds "
+                  f"--vllm-max-len {args.vllm_max_len} minus --max-new {args.max_new} "
+                  f"= {budget} tokens", flush=True)
+        if not train:
+            print("ABORT: every in-band problem is too long for the context budget", flush=True)
+            return 1
+
     # BUILD THE ENGINE FIRST, WHILE THE CARD IS EMPTY.
     #
     # Order matters more than allocator tuning here. Loading the trainer first left only 4.34 GiB

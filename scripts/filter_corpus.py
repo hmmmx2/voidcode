@@ -22,9 +22,21 @@ PROMPT = ("Solve this competitive programming problem in Python 3. Read from sta
 
 
 def extract_code(text: str) -> str:
-    import re
-    blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.S)
-    return blocks[0] if blocks else text
+    """Must match `train_grpo.extract_code`, including its tolerance of a missing closing fence.
+
+    The regex this replaced required a CLOSING ```. At `--max-new 640` a completion that runs out of
+    tokens mid-code has no closing fence, so the regex matched nothing and the whole prose blob was
+    returned as "source" -- which fails to compile and scores 0. The trainer, grading the same text,
+    keeps the partial code and scores partial credit. A band measured with the stricter extractor
+    therefore understates precisely the problems sitting near the token limit, and understating a
+    pass rate pushes a problem down into (or below) the band it does not belong in.
+    """
+    if "```" not in text:
+        return text.strip()
+    body = text.split("```", 1)[1]
+    if body.startswith("python"):
+        body = body[len("python"):]
+    return body.split("```", 1)[0].strip()
 
 
 def main() -> int:
@@ -63,9 +75,23 @@ def main() -> int:
     sampling = SamplingParams(n=args.group, max_tokens=args.max_new,
                               temperature=args.temperature, top_p=0.95)
 
+    # THE BAND MUST BE MEASURED THE WAY THE POLICY IS ACTUALLY PROMPTED.
+    #
+    # This originally handed vLLM raw strings. `LLM.generate(list[str])` tokenizes them verbatim, so
+    # an -Instruct model was measured OFF its own chat template while every other stage of the
+    # pipeline -- train_grpo.VLLMRollouts.generate, and base_pass_rate, which produced the numbers
+    # the band gets compared against -- wraps the prompt in `apply_chat_template`. The band is a
+    # property of the model/corpus/PROMPT triple, and an off-template model is a different, weaker
+    # model: problems it half-solves are recorded as in-band when the templated policy solves them
+    # on every sample, which is dead-from-the-top during training and looks exactly like "GRPO did
+    # not work". docs/rl/METRICS.md records which band files predate this fix.
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     # One batched call for the whole corpus: vLLM's continuous batching is the entire reason this
     # is hours instead of days, and issuing one prompt at a time would give most of that back.
-    prompts = [PROMPT.format(problem=p["prompt"][:6000]) for p in problems]
+    prompts = [tok.apply_chat_template(
+        [{"role": "user", "content": PROMPT.format(problem=p["prompt"][:6000])}],
+        tokenize=False, add_generation_prompt=True) for p in problems]
     print("generating...", flush=True)
     outputs = engine.generate(prompts, sampling)
 
