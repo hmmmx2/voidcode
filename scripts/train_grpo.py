@@ -104,6 +104,23 @@ def load_band(band_path: Path, corpus_path: Path, lo: float, hi: float,
     return kept
 
 
+def split_holdout(train: list[dict], n: int, seed: int) -> tuple[list[dict], list[dict]]:
+    """Reserve `n` problems from the band for in-domain evaluation. Returns `(train, holdout)`.
+
+    Shuffled with the run seed rather than sliced off the end: `load_band` preserves corpus order
+    and the corpus is grouped by source (`primeintellect` 1884, `lcbv5` 72, `codeforces` 44), so a
+    tail slice would hold out one source instead of a sample of the training distribution — and the
+    resulting "in-domain" number would be measuring a distribution shift of its own.
+    """
+    if n <= 0:
+        return train, []
+    order = list(range(len(train)))
+    random.Random(seed).shuffle(order)
+    held = set(order[:n])
+    return ([p for i, p in enumerate(train) if i not in held],
+            [p for i, p in enumerate(train) if i in held])
+
+
 def build_prompt(problem: str) -> str:
     return (
         "Solve the problem. Read from standard input and write to standard output.\n"
@@ -597,21 +614,12 @@ def main() -> int:
         print(f"ABORT: {len(overlap)} training problems share an id with the eval set", flush=True)
         return 1
 
-    # In-domain holdout, carved out of the band BEFORE any training sees it. Shuffled with the
-    # run seed rather than sliced off the end, because `load_band` preserves corpus order and the
-    # corpus is grouped by source — an unshuffled tail would be one source's problems, not a
-    # sample of the training distribution.
-    holdout: list[dict] = []
-    if args.holdout:
-        if args.holdout >= len(train):
-            print(f"ABORT: --holdout {args.holdout} leaves nothing to train on "
-                  f"({len(train)} in-band)", flush=True)
-            return 1
-        order = list(range(len(train)))
-        random.Random(args.seed).shuffle(order)
-        held = set(order[:args.holdout])
-        holdout = [train[i] for i in sorted(held)]
-        train = [p for i, p in enumerate(train) if i not in held]
+    # In-domain holdout, carved out of the band BEFORE any training sees it.
+    if args.holdout >= len(train) > 0:
+        print(f"ABORT: --holdout {args.holdout} leaves nothing to train on "
+              f"({len(train)} in-band)", flush=True)
+        return 1
+    train, holdout = split_holdout(train, args.holdout, args.seed)
 
     print(f"train={len(train)} in-band, eval={len(eval_problems)} held out"
           + (f", holdout={len(holdout)} in-domain" if holdout else ""), flush=True)

@@ -783,6 +783,41 @@ either run alone.
 > violated that. **The fix is to re-run `filter_corpus.py --model <the 30B>` and train on its own band**,
 > not to train longer or scale further.
 
+### The grader was spending 24s per call re-importing the trainer ✅ — 2026-09-06
+
+Found while costing the re-filter the section above calls for. Measured on the pod, same grading work,
+only the parent's `__main__` changed:
+
+| parent `__main__` | grading wall-clock, 2 calls | implied 2000-problem re-filter |
+|---|---|---|
+| heavy (imports torch, as `train_grpo.py` does) | 27.5s / 21.8s | **12.1 h** |
+| light (no torch) | 1.6s / 1.7s | ~1 h |
+
+`multiprocessing` rebuilds the parent's `__main__` inside every child — `spawn.get_preparation_data`
+records `init_main_from_path` and the child runs it through `runpy` before unpickling the target. With
+`train_grpo.py` as the parent that is a full torch import **per grading call**. A 60-problem eval spent
+~25 minutes on it with the GPU at 0%.
+
+**The first fix was wrong and measured as such.** Switching to `forkserver` with
+`set_forkserver_preload([])` looked correct — the default preload really is `['__main__']` — and came
+back at **24.3s / 30.1s, i.e. no change**. The preload list governs only the forkserver *server*
+process; each `Process.start()` still ships its own preparation data. Confirmed directly on the pod:
+start method `forkserver`, preload `[]`, child still reporting **1081 modules with torch among them**.
+
+| variant | grading wall-clock | re-filter |
+|---|---|---|
+| `spawn`, heavy `__main__` (before) | 24.3s / 30.1s | 16.7 h |
+| `forkserver` + empty preload (failed fix) | 24.3s / 30.1s | 16.7 h |
+| **empty `__main__` during `start()`** (`_light_main`) | **1.7s / 1.5s** | **0.8 h** |
+
+Three tests pin it, because it fails silently and a green suite said nothing the first time: one against
+`get_preparation_data` (what the child actually obeys), one holding the stub module empty, and one
+end-to-end that counts how many times a heavy `__main__` executes — it reports `xx` instead of `x` the
+moment the fix is removed.
+
+This also retires the `--grade-timeout 60` workaround the 30B run needed. That 60 was never about slow
+*answers*; it was a slow *start* being scored as a wrong answer.
+
 ### The result: lr=5e-6, 200 steps, deterministic eval ✅
 
 | step | solved_any | solve_rate | `mean_case_fraction` | **`greedy_solved`** | **`greedy_cf`** | kl |
