@@ -739,6 +739,50 @@ exactly, so any subsequent movement is movement in the policy. Detection thresho
 (2 SE), and note `case_fraction_se` understates — it treats 480 completions as independent when
 they are clustered by problem, so the effective n is nearer 60.
 
+### 30B-A3B via vLLM, lr=1e-5, 50 steps, LoRA r=16 attention-only — 2026-09-06
+
+Record: `docs/rl/grpo-run-30b-vllm.json`. Policy **Qwen3-Coder-30B-A3B-Instruct**, 4-bit NF4 QLoRA,
+rollouts served by vLLM 0.11 from the AWQ build with the adapter hot-reloaded each step.
+
+| step | solved_any | solve_rate | `mean_case_fraction` | se | **`greedy_solved`** | `greedy_cf` |
+|---|---|---|---|---|---|---|
+| 0 | 19 | 0.3167 | 0.4604 | 0.0558 | **18** | 0.4386 |
+| 50 | 21 | 0.3500 | 0.4719 | 0.0574 | **18** | 0.4219 |
+
+`dead_groups: 36/50` (**72%**). KL 0.0090 / 0.0054 / 0.0056 / 0.0771 at steps 10/20/30/40.
+
+**No measurable change.** `mean_case_fraction` moved **+0.0115 against SE 0.0574 — 0.2 SE**. `greedy_solved`,
+the metric that cannot be sampling noise, is **flat at 18/60**. `solved_any` +2 is inside binomial noise at
+n=60. KL reaching 0.0771 shows the policy demonstrably moved: **policy moved, eval did not** — the same
+finding as the 1.5B run, now reproduced at a **20× larger model**, which makes the null stronger than
+either run alone.
+
+**The model upgrade, by contrast, is a large real gain.** Same eval, same harness, step 0:
+
+| policy | greedy pass@1 | `mean_case_fraction` |
+|---|---|---|
+| Qwen2.5-Coder-1.5B | 4/60 (0.067) | 0.0944 |
+| Qwen2.5-Coder-7B | 6/60 (0.100) | 0.2033 |
+| **Qwen3-Coder-30B-A3B** | **18/60 (0.300)** | **0.4604** |
+
+**4.5× the 1.5B on greedy pass@1.** The gain came from the policy, not from RL.
+
+> #### Root cause of the 72%: the band was calibrated against the wrong model
+>
+> `data/deepcoder-band.json` records its own provenance — `model: Qwen/Qwen2.5-Coder-1.5B-Instruct`,
+> `always_solved: 0`, `never_solved: 1816/2000`, `mean_pass_rate: 0.024`, `with_any_signal: 1060`. That
+> 1060 is exactly the set this 30B trained on.
+>
+> For the **1.5B**, nothing was always-solved. For the **30B** — 4.5× stronger, mean case fraction 0.4604
+> against 0.0944 — a large share of those problems are now solved on **every** sample. Identical scores
+> across a group means zero advantage and zero gradient: dead **from the top**, which is precisely the
+> failure mode this ledger already documented when comparing the 7B against the 1.5B (binary-usable fell
+> 7 → 6 as two problems became always-solved).
+>
+> This ledger states the band is "a property of the model/corpus pair, not of the corpus". The run
+> violated that. **The fix is to re-run `filter_corpus.py --model <the 30B>` and train on its own band**,
+> not to train longer or scale further.
+
 ### The result: lr=5e-6, 200 steps, deterministic eval ✅
 
 | step | solved_any | solve_rate | `mean_case_fraction` | **`greedy_solved`** | **`greedy_cf`** | kl |

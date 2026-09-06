@@ -1,0 +1,27 @@
+{
+  "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "train_problems": 1060,
+  "dead_groups": 36,
+  "history": [
+    {
+      "step": 0,
+      "problems": 60,
+      "solved_any": 19,
+      "solve_rate": 0.3167,
+      "mean_case_fraction": 0.4604,
+      "case_fraction_se": 0.0558,
+      "greedy_solved": 18,
+      "greedy_case_fraction": 0.4386
+    },
+    {
+      "step": 50,
+      "problems": 60,
+      "solved_any": 21,
+      "solve_rate": 0.35,
+      "mean_case_fraction": 0.4719,
+      "case_fraction_se": 0.0574,
+      "greedy_solved": 18,
+      "greedy_case_fraction": 0.4219
+    }
+  ]
+}
