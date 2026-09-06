@@ -29,7 +29,9 @@ always a baseline to be flat against.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -234,12 +236,17 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     greedy_solved = 0
     greedy_fractions = []
     fractions = []
-    for p in problems:
+    for i, p in enumerate(problems, 1):
         texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature,
                                engine=engine)
         g_text = generate_group(model, tok, eval_build_prompt(p), 1, max_new, temperature,
                                 greedy=True, engine=engine)
         sources = [eval_extract_code(t, p["entry"]) for t in texts + g_text]
+        if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
+            # Dump exactly what the policy produced and what the extractor kept. An all-zero eval
+            # can come from generation, extraction or grading, and only the raw text separates them.
+            print(f"[dbg] {p['id']} raw[0] ({len(texts[0])} ch): {texts[0][:200]!r}", flush=True)
+            print(f"[dbg] {p['id']} src[0] ({len(sources[0])} ch): {sources[0][:200]!r}", flush=True)
         try:
             verdicts = run_isolated_batch(p, sources, timeout_s=timeout_s)
         except RuntimeError as exc:
@@ -249,6 +256,9 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
             continue
         rewards = [v.case_fraction for v in verdicts[:-1]]
         greedy = verdicts[-1]
+        if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
+            print(f"[dbg] {p['id']} greedy outcome={greedy.outcome} cf={greedy.case_fraction} "
+                  f"err={greedy.error}", flush=True)
         greedy_fractions.append(greedy.case_fraction)
         if greedy.case_fraction >= 1.0:
             greedy_solved += 1
@@ -317,8 +327,9 @@ class VLLMRollouts:
     """
 
     def __init__(self, model: str, gpu_util: float, max_len: int, max_lora_rank: int,
-                 workdir: Path):
+                 workdir: Path, use_sleep: bool = False):
         from vllm import LLM
+        self.use_sleep = use_sleep
         self.workdir = workdir
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.lora_id = 0
@@ -327,7 +338,7 @@ class VLLMRollouts:
             model=model, dtype="float16", gpu_memory_utilization=gpu_util,
             max_model_len=max_len, trust_remote_code=True,
             enable_lora=True, max_lora_rank=max_lora_rank, max_loras=1,
-            enable_sleep_mode=True,
+            enable_sleep_mode=use_sleep,
         )
         self.asleep = False
         print(f"vLLM engine up: {model} (gpu_util={gpu_util}, lora rank {max_lora_rank})",
@@ -340,13 +351,27 @@ class VLLMRollouts:
         model.save_pretrained(str(d))
         self.adapter_dir = str(d)
 
+    # SLEEP/WAKE IS OFF BY DEFAULT, AND THAT IS THE POINT.
+    #
+    # The obvious design -- sleep the engine during backward so the trainer gets the whole card --
+    # fails on the way back. sleep() releases the engine's ~20 GiB, PyTorch's caching allocator
+    # immediately expands into it, and fragmentation means empty_cache() cannot hand it back:
+    #     Call to wake_up method failed: CUDA Error: out of memory (cumem_allocator.cpp:62)
+    # expandable_segments would fix the fragmentation but vLLM's memory pool rejects it outright.
+    #
+    # Leaving the engine RESIDENT sidesteps all of it. Its 20 GiB is simply never available to the
+    # trainer, so the trainer's allocator is bounded by construction instead of by discipline, and
+    # there is no per-step PCIe shuffle either. Sleep stays available for a future two-model setup
+    # that genuinely cannot fit both.
     def wake(self) -> None:
-        if self.asleep:
+        if self.use_sleep and self.asleep:
+            gc.collect()
+            torch.cuda.empty_cache()
             self.llm.wake_up()
             self.asleep = False
 
     def sleep(self) -> None:
-        if not self.asleep:
+        if self.use_sleep and not self.asleep:
             self.llm.sleep(level=1)
             self.asleep = True
 
@@ -483,6 +508,27 @@ def main() -> int:
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
+    # BUILD THE ENGINE FIRST, WHILE THE CARD IS EMPTY.
+    #
+    # Order matters more than allocator tuning here. Loading the trainer first left only 4.34 GiB
+    # free by vLLM's own measurement -- PyTorch's caching allocator keeps freed blocks reserved, and
+    # empty_cache() only returns them properly under expandable_segments, which vLLM's sleep mode
+    # rejects outright ("Expandable segments are not compatible with memory pool"). Both levers
+    # therefore conflict; constructing the engine on an empty card avoids needing either.
+    #
+    # vLLM takes gpu_memory_utilization of the card up front, and the 4-bit trainer fits in what
+    # remains (~16 GiB allocated against ~24 GiB left at util 0.45).
+    engine = None
+    if args.vllm_model:
+        if args.lora_r <= 0:
+            print("--vllm-model currently requires --lora-r > 0: the engine serves a frozen base "
+                  "plus a hot-reloaded adapter, which is how the policy reaches it.", flush=True)
+            return 2
+        engine = VLLMRollouts(args.vllm_model, args.vllm_gpu_util, args.vllm_max_len,
+                              args.lora_r, Path(args.save_to or ".").parent / "vllm_adapters")
+        print(f"engine resident; {torch.cuda.mem_get_info()[0] / 1024 ** 3:.1f} GiB left for "
+              f"the trainer", flush=True)
+
     if args.load_4bit and args.lora_r <= 0:
         print("--load-4bit requires --lora-r > 0: 4-bit weights cannot be trained directly, "
               "only an fp16 adapter on top of them.", flush=True)
@@ -511,6 +557,25 @@ def main() -> int:
             # Without this the adapter receives no gradient: the 4-bit base produces no grad_fn,
             # so nothing upstream of the adapter is differentiable.
             model.enable_input_require_grads()
+
+        # GRADIENT CHECKPOINTING, and it is not optional at this size.
+        #
+        # Sharing one card with a resident vLLM engine leaves the trainer ~24 GiB, and the backward
+        # pass over a 48-layer MoE OOM'd inside it:
+        #   "Tried to allocate 2.00 MiB ... 24.09 GiB is allocated by PyTorch, and 111.59 MiB is
+        #    reserved but unallocated"
+        # That 111 MiB of slack says this is real capacity, not fragmentation, so allocator tuning
+        # cannot help. Recomputing activations instead of storing them is the only lever that does,
+        # and it cannot come out of the engine's share: 0.40 of the card is already close to the
+        # floor set by the AWQ weights themselves.
+        #
+        # use_cache must go off with it -- the KV cache and checkpointing contradict each other, and
+        # transformers only warns rather than failing.
+        model.gradient_checkpointing_enable()
+        model.config.use_cache = False
+        print("gradient checkpointing on (use_cache off): trades ~30% compute for activation "
+              "memory, which is the binding constraint when sharing the card with vLLM",
+              flush=True)
         # No second copy: the reference is these weights with the adapter disabled.
         ref = None
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -527,19 +592,13 @@ def main() -> int:
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=args.lr)
 
-    engine = None
-    if args.vllm_model:
-        if args.lora_r <= 0:
-            print("--vllm-model currently requires --lora-r > 0: the engine serves a frozen base "
-                  "plus a hot-reloaded adapter, which is how the policy reaches it.", flush=True)
-            return 2
-        engine = VLLMRollouts(args.vllm_model, args.vllm_gpu_util, args.vllm_max_len,
-                              args.lora_r, Path(args.save_to or ".") .parent / "vllm_adapters")
+    if engine is not None:
         engine.publish(model)   # step-0 adapter, so even the baseline eval is on-policy
 
     # Baseline before any step, so a flat curve is provably flat rather than merely unmeasured.
     if engine is not None:
         engine.wake()
+    oom_skipped = 0
     history = [{"step": 0, **evaluate(model, tok, eval_problems, args.eval_group,
                                      args.max_new, args.temperature, args.grade_timeout,
                                      engine=engine)}]
@@ -613,18 +672,38 @@ def main() -> int:
             # .grad either way, so this is identical maths and frees each graph as it is used.
             n = len(texts)
             for i, text in enumerate(texts):
-                logp = sequence_logp(model, tok, prompt, text)
-                with torch.no_grad():
-                    if ref is not None:
-                        ref_logp = sequence_logp(ref, tok, prompt, text)
-                    else:
-                        # Adapter off == the base policy == the reference, no extra memory.
-                        with model.disable_adapter():
-                            ref_logp = sequence_logp(model, tok, prompt, text)
-                old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
-                loss, stats = grpo_loss(logp, old_logp, ref_logp,
-                                        adv[i].to(logp.device).expand_as(logp), beta=args.beta)
-                (loss / n).backward()
+                # OOM GUARD.
+                #
+                # A single long completion can exhaust the trainer's share of a shared card, and
+                # losing the whole run to one bad rollout is unacceptable when the eval before it
+                # cost 25 minutes. On OOM: drop this completion's graph, return its blocks to the
+                # driver, and carry on with the rest of the group.
+                #
+                # Skips are COUNTED and reported, never swallowed. A run that quietly dropped half
+                # its completions would still produce a smooth-looking curve computed from a
+                # different batch size than the one recorded, which is a silent-corruption bug of
+                # exactly the kind this project keeps finding.
+                try:
+                    logp = sequence_logp(model, tok, prompt, text)
+                    with torch.no_grad():
+                        if ref is not None:
+                            ref_logp = sequence_logp(ref, tok, prompt, text)
+                        else:
+                            # Adapter off == the base policy == the reference, no extra memory.
+                            with model.disable_adapter():
+                                ref_logp = sequence_logp(model, tok, prompt, text)
+                    old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
+                    loss, stats = grpo_loss(logp, old_logp, ref_logp,
+                                            adv[i].to(logp.device).expand_as(logp), beta=args.beta)
+                    (loss / n).backward()
+                except torch.OutOfMemoryError:
+                    oom_skipped += 1
+                    print(f"  OOM on completion {i} of step {step} "
+                          f"({len(text)} chars); skipped, total skipped {oom_skipped}", flush=True)
+                    opt.zero_grad(set_to_none=True)
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    continue
 
             torch.nn.utils.clip_grad_norm_(params, 1.0)
             opt.step()
@@ -638,7 +717,8 @@ def main() -> int:
 
         if step % 10 == 0:
             kl = stats.get("kl", float("nan"))
-            print(f"step {step}  reward={r.mean():.3f}  dead_so_far={dead}  kl={kl:.4f}",
+            print(f"step {step}  reward={r.mean():.3f}  dead_so_far={dead}  "
+                  f"oom_skipped={oom_skipped}  kl={kl:.4f}",
                   flush=True)
 
         if step % args.eval_every == 0:
@@ -652,7 +732,7 @@ def main() -> int:
             print(f"step {step} eval: {e}", flush=True)
             Path(args.out).write_text(
                 json.dumps({"model": args.model, "train_problems": len(train),
-                            "dead_groups": dead, "history": history}, indent=2) + "\n",
+                            "dead_groups": dead, "oom_skipped": oom_skipped, "history": history}, indent=2) + "\n",
                 encoding="utf-8")
             if args.save_to:
                 save_policy(model, tok, args.save_to, step)
