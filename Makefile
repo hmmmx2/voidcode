@@ -186,6 +186,8 @@ backfill-catalog: ## recover the 906 problems problemset.problems never returned
 # ══════════════════════════════════════════════════════════════════════════════
 
 PY ?= python
+BASE_MODEL ?= Qwen/Qwen2.5-Coder-1.5B-Instruct
+EVAL_GROUP ?= 8
 
 .PHONY: rl-test rl-mutate rl-faulttest rl-probe rl-eval rl-kernel-bench \
         rl-fp8-bench rl-bench-parallel rl-bench-scaling
@@ -218,18 +220,9 @@ rl-bench-parallel: ## NOT BUILT: P2b — needs a40 x2 and the route chosen from 
 rl-bench-scaling: ## NOT BUILT: P2c — a curve needs three points, so needs a40 x4
 	@echo "NOT BUILT: P2c. Needs a40 x4 — a curve needs three points."; exit 1
 
-rl-eval: ## P3 held-out pass@1, base vs post-RL — the ONE P3 row still unmeasured
-	@echo "NOT BUILT: the standalone base-vs-post-RL pass@1 harness."
-	@echo ""
-	@echo "This stub used to say 'the loop is not built'. That was false and understated the"
-	@echo "work: rl/grpo.py and scripts/train_grpo.py are built, tested, and were RUN for 200"
-	@echo "steps at lr=5e-6 (dead_groups 51/200, no measurable transfer). See docs/rl/METRICS.md"
-	@echo "section P3 and docs/rl/RL_FINDINGS.md."
-	@echo ""
-	@echo "What is genuinely missing is only this target: the standalone held-out pass@1"
-	@echo "comparison (METRICS.md rows 'Base pass@1' / 'Post-RL pass@1', both NOT MEASURED)."
-	@echo "The in-loop eval already reports greedy_solved and mean_case_fraction per step."
-	exit 1
+rl-eval: ## P3 held-out pass@1, base vs post-RL. POLICY=<dir> adds the post-RL arm
+	$(PY) scripts/rl_eval.py --eval-set data/catalogue.json --arm base=$(BASE_MODEL) $(if $(POLICY),--arm post=$(POLICY),) --group $(EVAL_GROUP) --out docs/rl/rl-eval$(if $(POLICY),,-base-only).json
+	@if [ -z "$(POLICY)" ]; then echo ""; echo "NOTE: base arm only. Pass POLICY=<dir> for the post-RL arm, e.g. make rl-eval POLICY=/workspace/policy-step200"; echo "A post-RL checkpoint requires train_grpo.py to have been run with --save-to."; fi
 
 rl-kernel-bench: ## NOT BUILT: P4a
 	@echo "NOT BUILT: P4a."; exit 1
