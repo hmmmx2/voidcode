@@ -121,6 +121,29 @@ def split_holdout(train: list[dict], n: int, seed: int) -> tuple[list[dict], lis
             [p for i, p in enumerate(train) if i in held])
 
 
+def drop_over_context(problems: list[dict], tok, budget: int) -> tuple[list[dict], int]:
+    """Remove problems whose templated prompt leaves no room for a completion. Returns (kept, dropped).
+
+    vLLM REJECTS a request longer than `max_model_len` rather than truncating it, and the rejection
+    arrives as an exception in the middle of the step loop -- a crash at step 37 of 50 loses the
+    whole run. Measured on this corpus with the 30B tokenizer, `--max-new 640`: 18 of 2000 problems
+    exceed at `--vllm-max-len 2048`, 1 at 4096, 0 at 5120. At the flags the 30B run launches with
+    nothing is dropped and this is pure insurance; at a tighter budget it turns a crash into a
+    smaller, and reported, training set.
+
+    Measures the CHAT-TEMPLATED prompt, because that is what reaches the engine — the template adds
+    tokens, and a check against the bare prompt would pass problems that then fail in vLLM.
+    """
+    kept = []
+    for p in problems:
+        chat = tok.apply_chat_template(
+            [{"role": "user", "content": build_prompt(p["prompt"])}],
+            tokenize=False, add_generation_prompt=True)
+        if len(tok(chat)["input_ids"]) <= budget:
+            kept.append(p)
+    return kept, len(problems) - len(kept)
+
+
 def build_prompt(problem: str) -> str:
     return (
         "Solve the problem. Read from standard input and write to standard output.\n"
@@ -632,27 +655,12 @@ def main() -> int:
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
-    # Drop problems whose prompt cannot leave room for a completion.
-    #
-    # vLLM REJECTS a request longer than max_model_len rather than truncating it, and the rejection
-    # is an exception in the middle of the step loop -- a crash at step 37 of 50 loses the whole
-    # run. Measured on this corpus with the 30B tokenizer: 18 of 2000 problems exceed at
-    # --vllm-max-len 2048, 1 at 4096, 0 at 5120. So at the flags this is launched with, nothing is
-    # dropped and this loop is pure insurance; at a tighter --vllm-max-len it turns a crash into a
-    # smaller, reported training set. Silence would be the bug, so the count is printed.
+    # Silence would be the bug here, so the count is printed. See drop_over_context.
     if args.vllm_model:
         budget = args.vllm_max_len - args.max_new
-
-        def fits(p: dict) -> bool:
-            chat = tok.apply_chat_template(
-                [{"role": "user", "content": build_prompt(p["prompt"])}],
-                tokenize=False, add_generation_prompt=True)
-            return len(tok(chat)["input_ids"]) <= budget
-
-        before_train, before_hold = len(train), len(holdout)
-        train = [p for p in train if fits(p)]
-        holdout = [p for p in holdout if fits(p)]
-        dropped = (before_train - len(train)) + (before_hold - len(holdout))
+        train, dropped_t = drop_over_context(train, tok, budget)
+        holdout, dropped_h = drop_over_context(holdout, tok, budget)
+        dropped = dropped_t + dropped_h
         if dropped:
             print(f"  dropped {dropped} problem(s) whose prompt exceeds "
                   f"--vllm-max-len {args.vllm_max_len} minus --max-new {args.max_new} "

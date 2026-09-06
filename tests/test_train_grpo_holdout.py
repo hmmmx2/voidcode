@@ -127,3 +127,48 @@ def test_evaluate_holdout_reports_zero_rather_than_crashing_on_a_dead_group():
     assert result["holdout_solved_any"] == 0
     assert result["holdout_greedy_solved"] == 0
     assert result["holdout_mean_case_fraction"] == 0.0
+
+
+def test_drop_over_context_uses_the_templated_length_not_the_bare_prompt():
+    """A bare-prompt check would pass problems that then get REJECTED by vLLM mid-run.
+
+    Uses a stub tokenizer so this needs no model download: the template adds a fixed overhead and
+    one token per 4 characters, which is enough to distinguish "measured the template" from
+    "measured the raw string".
+    """
+    result = run_in_subprocess(
+        "from scripts.train_grpo import drop_over_context\n"
+        "class StubTok:\n"
+        "    OVERHEAD = 'X' * 400  # what a chat template prepends\n"
+        "    def apply_chat_template(self, msgs, tokenize=False, add_generation_prompt=True):\n"
+        "        return self.OVERHEAD + msgs[0]['content']\n"
+        "    def __call__(self, text):\n"
+        "        return {'input_ids': [0] * (len(text) // 4)}\n"
+        "probs = [{'id': 'short', 'prompt': 'a' * 100},\n"
+        "         {'id': 'borderline', 'prompt': 'b' * 1000},\n"
+        "         {'id': 'huge', 'prompt': 'c' * 100000}]\n"
+        "tok = StubTok()\n"
+        "bare = {p['id']: len(p['prompt']) // 4 for p in probs}\n"
+        "kept, dropped = drop_over_context(probs, tok, budget=300)\n"
+        "print(json.dumps({'kept': [p['id'] for p in kept], 'dropped': dropped,\n"
+        "                  'bare_would_keep': [i for i, n in bare.items() if n <= 300]}))\n"
+    )
+    # 'borderline': bare is 250 tokens (under 300) but templated is (400+1000)//4 = 350 (over).
+    assert "borderline" in result["bare_would_keep"], "the fixture must exercise the difference"
+    assert result["kept"] == ["short"], f"templated length not used: kept {result['kept']}"
+    assert result["dropped"] == 2
+
+
+def test_drop_over_context_keeps_everything_when_the_budget_is_ample():
+    result = run_in_subprocess(
+        "from scripts.train_grpo import drop_over_context\n"
+        "class StubTok:\n"
+        "    def apply_chat_template(self, msgs, tokenize=False, add_generation_prompt=True):\n"
+        "        return msgs[0]['content']\n"
+        "    def __call__(self, text):\n"
+        "        return {'input_ids': [0] * (len(text) // 4)}\n"
+        "probs = [{'id': str(i), 'prompt': 'a' * 100} for i in range(5)]\n"
+        "kept, dropped = drop_over_context(probs, StubTok(), budget=100000)\n"
+        "print(json.dumps({'n': len(kept), 'dropped': dropped}))\n"
+    )
+    assert result == {"n": 5, "dropped": 0}
