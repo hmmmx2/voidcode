@@ -16,9 +16,14 @@ import argparse
 import json
 from pathlib import Path
 
-PROMPT = ("Solve this competitive programming problem in Python 3. Read from standard input and "
-          "write to standard output.\n\n{problem}\n\n"
-          "Return only the complete program in a single ```python code block.")
+#: The band is a property of the model/corpus/PROMPT triple, so the prompt is IMPORTED from the
+#: trainer rather than written again here. This file used to carry its own wording
+#: ("Solve this competitive programming problem in Python 3...") with the "return only code"
+#: instruction placed AFTER the problem statement, where the trainer puts it BEFORE. Two different
+#: prompts measure two different models, and the band then describes a policy that never trains.
+#:
+#: Imported lazily inside main() — importing the trainer at module scope pulls torch into every
+#: `--help`.
 
 
 def extract_code(text: str) -> str:
@@ -49,6 +54,8 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--grade-timeout", type=float, default=8.0)
     ap.add_argument("--util", type=float, default=0.85)
+    ap.add_argument("--max-len", type=int, default=4096,
+                    help="vLLM max_model_len; must exceed the longest templated prompt + --max-new")
     ap.add_argument("--lo", type=float, default=0.10)
     ap.add_argument("--hi", type=float, default=0.90)
     # Median 101 cases per problem, and grading is 8 completions x 2,000 problems. Capping at 20
@@ -65,12 +72,17 @@ def main() -> int:
     from vllm import LLM, SamplingParams
 
     from reward.limits import run_isolated_stdio_batch
+    from scripts.train_grpo import build_prompt
 
     corpus = json.loads(Path(args.corpus).read_text(encoding="utf-8"))
     problems = corpus["problems"][: args.limit] if args.limit else corpus["problems"]
     print(f"corpus: {len(problems)} problems from {corpus.get('source')}", flush=True)
 
-    engine = LLM(model=args.model, gpu_memory_utilization=args.util, max_model_len=4096,
+    # max_model_len must cover the LONGEST templated prompt plus --max-new, or vLLM REJECTS the
+    # request outright. Measured with the 30B tokenizer over all 2000 problems, untruncated: the
+    # longest templated prompt is 3619 tokens, so --max-new 1024 needs >= 4643. The old hardcoded
+    # 4096 was fine only while --max-new was 640 AND prompts were being truncated at 6000 chars.
+    engine = LLM(model=args.model, gpu_memory_utilization=args.util, max_model_len=args.max_len,
                  dtype="bfloat16", disable_log_stats=True)
     sampling = SamplingParams(n=args.group, max_tokens=args.max_new,
                               temperature=args.temperature, top_p=0.95)
@@ -89,8 +101,11 @@ def main() -> int:
     tok = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     # One batched call for the whole corpus: vLLM's continuous batching is the entire reason this
     # is hours instead of days, and issuing one prompt at a time would give most of that back.
+    # No [:6000] truncation either: the trainer feeds the whole statement, so truncating here
+    # measured the model on a DIFFERENT, harder problem than the one it would be trained on --
+    # the statement's tail is often where the output format and constraints are specified.
     prompts = [tok.apply_chat_template(
-        [{"role": "user", "content": PROMPT.format(problem=p["prompt"][:6000])}],
+        [{"role": "user", "content": build_prompt(p["prompt"])}],
         tokenize=False, add_generation_prompt=True) for p in problems]
     print("generating...", flush=True)
     outputs = engine.generate(prompts, sampling)
@@ -129,6 +144,12 @@ def main() -> int:
 
     summary = {
         "corpus": corpus.get("source"), "model": args.model, "group": args.group, "max_cases": args.max_cases,
+        # Provenance, so a band file can never again be silently compared against one measured under
+        # different conditions. `max_new` in particular must match the trainer's: a band measured at
+        # 640 describes a policy allowed 640 tokens, and training at a different budget re-scores
+        # every problem near the limit.
+        "max_new": args.max_new, "temperature": args.temperature, "max_len": args.max_len,
+        "prompt": "scripts.train_grpo.build_prompt", "chat_template": True,
         "problems": len(results), "band": [args.lo, args.hi],
         "usable": len(usable), "always_solved": len(always), "never_solved": len(never),
         "never_but_partial": len(partial_only),
