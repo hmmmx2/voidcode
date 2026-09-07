@@ -36,6 +36,7 @@ import random
 import shutil
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -58,6 +59,11 @@ from rl.grpo import dead_group_rate, group_advantages, grpo_loss
 # conclusion this run exists to test. Reuse the prompt/extraction that already measured the 60.
 from scripts.base_pass_rate import build_prompt as eval_build_prompt
 from scripts.base_pass_rate import extract_code as eval_extract_code
+
+#: Concurrent grading children during an eval. Matched to the training step's batch so both phases
+#: put comparable load on the box; the work happens in child processes, so this is bounded by cores
+#: rather than by the GIL.
+EVAL_GRADE_WORKERS = 8
 
 
 def load_band(band_path: Path, corpus_path: Path, lo: float, hi: float,
@@ -332,22 +338,42 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
                               engine=engine, seed=seed)
     greedies = generate_groups(model, tok, eval_prompts, 1, max_new, temperature,
                                greedy=True, engine=engine, seed=seed)
-    for i, (p, texts, g_text) in enumerate(zip(problems, sampled, greedies, strict=True), 1):
-        sources = [eval_extract_code(t, p["entry"]) for t in texts + g_text]
+    # GRADE THE PROBLEMS CONCURRENTLY.
+    #
+    # Serial grading made the eval the run's bottleneck. Each problem runs (eval_group + 1) sources
+    # against every case, so at --eval-group 4 and ~101 cases that is ~500 candidate-program
+    # executions per problem and ~90,000 across a 180-problem eval. Done one problem at a time it
+    # took the better part of an hour, with the GPU idle throughout; the training step already
+    # grades its batch concurrently and the eval simply never got the same treatment.
+    #
+    # Threads are safe: the work happens in child processes, and reward/limits._MAIN_LOCK already
+    # serialises the one shared mutation (__main__ during Process.start).
+    all_sources = [[eval_extract_code(t, p["entry"]) for t in texts + g_text]
+                   for p, texts, g_text in zip(problems, sampled, greedies, strict=True)]
+
+    def _grade_one(item):
+        p, sources = item
+        try:
+            # Greedy graded alone -- see evaluate_holdout for why.
+            return (run_isolated_batch(p, sources[:-1], timeout_s=timeout_s),
+                    run_isolated_batch(p, sources[-1:], timeout_s=timeout_s)[0], None)
+        except RuntimeError as exc:
+            return (None, None, exc)
+
+    with ThreadPoolExecutor(max_workers=EVAL_GRADE_WORKERS) as pool:
+        graded_all = list(pool.map(_grade_one, list(zip(problems, all_sources, strict=True))))
+
+    for i, (p, texts, sources, (verdicts, greedy, err)) in enumerate(
+            zip(problems, sampled, all_sources, graded_all, strict=True), 1):
         if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
             # Dump exactly what the policy produced and what the extractor kept. An all-zero eval
             # can come from generation, extraction or grading, and only the raw text separates them.
             print(f"[dbg] {p['id']} raw[0] ({len(texts[0])} ch): {texts[0][:200]!r}", flush=True)
             print(f"[dbg] {p['id']} src[0] ({len(sources[0])} ch): {sources[0][:200]!r}", flush=True)
-        try:
-            # Greedy graded alone -- see evaluate_holdout for why. This eval is MORE exposed than
-            # it was: --grade-timeout 60 -> 20 cut the batch wall from 300s to 100s.
-            verdicts = run_isolated_batch(p, sources[:-1], timeout_s=timeout_s)
-            greedy = run_isolated_batch(p, sources[-1:], timeout_s=timeout_s)[0]
-        except RuntimeError as exc:
+        if err is not None:
             # A harness bug, surfaced rather than scored. Scoring it zero is how the base
             # pass-rate run once reported 0/4 on problems that were actually solved.
-            print(f"  eval harness error on {p['id']}: {exc}", flush=True)
+            print(f"  eval harness error on {p['id']}: {err}", flush=True)
             continue
         if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
             print(f"[dbg] {p['id']} greedy outcome={greedy.outcome} cf={greedy.case_fraction} "
@@ -453,20 +479,31 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
                               engine=engine, seed=seed)
     greedies = generate_groups(model, tok, hold_prompts, 1, max_new, temperature,
                                greedy=True, engine=engine, seed=seed)
-    for p, texts, g_text in zip(problems, sampled, greedies, strict=True):
-        sources = [extract_code(t) for t in texts + g_text]
+    # Concurrent for the same reason as the catalogue eval above: a 120-problem holdout at ~101
+    # cases is ~60,000 candidate executions, and serially that dominates the run.
+    all_sources = [[extract_code(t) for t in texts + g_text]
+                   for texts, g_text in zip(sampled, greedies, strict=True)]
+
+    def _grade_one(item):
+        p, sources = item
         try:
             # GREEDY IS GRADED IN ITS OWN CHILD, and that is the whole point of the split.
             #
             # A batch timeout does not raise -- it returns one dead verdict per source, all at
             # case_fraction 0.0. Grading greedy alongside its sampled siblings therefore meant one
             # looping SAMPLE zeroed the DETERMINISTIC metric, the one chosen because its movement
-            # "cannot be sampling noise". It silently could. The extra child costs ~1.7s now that
-            # the grader no longer re-imports __main__.
-            verdicts = run_isolated_stdio_batch(sources[:-1], cases(p), timeout_s=timeout_s)
-            greedy = run_isolated_stdio_batch(sources[-1:], cases(p), timeout_s=timeout_s)[0]
+            # "cannot be sampling noise". It silently could.
+            return (run_isolated_stdio_batch(sources[:-1], cases(p), timeout_s=timeout_s),
+                    run_isolated_stdio_batch(sources[-1:], cases(p), timeout_s=timeout_s)[0], None)
         except RuntimeError as exc:
-            print(f"  holdout harness error on {p['id']}: {exc}", flush=True)
+            return (None, None, exc)
+
+    with ThreadPoolExecutor(max_workers=EVAL_GRADE_WORKERS) as pool:
+        graded_all = list(pool.map(_grade_one, list(zip(problems, all_sources, strict=True))))
+
+    for p, (verdicts, greedy, err) in zip(problems, graded_all, strict=True):
+        if err is not None:
+            print(f"  holdout harness error on {p['id']}: {err}", flush=True)
             continue
 
         if greedy.outcome in ("timeout", "died"):

@@ -411,3 +411,38 @@ def test_max_cases_zero_means_all_cases_not_none():
     assert result["all_cases"] == pytest.approx(1.0), (
         f"max_cases=0 graded against an empty case list: {result['all_cases']}")
     assert result["capped"] == pytest.approx(1.0)
+
+
+def test_concurrent_eval_grading_keeps_verdicts_with_their_own_problem():
+    """Grading runs in a thread pool now. A reordering would score every problem against another's
+    tests and produce plausible, entirely wrong numbers -- the failure mode this project keeps
+    hitting. Two problems with DIFFERENT correct answers, so a swap scores 0 instead of 1.
+    """
+    add = "```python\na, b = map(int, input().split())\nprint(a + b)\n```"
+    mul = "```python\na, b = map(int, input().split())\nprint(a * b)\n```"
+    result = run_in_subprocess(
+        "import torch\n"
+        "from scripts.train_grpo import evaluate_holdout\n"
+        f"ADD = {add!r}\n"
+        f"MUL = {mul!r}\n"
+        "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        # each prompt gets the solution correct for ITS OWN problem\n"
+        "        return [[ADD if 'ADD' in p else MUL] * (1 if greedy else group) for p in prompts]\n"
+        # 3 and 4: sum 7, product 12 -- distinct, so grading the wrong pair scores zero.
+        f"IN = {'3 4' + chr(10)!r}\n"
+        "def mk(name, out):\n"
+        "    return {'id': name, 'prompt': name, 'tests': [{'input': IN, 'output': out}]}\n"
+        f"S, P = {'7' + chr(10)!r}, {'12' + chr(10)!r}\n"
+        "problems = [mk('ADD-a', S), mk('MUL-b', P), mk('ADD-c', S), mk('MUL-d', P)]\n"
+        "m = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                     timeout_s=30.0, engine=FakeEngine(), max_cases=0)\n"
+        "print(json.dumps(m))\n"
+    )
+    # Every problem receives its own correct solution, so all four must score 1.0. Any pairing
+    # error drops the mean.
+    assert result["holdout_mean_case_fraction"] == pytest.approx(1.0), (
+        f"concurrent grading mispaired verdicts with problems: {result}")
+    assert result["holdout_greedy_solved"] == 4
+    assert result["holdout_solved_any"] == 4
+    assert result["holdout_stalled"] == 0
