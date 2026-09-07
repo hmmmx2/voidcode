@@ -148,16 +148,22 @@ def test_required_context_measures_the_templated_prompt_not_the_bare_one():
         "        return self.OVERHEAD + msgs[0]['content']\n"
         "    def __call__(self, text):\n"
         "        return {'input_ids': [0] * (len(text) // 4)}\n"
+        "from scripts.train_grpo import build_prompt\n"
         "probs = [{'id': 'a', 'prompt': 'a' * 100}, {'id': 'b', 'prompt': 'b' * 1000}]\n"
         "need = required_context(probs, StubTok(), max_new=512)\n"
+        # What sizing from the RAW problem text would have asked for -- the mistake under test.
         "bare = max(len(p['prompt']) // 4 for p in probs) + 512\n"
-        "print(json.dumps({'need': need, 'bare_would_say': bare, 'n_in': len(probs)}))\n"
+        # Derived, not hardcoded: the wrapper is build_prompt's instruction text plus the stub's\n"
+        # 400-char template overhead, and getting that arithmetic wrong is not what this pins.
+        "expected = (len(StubTok.OVERHEAD + build_prompt(probs[1]['prompt'])) // 4) + 512\n"
+        "print(json.dumps({'need': need, 'bare_would_say': bare, 'expected': expected}))\n"
     )
-    # Longest templated is (400 + 1000)//4 = 350, plus 512 -> 862. Sizing from the BARE prompt
-    # would say 762 -- 100 tokens short, and vLLM would reject that problem at generation time.
-    assert result["need"] == 862, result
-    assert result["bare_would_say"] == 762
+    assert result["need"] == result["expected"], result
+    # The whole point: the templated length is strictly larger, and sizing from the bare prompt
+    # would under-ask -- vLLM would then reject that problem at generation time, mid-run.
     assert result["need"] > result["bare_would_say"], "template overhead must be counted"
+    # Sized by the LONGEST problem, so the shorter one fits with room to spare.
+    assert result["need"] >= 862
 
 
 def test_required_context_never_removes_a_problem():
@@ -169,12 +175,15 @@ def test_required_context_never_removes_a_problem():
         "        return msgs[0]['content']\n"
         "    def __call__(self, text):\n"
         "        return {'input_ids': [0] * (len(text) // 4)}\n"
+        "from scripts.train_grpo import build_prompt\n"
         "probs = [{'id': str(i), 'prompt': 'a' * (100 * (i + 1))} for i in range(5)]\n"
         "need = required_context(probs, StubTok(), max_new=8)\n"
-        "print(json.dumps({'need': need, 'n_in': len(probs)}))\n"
+        "expected = (len(build_prompt(probs[-1]['prompt'])) // 4) + 8\n"
+        "print(json.dumps({'need': need, 'expected': expected, 'n_in': len(probs)}))\n"
     )
-    # Longest is 500 chars -> 125 tokens, + 8. Sized by the LARGEST problem, so every one fits.
-    assert result["need"] == 133
+    # Sized by the LARGEST problem, so every one of the five fits. The list is returned untouched:
+    # the function's contract is to report a number, never to remove a problem.
+    assert result["need"] == result["expected"]
     assert result["n_in"] == 5
 
 
