@@ -1253,7 +1253,10 @@ def main() -> int:
                 # reusing one would serve the old adapter with no error to notice.
                 engine.publish(model)
 
-        if step % 10 == 0:
+        # EVERY step for the first ten, then every tenth. Waiting until step 10 to learn the
+        # per-step cost meant waiting ~5 HOURS to find out a configuration was infeasible; the
+        # phase split is worthless if it arrives after the budget is spent.
+        if step <= 10 or step % 10 == 0:
             # `elapsed` is here so the projected finish is visible within minutes. A 3000-step run
             # at an unmeasured per-step cost is how a 2-day plan turns out to be a 2-week one, and
             # the first eval is far too late to find that out.
