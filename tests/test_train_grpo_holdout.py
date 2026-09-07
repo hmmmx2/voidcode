@@ -446,3 +446,37 @@ def test_concurrent_eval_grading_keeps_verdicts_with_their_own_problem():
     assert result["holdout_greedy_solved"] == 4
     assert result["holdout_solved_any"] == 4
     assert result["holdout_stalled"] == 0
+
+
+def test_chunked_grading_keeps_scores_in_source_order():
+    """Sources are graded in concurrent chunks now; adv[i] indexes by completion, so order is load-bearing."""
+    result = run_in_subprocess(
+        "from scripts.train_grpo import reward_for_group, extract_code, GRADE_CHUNK\n"
+        f"ADD = {'```python' + chr(10) + 'a, b = map(int, input().split())' + chr(10) + 'print(a + b)' + chr(10) + '```'!r}\n"
+        f"ZERO = {'```python' + chr(10) + 'print(0)' + chr(10) + '```'!r}\n"
+        f"TESTS = {SUM_TESTS!r}\n"
+        # 10 sources spanning >2 chunks, alternating correct/wrong so a reorder is visible.
+        "srcs = [extract_code(ADD if i % 2 == 0 else ZERO) for i in range(10)]\n"
+        "r = reward_for_group(srcs, TESTS, timeout_s=30.0)\n"
+        "print(json.dumps({'rewards': r, 'chunk': GRADE_CHUNK}))\n"
+    )
+    assert len(result["rewards"]) == 10, f"lost sources across chunks: {result}"
+    # Even indices are the correct program, odd are wrong. A chunk reordering breaks this pattern.
+    assert result["rewards"] == [1.0, 0.0] * 5, (
+        f"chunked grading returned scores out of source order: {result['rewards']}")
+
+
+def test_a_dead_chunk_skips_the_group_rather_than_fabricating_spread():
+    """Mixing a dead chunk's manufactured zeros with real scores would invent a gradient."""
+    result = run_in_subprocess(
+        "from scripts.train_grpo import reward_for_group, extract_code\n"
+        f"ADD = {'```python' + chr(10) + 'a, b = map(int, input().split())' + chr(10) + 'print(a + b)' + chr(10) + '```'!r}\n"
+        f"LOOP = {LOOP!r}\n"
+        f"TESTS = {SUM_TESTS!r}\n"
+        # First chunk all-hanging, later chunks fine: the group must be skipped, not partly scored.
+        "srcs = [extract_code(LOOP)] * 4 + [extract_code(ADD)] * 4\n"
+        "r = reward_for_group(srcs, TESTS, timeout_s=2.0)\n"
+        "print(json.dumps({'rewards': r}))\n"
+    )
+    assert result["rewards"] == [], (
+        f"a dead chunk was mixed with real scores, fabricating spread: {result['rewards']}")

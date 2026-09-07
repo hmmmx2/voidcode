@@ -65,6 +65,10 @@ from scripts.base_pass_rate import extract_code as eval_extract_code
 #: rather than by the GIL.
 EVAL_GRADE_WORKERS = 8
 
+#: Sources per grading child inside one group. 16-in-one-child left 88 of 96 cores idle and made a
+#: step grading-bound; it also meant one hanging completion zeroed the whole group.
+GRADE_CHUNK = 4
+
 
 def load_band(band_path: Path, corpus_path: Path, lo: float, hi: float,
               signal: str = "any") -> list[dict]:
@@ -238,13 +242,42 @@ def reward_for_group(sources: list[str], tests: list, timeout_s: float) -> list[
     reports as a timeout and scores zero. At G completions per step across thousands of steps the
     per-completion spawn dominates everything else the loop does; batching measured 9.7x.
     """
-    try:
-        results = run_isolated_stdio_batch(sources, tests, timeout_s=timeout_s)
-    except RuntimeError as exc:
-        # A harness bug, not a bad submission. Scoring it zero is precisely how the base pass-rate
-        # run once reported 0/4 on problems that were in fact solved.
-        print(f"  harness error, group skipped: {exc}", flush=True)
-        return []
+    # GRADE THE GROUP IN CHUNKS, CONCURRENTLY.
+    #
+    # One child graded all 16 sources SEQUENTIALLY, and with --max-cases 0 that is 16 x ~101 = ~1600
+    # candidate-program executions in a single process. Measured on the box: 8 grading children on
+    # a 96-core machine, GPU at 23-28%, and a step taking over 2.5 minutes -- the loop was waiting
+    # on one serial child while 88 cores idled.
+    #
+    # Chunking also SHRINKS THE BLAST RADIUS. The batch wall is `timeout_s * len(sources)`, so at 16
+    # sources one non-terminating completion burnt 640s and zeroed the other fifteen. At 4 it burns
+    # 160s and zeroes three.
+    chunks = [sources[i:i + GRADE_CHUNK] for i in range(0, len(sources), GRADE_CHUNK)]
+
+    def _grade_chunk(chunk):
+        try:
+            return run_isolated_stdio_batch(chunk, tests, timeout_s=timeout_s), None
+        except RuntimeError as exc:
+            return None, exc
+
+    with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+        graded = list(pool.map(_grade_chunk, chunks))
+
+    for verdicts, exc in graded:
+        if exc is not None:
+            # A harness bug, not a bad submission. Scoring it zero is precisely how the base
+            # pass-rate run once reported 0/4 on problems that were in fact solved.
+            print(f"  harness error, group skipped: {exc}", flush=True)
+            return []
+        # A chunk that came back entirely dead contributes MANUFACTURED zeros. Mixing those with
+        # the real scores from other chunks would fabricate spread and hand GRPO a gradient built
+        # partly from grading failures -- worse than a dead group, because it looks alive.
+        if verdicts and all(v.outcome in ("timeout", "died") for v in verdicts):
+            print(f"  grading chunk returned all {len(verdicts)} sources as {verdicts[0].outcome} "
+                  f"({verdicts[0].error}); group SKIPPED rather than partly fabricated", flush=True)
+            return []
+
+    results = [v for verdicts, _ in graded for v in verdicts]
 
     # A MANUFACTURED DEAD GROUP IS ARITHMETICALLY IDENTICAL TO A REAL ONE.
     #
@@ -1001,6 +1034,9 @@ def main() -> int:
     steps_without_update = 0   # steps where no group in the batch survived
     stats: dict = {}
     t_start = time.monotonic()
+    # Per-phase totals. "It is slow" is not actionable; "grading is 80% of the step" is, and
+    # sampling nvidia-smi by hand to find that out cost an hour once already.
+    t_gen = t_grade = t_bwd = 0.0
     for step in range(1, args.steps + 1):
         # Reset per step. Carrying the previous step's stats forward meant a dead or abandoned
         # step printed a `kl=` belonging to a DIFFERENT step -- or to an update that was discarded.
@@ -1022,8 +1058,10 @@ def main() -> int:
             engine.wake()
         # One engine call for the whole batch: B separate calls would serialise B prefills that
         # continuous batching could have overlapped.
+        _t = time.monotonic()
         batch_texts = generate_groups(model, tok, prompts, args.group, args.max_new,
                                       args.temperature, engine=engine)
+        t_gen += time.monotonic() - _t
 
         # GRADE THE B GROUPS CONCURRENTLY.
         #
@@ -1039,8 +1077,10 @@ def main() -> int:
                                     prob["tests"][: args.max_cases] if args.max_cases
                                     else prob["tests"], args.grade_timeout)
 
+        _t = time.monotonic()
         with ThreadPoolExecutor(max_workers=max(len(batch), 1)) as pool:
             all_rewards = list(pool.map(_grade, list(zip(batch, batch_texts, strict=True))))
+        t_grade += time.monotonic() - _t
 
         # A group is dropped for one of FOUR different reasons, counted separately because they
         # call for different fixes: a stalled grader is an instrument problem, a dead group is a
@@ -1122,6 +1162,7 @@ def main() -> int:
             model.train()
             opt.zero_grad(set_to_none=True)
             step_corrupted = False
+            _t = time.monotonic()
 
             # Normalise over EVERY completion in the step, so the gradient magnitude does not
             # depend on how many groups happened to survive. Dividing per-group instead would make
@@ -1190,6 +1231,8 @@ def main() -> int:
                 if step_corrupted:
                     break
 
+            t_bwd += time.monotonic() - _t
+
             if step_corrupted:
                 # A partial group is not a smaller group; it is a biased one.
                 opt.zero_grad(set_to_none=True)
@@ -1220,7 +1263,8 @@ def main() -> int:
                   f"live={len(live)}/{len(batch)}  dead_so_far={dead}/{groups_seen}  "
                   f"oom_skipped={oom_skipped}  stalls={skipped_groups}  short={short_groups}  "
                   f"truncated={engine.truncated if engine else 0}  kl={kl:.4f}  "
-                  f"{rate:.1f}s/step  eta={(args.steps - step) * rate / 3600:.1f}h",
+                  f"{rate:.1f}s/step  eta={(args.steps - step) * rate / 3600:.1f}h  "
+                  f"[gen {t_gen/step:.0f}s grade {t_grade/step:.0f}s bwd {t_bwd/step:.0f}s]",
                   flush=True)
 
         if step % args.eval_every == 0:
