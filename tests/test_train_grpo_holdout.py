@@ -133,49 +133,49 @@ def test_evaluate_holdout_reports_zero_rather_than_crashing_on_a_dead_group():
     assert result["holdout_mean_case_fraction"] == 0.0
 
 
-def test_drop_over_context_uses_the_templated_length_not_the_bare_prompt():
-    """A bare-prompt check would pass problems that then get REJECTED by vLLM mid-run.
+def test_required_context_measures_the_templated_prompt_not_the_bare_one():
+    """Under-asking makes vLLM REJECT a request mid-run, hours in.
 
     Uses a stub tokenizer so this needs no model download: the template adds a fixed overhead and
     one token per 4 characters, which is enough to distinguish "measured the template" from
     "measured the raw string".
     """
     result = run_in_subprocess(
-        "from scripts.train_grpo import drop_over_context\n"
+        "from scripts.train_grpo import required_context\n"
         "class StubTok:\n"
         "    OVERHEAD = 'X' * 400  # what a chat template prepends\n"
         "    def apply_chat_template(self, msgs, tokenize=False, add_generation_prompt=True):\n"
         "        return self.OVERHEAD + msgs[0]['content']\n"
         "    def __call__(self, text):\n"
         "        return {'input_ids': [0] * (len(text) // 4)}\n"
-        "probs = [{'id': 'short', 'prompt': 'a' * 100},\n"
-        "         {'id': 'borderline', 'prompt': 'b' * 1000},\n"
-        "         {'id': 'huge', 'prompt': 'c' * 100000}]\n"
-        "tok = StubTok()\n"
-        "bare = {p['id']: len(p['prompt']) // 4 for p in probs}\n"
-        "kept, dropped = drop_over_context(probs, tok, budget=300)\n"
-        "print(json.dumps({'kept': [p['id'] for p in kept], 'dropped': dropped,\n"
-        "                  'bare_would_keep': [i for i, n in bare.items() if n <= 300]}))\n"
+        "probs = [{'id': 'a', 'prompt': 'a' * 100}, {'id': 'b', 'prompt': 'b' * 1000}]\n"
+        "need = required_context(probs, StubTok(), max_new=512)\n"
+        "bare = max(len(p['prompt']) // 4 for p in probs) + 512\n"
+        "print(json.dumps({'need': need, 'bare_would_say': bare, 'n_in': len(probs)}))\n"
     )
-    # 'borderline': bare is 250 tokens (under 300) but templated is (400+1000)//4 = 350 (over).
-    assert "borderline" in result["bare_would_keep"], "the fixture must exercise the difference"
-    assert result["kept"] == ["short"], f"templated length not used: kept {result['kept']}"
-    assert result["dropped"] == 2
+    # Longest templated is (400 + 1000)//4 = 350, plus 512 -> 862. Sizing from the BARE prompt
+    # would say 762 -- 100 tokens short, and vLLM would reject that problem at generation time.
+    assert result["need"] == 862, result
+    assert result["bare_would_say"] == 762
+    assert result["need"] > result["bare_would_say"], "template overhead must be counted"
 
 
-def test_drop_over_context_keeps_everything_when_the_budget_is_ample():
+def test_required_context_never_removes_a_problem():
+    """It reports a number. Discarding training data to fit a fixed context was the old design."""
     result = run_in_subprocess(
-        "from scripts.train_grpo import drop_over_context\n"
+        "from scripts.train_grpo import required_context\n"
         "class StubTok:\n"
         "    def apply_chat_template(self, msgs, tokenize=False, add_generation_prompt=True):\n"
         "        return msgs[0]['content']\n"
         "    def __call__(self, text):\n"
         "        return {'input_ids': [0] * (len(text) // 4)}\n"
-        "probs = [{'id': str(i), 'prompt': 'a' * 100} for i in range(5)]\n"
-        "kept, dropped = drop_over_context(probs, StubTok(), budget=100000)\n"
-        "print(json.dumps({'n': len(kept), 'dropped': dropped}))\n"
+        "probs = [{'id': str(i), 'prompt': 'a' * (100 * (i + 1))} for i in range(5)]\n"
+        "need = required_context(probs, StubTok(), max_new=8)\n"
+        "print(json.dumps({'need': need, 'n_in': len(probs)}))\n"
     )
-    assert result == {"n": 5, "dropped": 0}
+    # Longest is 500 chars -> 125 tokens, + 8. Sized by the LARGEST problem, so every one fits.
+    assert result["need"] == 133
+    assert result["n_in"] == 5
 
 
 # ── a grading stall must not masquerade as a measurement ───────────────────────────────────────

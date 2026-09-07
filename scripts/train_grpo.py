@@ -133,27 +133,25 @@ def split_holdout(train: list[dict], n: int, seed: int) -> tuple[list[dict], lis
             [p for i, p in enumerate(train) if i in held])
 
 
-def drop_over_context(problems: list[dict], tok, budget: int) -> tuple[list[dict], int]:
-    """Remove problems whose templated prompt leaves no room for a completion. Returns (kept, dropped).
+def required_context(problems: list[dict], tok, max_new: int) -> int:
+    """Context length this corpus actually needs: longest templated prompt + `max_new`.
 
-    vLLM REJECTS a request longer than `max_model_len` rather than truncating it, and the rejection
-    arrives as an exception in the middle of the step loop -- a crash at step 37 of 50 loses the
-    whole run. Measured on this corpus with the 30B tokenizer, `--max-new 640`: 18 of 2000 problems
-    exceed at `--vllm-max-len 2048`, 1 at 4096, 0 at 5120. At the flags the 30B run launches with
-    nothing is dropped and this is pure insurance; at a tighter budget it turns a crash into a
-    smaller, and reported, training set.
+    REPLACES a guard that DROPPED problems too long to fit a fixed context. Discarding real training
+    data to satisfy an arbitrary number is backwards -- the corpus is the fixed thing and the engine
+    is the adjustable one. Measuring what is needed and asking the engine for it means nothing is
+    ever dropped and there is no budget to be over.
 
-    Measures the CHAT-TEMPLATED prompt, because that is what reaches the engine — the template adds
-    tokens, and a check against the bare prompt would pass problems that then fail in vLLM.
+    Measures the CHAT-TEMPLATED prompt, because that is what reaches the engine: the template adds
+    tokens, so a check against the bare prompt would under-ask and vLLM would reject the request at
+    generation time -- mid-run, as an exception, hours in.
     """
-    kept = []
+    longest = 0
     for p in problems:
         chat = tok.apply_chat_template(
             [{"role": "user", "content": build_prompt(p["prompt"])}],
             tokenize=False, add_generation_prompt=True)
-        if len(tok(chat)["input_ids"]) <= budget:
-            kept.append(p)
-    return kept, len(problems) - len(kept)
+        longest = max(longest, len(tok(chat)["input_ids"]))
+    return longest + max_new
 
 
 def build_prompt(problem: str) -> str:
@@ -828,19 +826,21 @@ def main() -> int:
 
     tok = AutoTokenizer.from_pretrained(args.model)
 
-    # Silence would be the bug here, so the count is printed. See drop_over_context.
+    # SIZE THE ENGINE TO THE CORPUS, never the corpus to the engine.
+    #
+    # vLLM REJECTS a request longer than max_model_len rather than truncating it, and that rejection
+    # lands mid-step-loop, hours in. The fix is to ask for the context the data needs -- not to
+    # discard the problems that do not fit, which throws away exactly the longest, most detailed
+    # statements in the corpus.
     if args.vllm_model:
-        budget = args.vllm_max_len - args.max_new
-        train, dropped_t = drop_over_context(train, tok, budget)
-        holdout, dropped_h = drop_over_context(holdout, tok, budget)
-        dropped = dropped_t + dropped_h
-        if dropped:
-            print(f"  dropped {dropped} problem(s) whose prompt exceeds "
-                  f"--vllm-max-len {args.vllm_max_len} minus --max-new {args.max_new} "
-                  f"= {budget} tokens", flush=True)
-        if not train:
-            print("ABORT: every in-band problem is too long for the context budget", flush=True)
-            return 1
+        needed = required_context(train + holdout, tok, args.max_new)
+        if needed > args.vllm_max_len:
+            print(f"  raising --vllm-max-len {args.vllm_max_len} -> {needed} so every problem fits "
+                  f"(longest templated prompt + --max-new {args.max_new}); no problem is dropped",
+                  flush=True)
+            args.vllm_max_len = needed
+        else:
+            print(f"  context: corpus needs {needed}, engine has {args.vllm_max_len}", flush=True)
 
     # BUILD THE ENGINE FIRST, WHILE THE CARD IS EMPTY.
     #
