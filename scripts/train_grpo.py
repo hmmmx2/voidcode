@@ -443,7 +443,11 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
     fractions: list[float] = []
     problem_means: list[float] = []
     greedy_fractions: list[float] = []
-    cases = lambda p: p["tests"][:max_cases]  # noqa: E731 - same slice the reward uses
+    # 0 means ALL cases, matching filter_corpus. Slicing [:0] unconditionally would have graded
+    # against an EMPTY case list and scored every completion zero -- silently.
+    def cases(p):
+        return p["tests"][:max_cases] if max_cases else p["tests"]
+
     hold_prompts = [build_prompt(p["prompt"]) for p in problems]
     sampled = generate_groups(model, tok, hold_prompts, group, max_new, temperature,
                               engine=engine, seed=seed)
@@ -760,7 +764,13 @@ def main() -> int:
     # the reward's meaning relative to the band the problems were selected by, and some problems
     # carry 255 cases -- 12x the work, which the per-problem timeout would simply cut short at an
     # arbitrary point. Same cap, same reward.
-    ap.add_argument("--max-cases", type=int, default=20)
+    # 0 = ALL cases. The cap exists to make the FILTER cheap (8 completions x 2000 problems);
+    # in training it caps the resolution of the reward itself. `case_fraction` over 20 cases takes
+    # 21 distinct values, over ~101 it takes 102 -- and two completions scoring identically is
+    # precisely what makes a group dead. Grading every case costs ~5x per group and buys both a
+    # finer gradient and fewer dead groups.
+    ap.add_argument("--max-cases", type=int, default=20,
+                    help="cases used for the reward; 0 uses all of them")
     ap.add_argument("--holdout", type=int, default=0,
                     help="band problems reserved from training and evaluated IN-DOMAIN; "
                          "0 disables. See evaluate_holdout for why this is not optional in "
@@ -989,7 +999,8 @@ def main() -> int:
         def _grade(item):
             prob, texts = item
             return reward_for_group([extract_code(t) for t in texts],
-                                    prob["tests"][: args.max_cases], args.grade_timeout)
+                                    prob["tests"][: args.max_cases] if args.max_cases
+                                    else prob["tests"], args.grade_timeout)
 
         with ThreadPoolExecutor(max_workers=max(len(batch), 1)) as pool:
             all_rewards = list(pool.map(_grade, list(zip(batch, batch_texts, strict=True))))

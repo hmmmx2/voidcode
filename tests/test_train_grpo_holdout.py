@@ -383,3 +383,31 @@ def test_publish_failure_degrades_instead_of_killing_the_run(tmp_path):
     # retries the same slot rather than leaving a hole in the sequence.
     assert result["lora_id"] == 7
     assert result["adapter_dir"] == "/prev/adapter-7"
+
+
+def test_max_cases_zero_means_all_cases_not_none():
+    """`filter_corpus` documents 0 as "use all". The trainer sliced [:0] and graded against nothing.
+
+    A silent, total corruption: every completion scores 0, every group is dead, and the run reports
+    a clean flat curve. Pinned on the holdout path, which threads max_cases through.
+    """
+    result = run_in_subprocess(
+        "import torch\n"
+        "from scripts.train_grpo import evaluate_holdout\n"
+        f"GOOD = {GOOD_SUM!r}\n"
+        "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [[GOOD] * (1 if greedy else group) for _ in prompts]\n"
+        f"problems = [{SUM_PROBLEM!r}]\n"
+        "m0 = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                      timeout_s=30.0, engine=FakeEngine(), max_cases=0)\n"
+        "m1 = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                      timeout_s=30.0, engine=FakeEngine(), max_cases=20)\n"
+        "print(json.dumps({'all_cases': m0['holdout_mean_case_fraction'],\n"
+        "                  'capped': m1['holdout_mean_case_fraction']}))\n"
+    )
+    # The solution is correct, so it must score 1.0 either way. Before the fix, max_cases=0 sliced
+    # the case list to empty and scored 0.0.
+    assert result["all_cases"] == pytest.approx(1.0), (
+        f"max_cases=0 graded against an empty case list: {result['all_cases']}")
+    assert result["capped"] == pytest.approx(1.0)
