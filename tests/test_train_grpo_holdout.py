@@ -317,3 +317,60 @@ def test_generate_groups_handles_an_empty_batch():
         "print(json.dumps({'out': out}))\n"
     )
     assert result["out"] == []
+
+
+# ── the adapter publisher must not fill the disk ───────────────────────────────────────────────
+#
+# publish() writes a fresh directory on every step that produces an update, and the adapter is
+# 53,528,920 bytes (measured: artifacts/policy-30b-g16/adapter_model.safetensors). Nothing deleted
+# them. At 50 steps and a 56% update rate that was ~32 directories and invisible; batching takes the
+# publish rate to ~100%, so a 3000-step run would write ~150 GiB onto a 150 GB volume that already
+# holds ~90 GB. It would die of ENOSPC past step 1000, hours into an unattended run.
+#
+# `publish` is exercised unbound, with a stub `self`, so this needs neither vLLM nor a GPU.
+
+
+def test_publish_keeps_only_the_two_most_recent_adapters(tmp_path):
+    result = run_in_subprocess(
+        "import types, os\n"
+        "from scripts.train_grpo import VLLMRollouts\n"
+        f"work = {str(tmp_path / 'vllm_adapters')!r}\n"
+        "os.makedirs(work, exist_ok=True)\n"
+        "from pathlib import Path\n"
+        "me = types.SimpleNamespace(workdir=Path(work), lora_id=0, adapter_dir='')\n"
+        "class Model:\n"
+        "    def save_pretrained(self, d):\n"
+        "        os.makedirs(d, exist_ok=True)\n"
+        "        open(os.path.join(d, 'adapter_model.safetensors'), 'wb').write(b'x' * 1024)\n"
+        "for _ in range(6):\n"
+        "    VLLMRollouts.publish(me, Model())\n"
+        "left = sorted(os.listdir(work))\n"
+        "print(json.dumps({'left': left, 'lora_id': me.lora_id,\n"
+        "                  'serving': os.path.basename(me.adapter_dir)}))\n"
+    )
+    # Two, not one: vLLM caches by id and may still hold the adapter it is currently serving.
+    assert result["left"] == ["adapter-5", "adapter-6"], (
+        f"publish left {result['left']} behind; 3000 steps of this fills the volume")
+    assert result["lora_id"] == 6
+    assert result["serving"] == "adapter-6", "the engine must be pointed at the newest adapter"
+
+
+def test_publish_failure_degrades_instead_of_killing_the_run(tmp_path):
+    """A full disk must cost freshness, not a multi-day run. save_policy already works this way."""
+    result = run_in_subprocess(
+        "import types, os\n"
+        "from pathlib import Path\n"
+        "from scripts.train_grpo import VLLMRollouts\n"
+        f"work = {str(tmp_path / 'w2')!r}\n"
+        "os.makedirs(work, exist_ok=True)\n"
+        "me = types.SimpleNamespace(workdir=Path(work), lora_id=7, adapter_dir='/prev/adapter-7')\n"
+        "class FullDisk:\n"
+        "    def save_pretrained(self, d):\n"
+        "        raise OSError(28, 'No space left on device')\n"
+        "VLLMRollouts.publish(me, FullDisk())   # must NOT raise\n"
+        "print(json.dumps({'lora_id': me.lora_id, 'adapter_dir': me.adapter_dir}))\n"
+    )
+    # The id must NOT advance: the engine keeps serving the last good adapter, and the next publish
+    # retries the same slot rather than leaving a hole in the sequence.
+    assert result["lora_id"] == 7
+    assert result["adapter_dir"] == "/prev/adapter-7"

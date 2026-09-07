@@ -33,7 +33,9 @@ import gc
 import json
 import os
 import random
+import shutil
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -565,11 +567,38 @@ class VLLMRollouts:
               flush=True)
 
     def publish(self, model) -> None:
-        """Write the current adapter and bump the id so vLLM reloads it."""
-        self.lora_id += 1
-        d = self.workdir / f"adapter-{self.lora_id}"
-        model.save_pretrained(str(d))
+        """Write the adapter under a fresh id, and retire the ones no longer being served.
+
+        WITHOUT THE PRUNE THIS FILLS THE DISK MID-RUN. Measured, not estimated: the adapter this
+        run produces is **53,528,920 bytes** (`artifacts/policy-30b-g16/adapter_model.safetensors`)
+        -- r=16 attention-only over 48 layers is 13.37M parameters, and peft keeps LoRA weights in
+        fp32 on a bnb-4bit base. A fresh directory is written on every step that produces an update,
+        and nothing ever deleted them.
+
+        At 50 steps and a 56% update rate that was ~32 directories (~1.7 GB) and invisible.
+        Batching is what makes it fatal: eliminating wasted steps takes the publish rate to ~100%,
+        so a 3000-step run writes ~150 GiB onto a 150 GB volume already holding ~90 GB of weights
+        and venv. It would die of ENOSPC well past step 1000, hours into an unattended run.
+
+        TWO directories are kept rather than one: vLLM caches adapters by id and may still hold the
+        one it is currently serving.
+        """
+        nxt = self.lora_id + 1
+        d = self.workdir / f"adapter-{nxt}"
+        try:
+            model.save_pretrained(str(d))
+        except OSError as exc:
+            # Degrade to slightly off-policy rollouts rather than killing a multi-day run -- the
+            # same reasoning save_policy already applies to checkpoints. The id is NOT advanced, so
+            # the engine keeps serving the last good adapter and the next step retries this slot.
+            print(f"  adapter publish FAILED ({exc}); rollouts stay on adapter-{self.lora_id} "
+                  f"and are now off-policy", flush=True)
+            return
+        self.lora_id = nxt
         self.adapter_dir = str(d)
+        stale = self.workdir / f"adapter-{self.lora_id - 2}"
+        if stale.exists():
+            shutil.rmtree(stale, ignore_errors=True)
 
     # SLEEP/WAKE IS OFF BY DEFAULT, AND THAT IS THE POINT.
     #
@@ -749,6 +778,12 @@ def main() -> int:
     ap.add_argument("--log-every", type=int, default=25, help="sample one step in N")
     args = ap.parse_args()
 
+    if args.problems_per_step < 1:
+        # Otherwise random.sample(train, 0) returns [], every step is a silent no-op, and the run
+        # writes a complete-looking artefact with 0 dead groups and a flat curve.
+        print("ABORT: --problems-per-step must be >= 1", flush=True)
+        return 2
+
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
@@ -905,8 +940,10 @@ def main() -> int:
     dead = 0            # groups whose completions all scored the same: no gradient
     groups_seen = 0     # denominator for `dead`; equals steps only at --problems-per-step 1
     skipped_groups = 0  # groups whose GRADING stalled -- an instrument fault, not a dead group
-    skipped_steps = 0   # steps where every group in the batch was dropped
+    short_groups = 0    # groups where the engine returned fewer completions than requested
+    steps_without_update = 0   # steps where no group in the batch survived
     stats: dict = {}
+    t_start = time.monotonic()
     for step in range(1, args.steps + 1):
         # Reset per step. Carrying the previous step's stats forward meant a dead or abandoned
         # step printed a `kl=` belonging to a DIFFERENT step -- or to an update that was discarded.
@@ -931,20 +968,47 @@ def main() -> int:
         batch_texts = generate_groups(model, tok, prompts, args.group, args.max_new,
                                       args.temperature, engine=engine)
 
-        # Grade each group and keep only those that carry a gradient. A group is dropped here for
-        # one of three DIFFERENT reasons, and they are counted separately because they call for
-        # different fixes: a stalled grader is an instrument problem, a dead group is a band
-        # problem, and G<2 is a configuration problem.
+        # GRADE THE B GROUPS CONCURRENTLY.
+        #
+        # Each call blocks in `proc.join`, and its wall is `grade_timeout * group` -- 320s at
+        # --group 16 --grade-timeout 20. Serially that is B x 320s of worst case per step. Threads
+        # are safe here because the work is in child processes, and `reward/limits._MAIN_LOCK`
+        # already serialises the one shared mutation (`__main__` during Process.start).
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _grade(item):
+            prob, texts = item
+            return reward_for_group([extract_code(t) for t in texts],
+                                    prob["tests"][: args.max_cases], args.grade_timeout)
+
+        with ThreadPoolExecutor(max_workers=max(len(batch), 1)) as pool:
+            all_rewards = list(pool.map(_grade, list(zip(batch, batch_texts, strict=True))))
+
+        # A group is dropped for one of FOUR different reasons, counted separately because they
+        # call for different fixes: a stalled grader is an instrument problem, a dead group is a
+        # band problem, a short group is a generation problem, and G<2 is a configuration problem.
+        #
+        # `graded` keeps every group that produced scores, dead ones included, because
+        # --log-completions is the only artefact that can later distinguish a dead-from-the-top
+        # group from a dead-from-the-bottom one. Logging only survivors makes it a survivor-only
+        # sample -- and on the previous run's step 10, which was dead, it would have logged nothing.
         live: list[tuple[dict, str, list[str], list[float]]] = []
-        for prob, prompt, texts in zip(batch, prompts, batch_texts, strict=True):
-            rewards = reward_for_group([extract_code(t) for t in texts],
-                                       prob["tests"][: args.max_cases], args.grade_timeout)
+        graded: list[tuple[dict, list[str], list[float], str]] = []
+        for prob, prompt, texts, rewards in zip(batch, prompts, batch_texts, all_rewards,
+                                                strict=True):
             groups_seen += 1
             if not rewards:
                 skipped_groups += 1          # grading stalled; NOT a dead group
                 continue
+            if len(rewards) != len(texts):
+                # A generation shortfall, not a grading fault. Charging it to the grader would hide
+                # it, and `adv[i]` indexes by completion, so a mismatch must never reach the update.
+                short_groups += 1
+                graded.append((prob, texts, rewards, "short"))
+                continue
             if len(rewards) < 2:
                 dead += 1                    # group_advantages rejects G<2: no within-group baseline
+                graded.append((prob, texts, rewards, "singleton"))
                 continue
             rt = torch.tensor(rewards, dtype=torch.float32).unsqueeze(0)
             if dead_group_rate(rt) > 0:
@@ -952,27 +1016,38 @@ def main() -> int:
                 # `beta * kl` -- including a dead group would drag the policy toward the reference
                 # on the strength of a group that carried no information.
                 dead += 1
+                graded.append((prob, texts, rewards, "dead"))
                 continue
+            graded.append((prob, texts, rewards, "live"))
             live.append((prob, prompt, texts, rewards))
 
-        if args.log_completions and live and step % args.log_every == 0:
-            # Highest and lowest scoring completion of the first live group. The extremes are where
-            # hacking shows: a suspiciously perfect score on a problem the group otherwise fails is
-            # the shape to look for. Appended so a crash still leaves what was collected.
-            prob, _, texts, rewards = live[0]
+        if args.log_completions and graded and step % args.log_every == 0:
+            # Highest and lowest scoring completion of the first GRADED group -- not the first
+            # surviving one. The extremes are where hacking shows: a suspiciously perfect score on a
+            # problem the group otherwise fails is the shape to look for. `status` records why the
+            # group was kept or dropped, which is what makes dead-from-the-top separable from
+            # dead-from-the-bottom after the run. Appended so a crash still leaves what was
+            # collected.
+            prob, texts, rewards, status = graded[0]
             order = sorted(range(len(rewards)), key=lambda i: rewards[i])
-            sample = {"step": step, "problem_id": prob.get("id"),
-                      "groups_live": len(live), "groups_in_batch": len(batch),
+            sample = {"step": step, "problem_id": prob.get("id"), "status": status,
+                      "groups_live": len(live), "groups_graded": len(graded),
+                      "groups_in_batch": len(batch),
                       "rewards": [round(x, 4) for x in rewards],
                       "worst": extract_code(texts[order[0]])[:2000],
                       "best": extract_code(texts[order[-1]])[:2000]}
             with open(args.log_completions, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(sample) + "\n")
 
-        # `step_reward` is for the progress line only. It is the mean over the groups that actually
-        # produced an update, so it is NaN on a step where every group was dead -- which is honest,
-        # and better than the previous code's habit of printing a stale `r` from an earlier step.
-        step_reward = (sum(sum(rw) / len(rw) for _, _, _, rw in live) / len(live)
+        # Two reward means, because one of them would mislead on its own.
+        #
+        # `step_reward` averages every group that GRADED, dead ones included. That is the quantity
+        # earlier runs printed, so the trace stays comparable, and it is the one that can actually
+        # fall when the policy gets worse. A live-only mean is biased upward by construction -- it
+        # conditions on the group having spread -- and would drift purely with the dead rate.
+        step_reward = (sum(sum(rw) / len(rw) for _, _, rw, _ in graded) / len(graded)
+                       if graded else float("nan"))
+        live_reward = (sum(sum(rw) / len(rw) for _, _, _, rw in live) / len(live)
                        if live else float("nan"))
 
         # NOT `continue`. The eval block lives at the bottom of this loop, so skipping the rest of
@@ -980,7 +1055,7 @@ def main() -> int:
         # would silently delete the run's ONLY post-training measurement.
         usable = bool(live)
         if not usable:
-            skipped_steps += 1
+            steps_without_update += 1
 
         if usable:
             if engine is not None:
@@ -1047,7 +1122,8 @@ def main() -> int:
                         # a truncated batch is biased toward whichever groups came first.
                         oom_skipped += 1
                         step_corrupted = True
-                        print(f"  OOM on completion {i} of step {step} ({len(text)} chars); "
+                        print(f"  OOM on completion {i} of {_prob.get('id')} "
+                              f"at step {step} ({len(text)} chars); "
                               f"ABANDONING this step, total OOM steps {oom_skipped}", flush=True)
                         opt.zero_grad(set_to_none=True)
                         gc.collect()
@@ -1059,6 +1135,12 @@ def main() -> int:
             if step_corrupted:
                 # A partial group is not a smaller group; it is a biased one.
                 opt.zero_grad(set_to_none=True)
+                # No update happened, so the progress line must not read like one did: `stats`
+                # belongs to the last completion before the OOM, and `step_reward` to a batch whose
+                # gradient was discarded.
+                stats = {}
+                step_reward = live_reward = float("nan")
+                steps_without_update += 1
             else:
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
                 opt.step()
@@ -1071,10 +1153,16 @@ def main() -> int:
                 engine.publish(model)
 
         if step % 10 == 0:
+            # `elapsed` is here so the projected finish is visible within minutes. A 3000-step run
+            # at an unmeasured per-step cost is how a 2-day plan turns out to be a 2-week one, and
+            # the first eval is far too late to find that out.
             kl = stats.get("kl", float("nan"))
-            print(f"step {step}  reward={step_reward:.3f}  live={len(live)}/{len(batch)}  dead_so_far={dead}  "
-                  f"oom_skipped={oom_skipped}  skipped_groups={skipped_groups}  "
-                  f"truncated={engine.truncated if engine else 0}  kl={kl:.4f}",
+            rate = (time.monotonic() - t_start) / step
+            print(f"step {step}  reward={step_reward:.3f}  live_reward={live_reward:.3f}  "
+                  f"live={len(live)}/{len(batch)}  dead_so_far={dead}/{groups_seen}  "
+                  f"oom_skipped={oom_skipped}  stalls={skipped_groups}  short={short_groups}  "
+                  f"truncated={engine.truncated if engine else 0}  kl={kl:.4f}  "
+                  f"{rate:.1f}s/step  eta={(args.steps - step) * rate / 3600:.1f}h",
                   flush=True)
 
         if step % args.eval_every == 0:
@@ -1089,7 +1177,8 @@ def main() -> int:
                             "group": args.group, "max_new": args.max_new, "signal": args.signal,
                             "holdout": len(holdout), "band": args.corpus,
                             "dead_groups": dead, "oom_skipped": oom_skipped,
-                            "skipped_steps": skipped_steps,
+                            "steps_without_update": steps_without_update,
+                            "short_groups": short_groups,
                             "groups_seen": groups_seen, "skipped_groups": skipped_groups,
                             "problems_per_step": args.problems_per_step,
                             "truncated": engine.truncated if engine else 0,
@@ -1109,14 +1198,19 @@ def main() -> int:
                     "group": args.group, "max_new": args.max_new, "signal": args.signal,
                     "holdout": len(holdout), "band": args.corpus,
                     "dead_groups": dead, "oom_skipped": oom_skipped,
-                    "skipped_steps": skipped_steps,
+                    "steps_without_update": steps_without_update,
+                    "short_groups": short_groups,
                     "groups_seen": groups_seen, "skipped_groups": skipped_groups,
                     "problems_per_step": args.problems_per_step,
                     "truncated": engine.truncated if engine else 0,
                     "history": history}, indent=2) + "\n",
         encoding="utf-8")
-    print(f"\nwrote {args.out}  (dead groups: {dead}/{args.steps}, "
-          f"skipped {skipped_steps}, oom {oom_skipped})", flush=True)
+    # Denominators matter: `dead` counts GROUPS, so dividing it by `args.steps` printed a rate that
+    # exceeds 100% the moment --problems-per-step is above 1.
+    print(f"\nwrote {args.out}  (dead groups: {dead}/{groups_seen}, "
+          f"steps without an update: {steps_without_update}/{args.steps}, "
+          f"grading stalls: {skipped_groups}, short groups: {short_groups}, "
+          f"oom: {oom_skipped})", flush=True)
     return 0
 
 
