@@ -86,10 +86,17 @@ def load_band(band_path: Path, corpus_path: Path, lo: float, hi: float,
     problems = corpus["problems"] if isinstance(corpus, dict) else corpus
     by_id = {p["id"]: p for p in problems}
 
-    kept, missing = [], 0
+    kept, missing, unmeasured = [], 0, 0
     for r in summary.get("results") or []:
         rate, partial = r.get("pass_rate"), r.get("mean_case_fraction") or 0.0
         if rate is None:
+            continue
+        # `measured: False` means the GRADER failed on that problem, not that the policy scored
+        # zero. Treating the two alike puts a harness fault into `never_solved` and quietly drags
+        # `mean_pass_rate` down. Absent on band files written before the flag existed, so `is False`
+        # rather than a falsy check.
+        if r.get("measured") is False:
+            unmeasured += 1
             continue
         in_band = lo <= rate <= hi
         has_signal = in_band or (signal == "any" and rate < lo and partial > 0)
@@ -103,6 +110,9 @@ def load_band(band_path: Path, corpus_path: Path, lo: float, hi: float,
 
     if missing:
         print(f"  warning: {missing} band ids had no usable corpus record", flush=True)
+    if unmeasured:
+        print(f"  warning: {unmeasured} band ids were never measured (grading harness failed); "
+              f"excluded rather than counted as unsolved", flush=True)
     return kept
 
 

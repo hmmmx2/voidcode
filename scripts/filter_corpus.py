@@ -119,19 +119,38 @@ def main() -> int:
         cases = problem["tests"][: args.max_cases] if args.max_cases else problem["tests"]
         passed = 0
         partial = 0.0
+        measured = True
         try:
             verdicts = run_isolated_stdio_batch(
                 [extract_code(c.text) for c in output.outputs], cases,
                 timeout_s=args.grade_timeout)
         except RuntimeError as exc:
             harness_errors.append(f"{problem['id']}: {exc}")
-            verdicts = []
+            verdicts, measured = [], False
+
+        # A DIED batch does not raise -- run_isolated_stdio_batch returns one dead verdict per
+        # source instead, every one at case_fraction 0.0. Recording that as pass_rate 0.0 makes an
+        # UNMEASURED problem indistinguishable from an unsolvable one, and leaves harness_errors
+        # reporting 0 while the harness is failing.
+        #
+        # MEASURED on the 30B on-template pass: 3 problems in 1075. A submission whose output
+        # exhausted the grading child's 8 GiB RLIMIT_AS raised MemoryError inside normalise_output,
+        # after which the child could not even start its queue feeder thread and died silently.
+        # The sandbox did its job; the accounting did not.
+        if verdicts and all(v.outcome in ("timeout", "died") for v in verdicts):
+            harness_errors.append(
+                f"{problem['id']}: batch {verdicts[0].outcome} -- {verdicts[0].error}")
+            verdicts, measured = [], False
+
         for v in verdicts:
             passed += int(v.solved)
             partial += v.case_fraction
         rate = passed / args.group
         results.append({"id": problem["id"], "source": problem["source"],
                         "pass_rate": rate, "n_cases": problem["n_cases"], "cases_graded": len(cases),
+                        # False means "the harness failed", NOT "the policy scored zero". load_band
+                        # drops these rather than counting them as never_solved.
+                        "measured": measured,
                         "mean_case_fraction": round(partial / args.group, 4)})
         if len(results) % 25 == 0:
             in_band = sum(1 for r in results if args.lo <= r["pass_rate"] <= args.hi)
