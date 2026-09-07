@@ -852,6 +852,48 @@ strictly stronger result than any previous run could support.
 `oom_skipped: 0` across all 50 steps — the broadened OOM guard was never needed, and no step was
 abandoned. Eval `stalled` was 0/1/0.
 
+### Where a GRPO step actually spends its time ✅ — 2026-09-07
+
+Measured on the A40 with the per-phase timers, `--problems-per-step 2 --group 16 --max-new 1024
+--max-cases 0` (32 completions per step), Qwen3-Coder-30B-A3B 4-bit QLoRA r=32:
+
+| phase | seconds | share |
+|---|---|---|
+| generation (vLLM, batched) | 58 | 10% |
+| **grading** | **2** | **0.4%** |
+| **backward** | **493** | **88%** |
+| **total** | **559 s/step** | |
+
+**Backward is the wall, and nothing about the reward harness changes that.** 493 s over 32
+completions is **15.4 s each**: a policy forward, a reference forward with the adapter disabled, and
+a gradient-checkpointed backward that recomputes the forward — three to four forward-equivalents on
+a 4-bit 30B at ~2,500 tokens. bitsandbytes 4-bit is slow for training and no flag makes it fast.
+
+Cost model that follows: **step seconds ≈ 15.4 × (problems_per_step × group) + 58.** Everything else
+is rounding. So the only levers on wall-clock are the completion count per step and sequence length.
+
+#### How grading got to 0.4%, and what it cost to learn
+
+Grading was the bottleneck twice, for two different reasons, and both were found by measurement
+rather than reading:
+
+| configuration | grading behaviour |
+|---|---|
+| `--max-cases 20`, one child per group | cheap enough to hide the serialisation |
+| `--max-cases 0`, one child per group | ~1,600 executions serialised in ONE child; 8 children on a **96-core** box, GPU at 23–28%, **>3 min/step** |
+| `--max-cases 0`, chunks of 4, concurrent | **2 s/step** |
+
+Two process lessons, recorded because they cost real GPU hours:
+
+1. **Removing a cap changes what else scales.** `--max-cases 0` did not merely make grading 5×
+   heavier; it collided with a serialisation that 20 cases had made invisible.
+2. **Print the per-step cost from step 1, not step 10.** Waiting for step 10 to learn a
+   configuration was infeasible meant a ~5-hour wait to discover it. The phase split is worthless
+   if it arrives after the budget is spent.
+
+Note the I/O red herring: total bytes through the grader barely moved between 20 cases and all cases
+(0.10 GB → 0.11 GB across the band). The cost was execution *count*, not data volume.
+
 ### Band provenance: which band files were measured off-template ⚠️
 
 `scripts/filter_corpus.py` originally passed raw strings to `LLM.generate(list[str])`, which tokenizes
