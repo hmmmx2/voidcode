@@ -174,3 +174,7 @@ qwen7b-restore.log
 # raw noise. A single-level `docs/*.log` nearly let a 164 MB and a 350 MB file in,
 # so this is the recursive form.
 docs/**/*.log
+
+# Local copies of pod artefacts (adapters, tokenizers). The volume dies with the pod, so these
+# are pulled off it for safekeeping -- but weights stay out of git, same as the *.safetensors rule.
+artifacts/
