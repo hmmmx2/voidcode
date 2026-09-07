@@ -783,6 +783,75 @@ either run alone.
 > violated that. **The fix is to re-run `filter_corpus.py --model <the 30B>` and train on its own band**,
 > not to train longer or scale further.
 
+### 30B-A3B on its OWN band, G=16, in-domain holdout — 2026-09-07 ✅ mechanism, ❌ eval
+
+Record: `docs/rl/grpo-run-30b-g16.json`, completions `docs/rl/completions-30b-g16.jsonl`, band
+`data/deepcoder-band-30b.json`. 511 training problems, 40 held out in-domain, 60-problem catalogue
+eval unchanged. `GRPO_EXIT=0`, 50/50 steps.
+
+**The band was the problem, and re-measuring it against the right model proved it.**
+
+| | 1.5B band (previous run trained on this) | **30B band (this run)** |
+|---|---|---|
+| `usable` (strict 10–90%) | 184 | **551** |
+| `always_solved` | **0** | **147** |
+| `never_solved` | 1816 | 1302 |
+| `mean_pass_rate` | 0.024 | **0.2151** |
+| `in_band_fraction` | 0.092 | **0.2755** |
+
+`always_solved: 0 → 147` is the whole argument. Those 147 problems were selectable under the 1.5B
+band; for the 30B every one is a group where all G completions score identically — zero advantage,
+**dead from the top**.
+
+**The prediction held.** `dead_groups` **72% → 36%**, exactly halved, and the windowed rate shows the
+cumulative figure is dragged up by early steps:
+
+| steps | 1–10 | 11–20 | 21–30 | 31–40 | 41–50 | cumulative |
+|---|---|---|---|---|---|---|
+| **this run** | 70% | 40% | 30% | **20%** | **20%** | **18/50 = 36%** |
+| previous run | 60% | 65% | 67% | 70% | 72% | 36/50 = 72% |
+
+The G=16 prediction was ~27%. Steady state landed at **20%**, below it. The previous run's rate rose
+monotonically; this one falls. The early-step excess is dead-from-the-**top** (step 10's logged group
+was 16/16 at reward 1.000) — the residual off-template banding, recorded below.
+
+**`skipped_steps: 4` is the grading-stall fix earning its place.** Those four steps had every source
+returned as `timeout`/`died`. Under the previous code they would have been read as G identical zeros,
+i.e. **counted as dead groups** — the run would have reported 22/50 = 44% instead of 36%. The primary
+diagnostic was being inflated by 8 points by grading stalls alone.
+
+**The eval, however, is another null.**
+
+| metric | step 0 | step 25 | step 50 | Δ vs SE |
+|---|---|---|---|---|
+| `greedy_solved` (60) | 17 | 17 | **19** | +2, inside binomial noise |
+| `mean_case_fraction` | 0.4549 | 0.4517 | 0.4710 | **+0.30 SE** |
+| `holdout_greedy_solved` (40) | 24 | 22 | **22** | −2 |
+| `holdout_mean_case_fraction` | 0.5448 | 0.4967 | 0.5568 | **+0.20 SE** |
+
+Nothing clears 2 SE. The step-25 in-domain dip (−0.80 SE) reverted by step 50, so it was noise. KL
+0.0057–0.0084: the policy moved, slightly, and neither eval followed.
+
+**What the holdout bought.** The in-domain baseline is **greedy 24/40 (60%)** against the catalogue's
+**17/60 (28%)** — a distribution gap of more than 2×. Previous runs could only report "the eval did
+not move" and could not distinguish that from "learned something that does not transfer". This run
+can: in-domain did not move either. The null is now a null *in the training distribution*, which is a
+strictly stronger result than any previous run could support.
+
+**Two things to fix before the next attempt:**
+
+1. **Truncation at ~31% of training rollouts** (`truncated: 473`), stable across every eval-free
+   window (51/160, 49/160, 46/160). A completion cut at `--max-new 640` reaches the grader as
+   incomplete source and lands at the bottom of its group, so GRPO pushes away from whatever produced
+   it. If that is an artefact of the token budget rather than genuine badness, a third of the
+   gradient signal is teaching "write shorter", which is not the target. Raise `--max-new` **and**
+   re-measure the band at the same value, or the two go out of sync again.
+2. **The band is still off-template** (below). The fix is in `filter_corpus.py`; the band this run
+   used predates it.
+
+`oom_skipped: 0` across all 50 steps — the broadened OOM guard was never needed, and no step was
+abandoned. Eval `stalled` was 0/1/0.
+
 ### Band provenance: which band files were measured off-template ⚠️
 
 `scripts/filter_corpus.py` originally passed raw strings to `LLM.generate(list[str])`, which tokenizes
