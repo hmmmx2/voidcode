@@ -193,6 +193,27 @@ def generate_group(model, tok, prompt: str, group: int, max_new: int, temperatur
     return [tok.decode(o[enc["input_ids"].shape[1]:], skip_special_tokens=True) for o in out]
 
 
+@torch.no_grad()
+def generate_groups(model, tok, prompts: list[str], group: int, max_new: int, temperature: float,
+                    greedy: bool = False, engine=None, seed: int | None = None) -> list[list[str]]:
+    """`generate_group` for many prompts, in ONE engine call when vLLM is driving.
+
+    This is what makes both a batched training step and a 160-problem holdout affordable: the
+    engine can only overlap requests it is handed together, so N separate calls serialise N
+    prefills that could have shared a batch.
+
+    The HuggingFace fallback loops, because `model.generate` has no equivalent batching here and
+    that path is only used for small local runs.
+    """
+    if not prompts:
+        return []
+    if engine is not None:
+        return engine.generate_many(tok, prompts, group, max_new, temperature,
+                                    greedy=greedy, seed=seed)
+    return [generate_group(model, tok, p, group, max_new, temperature,
+                           greedy=greedy, engine=None, seed=seed) for p in prompts]
+
+
 def reward_for_group(sources: list[str], tests: list, timeout_s: float) -> list[float]:
     """One spawn per problem, not per completion.
 
@@ -296,11 +317,12 @@ def evaluate(model, tok, problems: list[dict], group: int, max_new: int,
     greedy_fractions = []
     fractions = []
     problem_means: list[float] = []
-    for i, p in enumerate(problems, 1):
-        texts = generate_group(model, tok, eval_build_prompt(p), group, max_new, temperature,
-                               engine=engine, seed=seed)
-        g_text = generate_group(model, tok, eval_build_prompt(p), 1, max_new, temperature,
-                                greedy=True, engine=engine, seed=seed)
+    eval_prompts = [eval_build_prompt(p) for p in problems]
+    sampled = generate_groups(model, tok, eval_prompts, group, max_new, temperature,
+                              engine=engine, seed=seed)
+    greedies = generate_groups(model, tok, eval_prompts, 1, max_new, temperature,
+                               greedy=True, engine=engine, seed=seed)
+    for i, (p, texts, g_text) in enumerate(zip(problems, sampled, greedies, strict=True), 1):
         sources = [eval_extract_code(t, p["entry"]) for t in texts + g_text]
         if os.environ.get("GRPO_DEBUG_EVAL") and i <= 2:
             # Dump exactly what the policy produced and what the extractor kept. An all-zero eval
@@ -412,12 +434,12 @@ def evaluate_holdout(model, tok, problems: list[dict], group: int, max_new: int,
     problem_means: list[float] = []
     greedy_fractions: list[float] = []
     cases = lambda p: p["tests"][:max_cases]  # noqa: E731 - same slice the reward uses
-    for p in problems:
-        prompt = build_prompt(p["prompt"])
-        texts = generate_group(model, tok, prompt, group, max_new, temperature,
-                               engine=engine, seed=seed)
-        g_text = generate_group(model, tok, prompt, 1, max_new, temperature,
-                                greedy=True, engine=engine, seed=seed)
+    hold_prompts = [build_prompt(p["prompt"]) for p in problems]
+    sampled = generate_groups(model, tok, hold_prompts, group, max_new, temperature,
+                              engine=engine, seed=seed)
+    greedies = generate_groups(model, tok, hold_prompts, 1, max_new, temperature,
+                               greedy=True, engine=engine, seed=seed)
+    for p, texts, g_text in zip(problems, sampled, greedies, strict=True):
         sources = [extract_code(t) for t in texts + g_text]
         try:
             # GREEDY IS GRADED IN ITS OWN CHILD, and that is the whole point of the split.
@@ -573,12 +595,20 @@ class VLLMRollouts:
             self.llm.sleep(level=1)
             self.asleep = True
 
-    def generate(self, tok, prompt: str, group: int, max_new: int, temperature: float,
-                 greedy: bool = False, seed: int | None = None) -> list[str]:
+    def generate_many(self, tok, prompts: list[str], group: int, max_new: int, temperature: float,
+                      greedy: bool = False, seed: int | None = None) -> list[list[str]]:
+        """One engine call for MANY prompts. Returns one list of completions per prompt.
+
+        Issuing prompts one at a time gives back most of what vLLM is for: continuous batching can
+        only overlap requests it has been given together. With a 160-problem holdout the
+        one-at-a-time path made 2 calls per problem per eval, and the engine spent most of that
+        time with a nearly empty batch.
+        """
         from vllm import SamplingParams
         from vllm.lora.request import LoRARequest
-        chat = tok.apply_chat_template(
-            [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True)
+        chats = [tok.apply_chat_template(
+            [{"role": "user", "content": p}], tokenize=False, add_generation_prompt=True)
+            for p in prompts]
         # SEED THE SAMPLER HERE, not with torch.manual_seed.
         #
         # evaluate() reseeds torch before every eval so two checkpoints see the same sampling draws
@@ -586,6 +616,11 @@ class VLLMRollouts:
         # noise. That reseed became INERT the moment generation moved to vLLM: sampling happens in
         # the engine's own worker process, which torch.manual_seed in this process cannot reach.
         # A per-request seed restores the property the eval was designed around.
+        #
+        # One seed for every prompt in the call is correct: vLLM derives each of the `n` children
+        # from it as `seed + index` (verified in vllm 0.11 parallel_sampling.py), so completions
+        # within a group still differ, and the same prompt at step 0 and step 50 still draws the
+        # same numbers.
         sp = SamplingParams(
             n=1 if greedy else group,
             temperature=0.0 if greedy else temperature,
@@ -595,15 +630,24 @@ class VLLMRollouts:
         )
         req = (LoRARequest(f"step{self.lora_id}", self.lora_id, self.adapter_dir)
                if self.adapter_dir else None)
-        out = self.llm.generate([chat], sp, lora_request=req, use_tqdm=False)
+        outs = self.llm.generate(chats, sp, lora_request=req, use_tqdm=False)
         # Count completions that hit the token wall rather than stopping. A completion truncated
         # mid-prose reaches the grader as unparseable source and scores 0 for every sample in the
         # group -- a dead group caused by max_new, not by the corpus. Without this counter the two
         # are indistinguishable after the fact.
-        for c in out[0].outputs:
-            if getattr(c, "finish_reason", None) == "length":
-                self.truncated += 1
-        return [c.text for c in out[0].outputs]
+        groups = []
+        for out in outs:
+            for c in out.outputs:
+                if getattr(c, "finish_reason", None) == "length":
+                    self.truncated += 1
+            groups.append([c.text for c in out.outputs])
+        return groups
+
+    def generate(self, tok, prompt: str, group: int, max_new: int, temperature: float,
+                 greedy: bool = False, seed: int | None = None) -> list[str]:
+        """Single-prompt convenience wrapper, so truncation counting lives in exactly one place."""
+        return self.generate_many(tok, [prompt], group, max_new, temperature,
+                                  greedy=greedy, seed=seed)[0]
 
 
 def main() -> int:
@@ -664,6 +708,11 @@ def main() -> int:
     ap.add_argument("--lora-dropout", type=float, default=0.05)
     ap.add_argument("--band", type=float, nargs=2, default=[0.1, 0.9])
     ap.add_argument("--group", type=int, default=8)
+    ap.add_argument("--problems-per-step", type=int, default=1,
+                    help="problems sampled per optimizer step. 1 reproduces the original "
+                         "behaviour, where every gradient came from ONE problem: the update was "
+                         "as noisy as that problem's difficulty, and a dead group wasted the "
+                         "whole step. A step is wasted only if ALL B groups are dead.")
     ap.add_argument("--steps", type=int, default=200)
     ap.add_argument("--lr", type=float, default=1e-6)
     ap.add_argument("--beta", type=float, default=0.04)
@@ -853,96 +902,117 @@ def main() -> int:
     history = [eval_all(0)]
     print(f"step 0 eval: {history[0]}", flush=True)
 
-    dead = 0
-    skipped_steps = 0
+    dead = 0            # groups whose completions all scored the same: no gradient
+    groups_seen = 0     # denominator for `dead`; equals steps only at --problems-per-step 1
+    skipped_groups = 0  # groups whose GRADING stalled -- an instrument fault, not a dead group
+    skipped_steps = 0   # steps where every group in the batch was dropped
     stats: dict = {}
     for step in range(1, args.steps + 1):
         # Reset per step. Carrying the previous step's stats forward meant a dead or abandoned
         # step printed a `kl=` belonging to a DIFFERENT step -- or to an update that was discarded.
         stats = {}
-        problem = random.choice(train)
-        prompt = build_prompt(problem["prompt"])
+        # ONE PROBLEM PER STEP WAS THE BINDING CONSTRAINT.
+        #
+        # Every gradient came from a single problem's `group` completions, so the update was as
+        # noisy as one problem's difficulty. Worse, a dead group meant the ENTIRE step produced no
+        # update: at the measured 36% dead rate, better than a third of a 50-step run did nothing
+        # at all. Batching B problems makes a step's update the average over B independent groups,
+        # and a step is wasted only if ALL B are dead -- 0.36 ** B.
+        #
+        # B=1 reproduces the previous behaviour exactly, which is why it is the default.
+        batch = random.sample(train, min(args.problems_per_step, len(train)))
+        prompts = [build_prompt(p["prompt"]) for p in batch]
 
         model.eval()
         if engine is not None:
             engine.wake()
-        texts = generate_group(model, tok, prompt, args.group, args.max_new, args.temperature,
-                               engine=engine)
-        rewards = reward_for_group([extract_code(t) for t in texts],
-                                   problem["tests"][: args.max_cases], args.grade_timeout)
-        # NOT `continue`. The eval block lives at the bottom of this loop, so skipping the rest of
-        # the iteration also skips the eval -- and with --eval-every 25 over 50 steps, one harness
-        # error on step 50 would silently delete the run's ONLY post-training measurement. The
-        # update is what has to be skipped, not the measurement.
-        usable = bool(rewards)
-        if not usable:
-            skipped_steps += 1
+        # One engine call for the whole batch: B separate calls would serialise B prefills that
+        # continuous batching could have overlapped.
+        batch_texts = generate_groups(model, tok, prompts, args.group, args.max_new,
+                                      args.temperature, engine=engine)
 
-        if usable and args.log_completions and step % args.log_every == 0:
-            # Highest and lowest scoring completion of the group. The extremes are where hacking
-            # shows: a suspiciously perfect score on a problem the group otherwise fails is the
-            # shape to look for. Appended so a crash still leaves what was collected.
+        # Grade each group and keep only those that carry a gradient. A group is dropped here for
+        # one of three DIFFERENT reasons, and they are counted separately because they call for
+        # different fixes: a stalled grader is an instrument problem, a dead group is a band
+        # problem, and G<2 is a configuration problem.
+        live: list[tuple[dict, str, list[str], list[float]]] = []
+        for prob, prompt, texts in zip(batch, prompts, batch_texts, strict=True):
+            rewards = reward_for_group([extract_code(t) for t in texts],
+                                       prob["tests"][: args.max_cases], args.grade_timeout)
+            groups_seen += 1
+            if not rewards:
+                skipped_groups += 1          # grading stalled; NOT a dead group
+                continue
+            if len(rewards) < 2:
+                dead += 1                    # group_advantages rejects G<2: no within-group baseline
+                continue
+            rt = torch.tensor(rewards, dtype=torch.float32).unsqueeze(0)
+            if dead_group_rate(rt) > 0:
+                # Zero advantages contribute nothing to the surrogate, but `grpo_loss` still adds
+                # `beta * kl` -- including a dead group would drag the policy toward the reference
+                # on the strength of a group that carried no information.
+                dead += 1
+                continue
+            live.append((prob, prompt, texts, rewards))
+
+        if args.log_completions and live and step % args.log_every == 0:
+            # Highest and lowest scoring completion of the first live group. The extremes are where
+            # hacking shows: a suspiciously perfect score on a problem the group otherwise fails is
+            # the shape to look for. Appended so a crash still leaves what was collected.
+            prob, _, texts, rewards = live[0]
             order = sorted(range(len(rewards)), key=lambda i: rewards[i])
-            sample = {"step": step, "problem_id": problem.get("id"),
+            sample = {"step": step, "problem_id": prob.get("id"),
+                      "groups_live": len(live), "groups_in_batch": len(batch),
                       "rewards": [round(x, 4) for x in rewards],
                       "worst": extract_code(texts[order[0]])[:2000],
                       "best": extract_code(texts[order[-1]])[:2000]}
             with open(args.log_completions, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(sample) + "\n")
 
-        if usable and len(rewards) < 2:
-            dead += 1                     # group_advantages rejects G<2: no within-group baseline
-            usable = False                # NOT `continue` -- the eval block is below this loop body
+        # `step_reward` is for the progress line only. It is the mean over the groups that actually
+        # produced an update, so it is NaN on a step where every group was dead -- which is honest,
+        # and better than the previous code's habit of printing a stale `r` from an earlier step.
+        step_reward = (sum(sum(rw) / len(rw) for _, _, _, rw in live) / len(live)
+                       if live else float("nan"))
+
+        # NOT `continue`. The eval block lives at the bottom of this loop, so skipping the rest of
+        # the iteration also skips the eval -- and with --eval-every 25 over 50 steps, one bad step
+        # would silently delete the run's ONLY post-training measurement.
+        usable = bool(live)
+        if not usable:
+            skipped_steps += 1
 
         if usable:
-            # Everything from here is the UPDATE. A step with no usable reward still
-            # falls through to the eval block below, which is the only reason this is a
-            # guard and not a `continue`.
-            r = torch.tensor(rewards, dtype=torch.float32).unsqueeze(0)
-
-            # Counted in BOTH directions. The filter measured always_solved=0 and a 0.024 mean pass
-            # rate, so on this corpus the dead groups will be all-fail rather than the all-pass that
-            # P3-CORPUS-SCOPE anticipated. Either way the group carries no gradient.
-            #
-            # `continue` here would skip the eval block at the bottom of the loop as well as the
-            # update. At a 33% dead rate that silently dropped a third of the scheduled evals -- the
-            # lr=2e-5 run produced a history of steps 0, 50, 150 with **100 missing**, and nothing in
-            # the output said so. The eval schedule must not depend on whether one sampled problem
-            # happened to yield a gradient.
             if engine is not None:
                 engine.sleep()      # give the card back to the trainer for forward/backward
 
-            is_dead = dead_group_rate(r) > 0
-            if is_dead:
-                dead += 1
+            model.train()
+            opt.zero_grad(set_to_none=True)
+            step_corrupted = False
 
-            # The update is skipped for a dead group, but the eval below is NOT. Skipping the update
-            # matters on its own terms: with zero advantages the clipped surrogate contributes nothing,
-            # but `grpo_loss` still adds `beta * kl`, so stepping anyway would drag the policy toward
-            # the reference on the strength of a group that carried no information.
-            if not is_dead:
-                adv = group_advantages(r)[0]  # back to (group_size,) for per-completion indexing
-                model.train()
-                opt.zero_grad(set_to_none=True)
-                step_corrupted = False
+            # Normalise over EVERY completion in the step, so the gradient magnitude does not
+            # depend on how many groups happened to survive. Dividing per-group instead would make
+            # a step with one live group hit as hard as a step with eight.
+            n = sum(len(texts) for _, _, texts, _ in live)
+            for _prob, prompt, texts, rewards in live:
+                adv = group_advantages(
+                    torch.tensor(rewards, dtype=torch.float32).unsqueeze(0))[0]
 
                 # backward() PER COMPLETION, not once over an accumulated sum. Summing the losses
-                # first keeps every completion's autograd graph alive simultaneously -- at --group 16
-                # that is 16 graphs, and it OOM'd a 46 GB A40 at 44.24 GiB. Gradients accumulate into
-                # .grad either way, so this is identical maths and frees each graph as it is used.
-                n = len(texts)
+                # first keeps every completion's autograd graph alive simultaneously -- at
+                # --group 16 that is 16 graphs, and it OOM'd a 46 GB A40 at 44.24 GiB. Gradients
+                # accumulate into .grad either way, so this is identical maths and frees each
+                # graph as it is used. With B groups the peak is unchanged; only the count grows.
                 for i, text in enumerate(texts):
                     # OOM GUARD.
                     #
-                    # A single long completion can exhaust the trainer's share of a shared card, and
-                    # losing the whole run to one bad rollout is unacceptable when the eval before it
-                    # cost 25 minutes. On OOM: drop this completion's graph, return its blocks to the
-                    # driver, and carry on with the rest of the group.
+                    # A single long completion can exhaust the trainer's share of a shared card,
+                    # and losing the whole run to one bad rollout is unacceptable when the eval
+                    # before it cost 25 minutes.
                     #
-                    # Skips are COUNTED and reported, never swallowed. A run that quietly dropped half
-                    # its completions would still produce a smooth-looking curve computed from a
-                    # different batch size than the one recorded, which is a silent-corruption bug of
-                    # exactly the kind this project keeps finding.
+                    # Skips are COUNTED and reported, never swallowed. A run that quietly dropped
+                    # half its completions would still produce a smooth-looking curve computed
+                    # from a different batch size than the one recorded.
                     try:
                         logp = sequence_logp(model, tok, prompt, text)
                         with torch.no_grad():
@@ -952,31 +1022,29 @@ def main() -> int:
                                 # Adapter off == the base policy == the reference, no extra memory.
                                 with model.disable_adapter():
                                     ref_logp = sequence_logp(model, tok, prompt, text)
-                        old_logp = logp.detach()  # one update per rollout: the sampling policy IS old
-                        loss, stats = grpo_loss(logp, old_logp, ref_logp,
-                                                adv[i].to(logp.device).expand_as(logp), beta=args.beta)
+                        old_logp = logp.detach()  # one update per rollout: sampling policy IS old
+                        loss, stats = grpo_loss(
+                            logp, old_logp, ref_logp,
+                            adv[i].to(logp.device).expand_as(logp), beta=args.beta)
                         (loss / n).backward()
                     except (torch.OutOfMemoryError, RuntimeError) as exc:
-                        # RuntimeError is here because not every allocation failure on this path is a
-                        # torch.OutOfMemoryError: bitsandbytes' 4-bit matmul and cuBLAS surface theirs
-                        # as a plain RuntimeError ("CUBLAS_STATUS_ALLOC_FAILED", "CUDA error: out of
-                        # memory"). Catching only the typed one meant the most likely way this 4-bit
-                        # 30B run dies was also the one way the guard could not see. Anything that is
-                        # NOT an allocation failure is re-raised -- swallowing real bugs here would
-                        # turn a crash into 50 silently abandoned steps.
+                        # RuntimeError is here because not every allocation failure on this path is
+                        # a torch.OutOfMemoryError: bitsandbytes' 4-bit matmul and cuBLAS surface
+                        # theirs as a plain RuntimeError ("CUBLAS_STATUS_ALLOC_FAILED", "CUDA
+                        # error: out of memory"). Catching only the typed one meant the most likely
+                        # way this 4-bit 30B run dies was also the one way the guard could not see.
+                        # Anything that is NOT an allocation failure is re-raised.
                         msg = str(exc).lower()
                         if not isinstance(exc, torch.OutOfMemoryError) and not any(
                                 s in msg for s in ("out of memory", "alloc_failed", "cuda error")):
                             raise
                         # ABANDON THE STEP, do not salvage it.
                         #
-                        # The first version of this handler called opt.zero_grad() and continued, which
-                        # is wrong twice over: it throws away the gradient already accumulated from the
-                        # group's earlier completions, and then opt.step() fires on whatever came after
-                        # the OOM. Group-relative advantages sum to zero ACROSS THE GROUP by
-                        # construction, so a partial subset carries a non-zero mean -- the update would
-                        # push the policy in a direction no completion voted for, and the run would
-                        # still look healthy in the logs.
+                        # Group-relative advantages sum to zero ACROSS THE GROUP by construction,
+                        # so a partial subset carries a non-zero mean -- the update would push the
+                        # policy in a direction no completion voted for, and the run would still
+                        # look healthy in the logs. With B groups this is MORE important, not less:
+                        # a truncated batch is biased toward whichever groups came first.
                         oom_skipped += 1
                         step_corrupted = True
                         print(f"  OOM on completion {i} of step {step} ({len(text)} chars); "
@@ -985,25 +1053,27 @@ def main() -> int:
                         gc.collect()
                         torch.cuda.empty_cache()
                         break
-
                 if step_corrupted:
-                    # A partial group is not a smaller group; it is a biased one.
-                    opt.zero_grad(set_to_none=True)
-                else:
-                    torch.nn.utils.clip_grad_norm_(params, 1.0)
-                    opt.step()
-                    opt.zero_grad(set_to_none=True)
+                    break
 
-                if engine is not None:
-                    # The policy just moved, so the engine's adapter is stale. Republishing under a new
-                    # id is what keeps the next step's rollouts on-policy -- vLLM caches by id, so
-                    # reusing one would serve the old adapter with no error to notice.
-                    engine.publish(model)
+            if step_corrupted:
+                # A partial group is not a smaller group; it is a biased one.
+                opt.zero_grad(set_to_none=True)
+            else:
+                torch.nn.utils.clip_grad_norm_(params, 1.0)
+                opt.step()
+                opt.zero_grad(set_to_none=True)
+
+            if engine is not None:
+                # The policy just moved, so the engine's adapter is stale. Republishing under a new
+                # id is what keeps the next step's rollouts on-policy -- vLLM caches by id, so
+                # reusing one would serve the old adapter with no error to notice.
+                engine.publish(model)
 
         if step % 10 == 0:
             kl = stats.get("kl", float("nan"))
-            print(f"step {step}  reward={r.mean():.3f}  dead_so_far={dead}  "
-                  f"oom_skipped={oom_skipped}  "
+            print(f"step {step}  reward={step_reward:.3f}  live={len(live)}/{len(batch)}  dead_so_far={dead}  "
+                  f"oom_skipped={oom_skipped}  skipped_groups={skipped_groups}  "
                   f"truncated={engine.truncated if engine else 0}  kl={kl:.4f}",
                   flush=True)
 
@@ -1020,6 +1090,8 @@ def main() -> int:
                             "holdout": len(holdout), "band": args.corpus,
                             "dead_groups": dead, "oom_skipped": oom_skipped,
                             "skipped_steps": skipped_steps,
+                            "groups_seen": groups_seen, "skipped_groups": skipped_groups,
+                            "problems_per_step": args.problems_per_step,
                             "truncated": engine.truncated if engine else 0,
                             "history": history}, indent=2) + "\n",
                 encoding="utf-8")
@@ -1038,6 +1110,8 @@ def main() -> int:
                     "holdout": len(holdout), "band": args.corpus,
                     "dead_groups": dead, "oom_skipped": oom_skipped,
                     "skipped_steps": skipped_steps,
+                    "groups_seen": groups_seen, "skipped_groups": skipped_groups,
+                    "problems_per_step": args.problems_per_step,
                     "truncated": engine.truncated if engine else 0,
                     "history": history}, indent=2) + "\n",
         encoding="utf-8")

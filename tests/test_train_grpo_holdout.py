@@ -92,6 +92,8 @@ def test_evaluate_holdout_grades_through_the_stdio_path_the_reward_uses():
         "GOOD = '```python\\na, b = map(int, input().split())\\nprint(a + b)\\n```'\n"
         "BAD  = '```python\\nprint(0)\\n```'\n"
         "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [self.generate(tok, p, group, max_new, temperature, greedy, seed) for p in prompts]\n"
         "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
         "        return [GOOD] if greedy else [GOOD, BAD][:group]\n"
         "problems = [{'id': 'sum', 'prompt': 'add two numbers',\n"
@@ -116,6 +118,8 @@ def test_evaluate_holdout_reports_zero_rather_than_crashing_on_a_dead_group():
         "from scripts.train_grpo import evaluate_holdout\n"
         "BAD = '```python\\nprint(0)\\n```'\n"
         "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [self.generate(tok, p, group, max_new, temperature, greedy, seed) for p in prompts]\n"
         "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
         "        return [BAD] * (1 if greedy else group)\n"
         "problems = [{'id': 'sum', 'prompt': 'add two numbers',\n"
@@ -213,6 +217,8 @@ def test_holdout_greedy_survives_a_sampled_sibling_that_hangs():
         f"LOOP = {LOOP!r}\n"
         f"GOOD = {GOOD_SUM!r}\n"
         "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [self.generate(tok, p, group, max_new, temperature, greedy, seed) for p in prompts]\n"
         "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
         "        # greedy is CORRECT; one sampled sibling never terminates\n"
         "        return [GOOD] if greedy else [GOOD, LOOP][:group]\n"
@@ -236,6 +242,8 @@ def test_holdout_se_is_clustered_over_problems_not_completions():
         f"ALL = {GOOD_SUM!r}\n"
         f"NONE = {ZERO!r}\n"
         "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [self.generate(tok, p, group, max_new, temperature, greedy, seed) for p in prompts]\n"
         "    def generate(self, tok, prompt, group, max_new, temperature, greedy=False, seed=None):\n"
         "        # problem A solved by every completion, problem B by none\n"
         "        src = ALL if 'AAA' in prompt else NONE\n"
@@ -252,3 +260,60 @@ def test_holdout_se_is_clustered_over_problems_not_completions():
     assert result["holdout_case_fraction_se"] == pytest.approx(0.5, abs=0.01), (
         f"SE {result['holdout_case_fraction_se']} looks per-completion, not clustered")
     assert result["holdout_graded"] == 2
+
+
+# ── batched generation must preserve prompt order ──────────────────────────────────────────────
+#
+# evaluate/evaluate_holdout and the batched training step all do
+# `zip(problems, sampled, greedies, strict=True)`. `strict=True` catches a LENGTH mismatch but says
+# nothing about ORDER, and a reordering would grade every group against a different problem's
+# tests -- producing plausible numbers that are entirely wrong. vLLM documents input order, so this
+# pins the contract rather than the implementation.
+
+
+def test_generate_groups_returns_one_group_per_prompt_in_prompt_order():
+    result = run_in_subprocess(
+        "from scripts.train_grpo import generate_groups\n"
+        "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        # content derived from the prompt, so a reordering is detectable\n"
+        "        return [[f'{p}#{i}' for i in range(group)] for p in prompts]\n"
+        "prompts = ['alpha', 'beta', 'gamma']\n"
+        "out = generate_groups(None, None, prompts, group=2, max_new=8, temperature=0.8,\n"
+        "                      engine=FakeEngine())\n"
+        "print(json.dumps({'n_groups': len(out), 'sizes': [len(g) for g in out], 'flat': out}))\n"
+    )
+    assert result["n_groups"] == 3, "one group per prompt"
+    assert result["sizes"] == [2, 2, 2]
+    assert result["flat"] == [["alpha#0", "alpha#1"], ["beta#0", "beta#1"], ["gamma#0", "gamma#1"]], (
+        "batched generation reordered its outputs -- every group would be graded against the "
+        "wrong problem's tests")
+
+
+def test_generate_groups_is_one_engine_call_not_one_per_prompt():
+    """The whole point: N prompts must reach the engine together so it can batch them."""
+    result = run_in_subprocess(
+        "from scripts.train_grpo import generate_groups\n"
+        "class CountingEngine:\n"
+        "    calls = 0\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        CountingEngine.calls += 1\n"
+        "        return [['x'] * group for _ in prompts]\n"
+        "e = CountingEngine()\n"
+        "generate_groups(None, None, ['a','b','c','d'], group=4, max_new=8, temperature=0.8, engine=e)\n"
+        "print(json.dumps({'calls': CountingEngine.calls}))\n"
+    )
+    assert result["calls"] == 1, f"{result['calls']} engine calls for 4 prompts; batching lost"
+
+
+def test_generate_groups_handles_an_empty_batch():
+    """A step whose batch is empty must not reach the engine at all."""
+    result = run_in_subprocess(
+        "from scripts.train_grpo import generate_groups\n"
+        "class Boom:\n"
+        "    def generate_many(self, *a, **k):\n"
+        "        raise AssertionError('engine called with no prompts')\n"
+        "out = generate_groups(None, None, [], group=4, max_new=8, temperature=0.8, engine=Boom())\n"
+        "print(json.dumps({'out': out}))\n"
+    )
+    assert result["out"] == []
