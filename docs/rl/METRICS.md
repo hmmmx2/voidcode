@@ -751,6 +751,14 @@ rollouts served by vLLM 0.11 from the AWQ build with the adapter hot-reloaded ea
 
 `dead_groups: 36/50` (**72%**). KL 0.0090 / 0.0054 / 0.0056 / 0.0771 at steps 10/20/30/40.
 
+> ⚠️ **Correction, 2026-09-09.** The phrase "the metric that cannot be sampling noise" below is
+> WRONG, and it is left in place with this note rather than quietly edited. Measured directly on a
+> frozen policy (§ *The noise floor*, above): `holdout_greedy_solved` ranged **59–68 across three
+> identical evals**, sd 4.5 of 120. Greedy decoding is deterministic in principle but not in this
+> harness, because batched generation makes a request's numerics depend on what shares its batch.
+> The conclusion *here* is unaffected — this run's greedy was flat, and flat is flat either way —
+> but the stated reason for trusting it does not hold.
+
 **No measurable change.** `mean_case_fraction` moved **+0.0115 against SE 0.0574 — 0.2 SE**. `greedy_solved`,
 the metric that cannot be sampling noise, is **flat at 18/60**. `solved_any` +2 is inside binomial noise at
 n=60. KL reaching 0.0771 shows the policy demonstrably moved: **policy moved, eval did not** — the same
@@ -852,52 +860,86 @@ strictly stronger result than any previous run could support.
 `oom_skipped: 0` across all 50 steps — the broadened OOM guard was never needed, and no step was
 abandoned. Eval `stalled` was 0/1/0.
 
-### The uncapped run: dead groups solved, first non-flat eval — IN PROGRESS, 2026-09-08
+### The uncapped run: an in-domain gain that does not transfer ✅ — 2026-09-08/09
 
-`docs/rl/grpo-run-30b-uncapped.json`. On-template band, `--problems-per-step 2 --group 16
---max-new 1024 --max-cases 0 --lora-r 32 --holdout 120`, 175 steps planned.
+Records: `docs/rl/grpo-run-30b-uncapped.json`, `docs/rl/greedy-noise-floor.json`,
+`docs/rl/completions-30b-uncapped.jsonl`. Policy at `artifacts/policy-30b-uncapped/`.
+On-template band, `--problems-per-step 2 --group 16 --max-new 1024 --max-cases 0 --lora-r 32
+--holdout 120`, 175 steps, `GRPO_EXIT=0`.
 
-**Dead groups: solved.** The series across every 30B run, and the one number this whole effort was
-chasing:
+#### 1. Dead groups: solved
 
 | run | band | config | dead groups |
 |---|---|---|---|
 | 30B | 1.5B-calibrated | G=4, B=1 | **72%** |
 | 30B | 30B off-template | G=16, B=1 | **36%** |
-| **30B** | **30B on-template** | **G=16, B=2** | **9%** |
+| **30B** | **30B on-template** | **G=16, B=2** | **45/350 = 12.9%** |
 
-A **8× reduction**, and the cause is understood rather than guessed: the on-template band excludes
-the 285 problems the policy solves on every sample, which off-template measurement had mislabelled
-as 10–90%.
+The cause was identified and then confirmed by measurement rather than assumed: the on-template band
+excludes the 285 problems the policy solves on *every* sample, which off-template measurement had
+mislabelled as 10-90%. Of the previous run's 511 training problems, ~92 (18%) were dead-from-the-top
+before a gradient was ever computed.
 
-**The eval, through step 150 — a consistent in-domain gain that does not transfer:**
+#### 2. The eval, all seven points
 
-| metric | 0 | 25 | 50 | 75 | 100 | 125 | 150 |
-|---|---|---|---|---|---|---|---|
-| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | 0.6196 | 0.5982 | 0.6343 | **0.6606** |
-| *vs baseline* | -- | -0.44 SE | +1.94 | +1.74 | +0.93 | +2.14 | **+2.90 SE** |
-| holdout `greedy_solved` | 55 | 50 | 45 | 52 | 66 | 61 | **68** |
-| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | 0.5186 | 0.5828 | 0.6640 | 0.6353 | **0.6968** |
-| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | 0.4220 | 0.4438 | **0.4181** |
-| KL | -- | -- | 0.0199 | 0.0135 | 0.0258 | 0.1382 (peak) | 0.0402 |
+| metric | 0 | 25 | 50 | 75 | 100 | 125 | 150 | 175 |
+|---|---|---|---|---|---|---|---|---|
+| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | 0.6196 | 0.5982 | 0.6343 | 0.6606 | **0.6385** |
+| *vs baseline* | -- | -0.44 | +1.94 | +1.74 | +0.93 | +2.14 | +2.90 | **+2.19 SE** |
+| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | 0.4220 | 0.4438 | 0.4181 | **0.4138** |
+| *vs baseline* | -- | +0.10 | -0.39 | -0.26 | -0.50 | -0.08 | -0.60 | **-0.67 SE** |
 
-The last four evals are **+1.74, +0.93, +2.14, +2.90** -- all positive, trending up, and the two
-holdout metrics that contradicted each other at step 100 now agree and are both at run highs.
-Greedy's earlier dip (55 -> 50 -> 45) reads as the anomaly rather than the signal.
+**In-domain: +0.0705, six of seven evals above baseline. Transfer: none, in this or any run.**
 
-**THE CATALOGUE HAS NEVER MOVED, IN ANY RUN.** -0.60 SE here; flat in every 30B run before it. The
-60 authored problems are the readout this project exists to improve, and RL on DeepCoder does not
-touch them. That is the headline finding, and it is a negative one.
+#### 3. The noise floor — the measurement that decided the interpretation
 
-Three caveats kept attached to the positive number:
+Three identical evals with the policy **frozen**. Whatever moves here is the instrument, not learning.
 
-1. **Six looks at the same 2 SE test.** No multiple-comparisons correction was pre-registered, and
-   inventing one after the fact -- in either direction -- would be fitting the analysis to the data.
-2. **The noise floor is unmeasured** until `scripts/greedy_noise.py` runs. `greedy_solved` swung
-   +/-10 mid-run on a slowly changing policy; if identical-policy repeats spread ~0.05 on the
-   holdout mean, +0.093 is about two floors -- suggestive, not clean.
-3. **Four variables changed at once** entering this run (all cases, r=32, B=2, max-new 1024), so
-   even a confirmed gain cannot be attributed to any one of them without an ablation.
+| metric | repeat 1 | 2 | 3 | spread | sd |
+|---|---|---|---|---|---|
+| `holdout_mean_case_fraction` | 0.6575 | 0.6334 | 0.6386 | 0.0241 | **0.0127** |
+| `holdout_greedy_solved` | 68 | 59 | 63 | **9** | **4.51** |
+| `holdout_greedy_case_fraction` | 0.6981 | 0.6314 | 0.6599 | 0.0667 | 0.0335 |
+
+**`greedy_solved` IS NOT DETERMINISTIC HERE, and this ledger previously claimed it was.** On an
+unchanged policy it ranged 59-68. Its documented justification -- "movement here cannot be sampling
+noise" -- is false once the eval generates in batches: vLLM's continuous batching changes a
+request's numerics with batch composition, and the eval issues 4 sampled completions alongside the
+greedy one. Every greedy-based number in this run is inside the floor: the +11 at step 100, and the
+final +5, are 2.4 and 1.1 sd respectively. **They are discarded.**
+
+**The mean-based result survives and the SE test was conservative.** Instrument sd 0.0127; propagated
+over a baseline-vs-final difference ~0.018 against an observed +0.0705, i.e. **~3.9x the instrument
+noise**. The per-eval SE used for the 2 SE test (0.0319) is *larger* than the instrument noise, so
+that test already absorbed it.
+
+*Confound, stated against the result:* the floor was measured at `--gpu-util 0.85` with no trainer
+resident, while the run used 0.40 alongside a live trainer. Different scheduling and contention could
+make the in-run floor higher, so treat 3.9x as an upper estimate.
+
+#### 4. Run health
+
+`oom_skipped: 0` across 175 steps. `short_groups: 0`. `steps_without_update: 7/175`.
+`skipped_groups: 28` -- grading stalls, ~8% of training signal discarded, the standing cost of
+`--max-cases 0`. `truncated: 2475` completions hit the 1024-token wall.
+
+#### 5. What this does and does not establish
+
+**Does:** GRPO on a correctly calibrated band produces a measurable in-domain improvement --
++0.0705 case fraction on 120 held-out DeepCoder problems, ~3.9x the eval's own noise, sustained
+across six of seven evals while KL rose from 0 to a 0.138 peak.
+
+**Does not:** any transfer. The 60 authored problems moved -0.67 SE here and have never moved in any
+run. **This is the project's headline finding and it is negative.** The in-domain gain is the
+control that makes it interpretable: earlier runs could not distinguish "learned nothing" from
+"learned something that does not transfer". This one can, and it is the latter.
+
+**Cannot attribute.** Four variables changed at once entering this run (all cases, r=32, B=2,
+max-new 1024). A confirmed gain says nothing about which caused it; that needs an ablation.
+
+**Seven looks at one 2 SE test**, with no pre-registered multiple-comparisons correction. The
+per-eval fluctuation is ~1 SE, so no single reading is meaningful on its own -- the sustained
+elevation is the evidence, not the maximum.
 
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 

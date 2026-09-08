@@ -1,0 +1,138 @@
+{
+  "repeats": 3,
+  "adapter": "/workspace/policy-30b-uncapped",
+  "rows": [
+    {
+      "repeat": 1,
+      "problems": 60,
+      "graded": 60,
+      "greedy_graded": 60,
+      "stalled": 0,
+      "solved_any": 21,
+      "solve_rate": 0.35,
+      "mean_case_fraction": 0.4296,
+      "case_fraction_se": 0.0278,
+      "case_fraction_se_problems": 0.052,
+      "greedy_solved": 18,
+      "greedy_case_fraction": 0.4514,
+      "holdout_problems": 120,
+      "holdout_graded": 113,
+      "holdout_greedy_graded": 119,
+      "holdout_stalled": 8,
+      "holdout_solved_any": 86,
+      "holdout_mean_case_fraction": 0.6575,
+      "holdout_case_fraction_se": 0.0315,
+      "holdout_greedy_solved": 68,
+      "holdout_greedy_case_fraction": 0.6981
+    },
+    {
+      "repeat": 2,
+      "problems": 60,
+      "graded": 60,
+      "greedy_graded": 60,
+      "stalled": 0,
+      "solved_any": 19,
+      "solve_rate": 0.3167,
+      "mean_case_fraction": 0.4037,
+      "case_fraction_se": 0.0268,
+      "case_fraction_se_problems": 0.0495,
+      "greedy_solved": 19,
+      "greedy_case_fraction": 0.4397,
+      "holdout_problems": 120,
+      "holdout_graded": 111,
+      "holdout_greedy_graded": 116,
+      "holdout_stalled": 13,
+      "holdout_solved_any": 83,
+      "holdout_mean_case_fraction": 0.6334,
+      "holdout_case_fraction_se": 0.0327,
+      "holdout_greedy_solved": 59,
+      "holdout_greedy_case_fraction": 0.6314
+    },
+    {
+      "repeat": 3,
+      "problems": 60,
+      "graded": 60,
+      "greedy_graded": 60,
+      "stalled": 0,
+      "solved_any": 21,
+      "solve_rate": 0.35,
+      "mean_case_fraction": 0.4305,
+      "case_fraction_se": 0.0271,
+      "case_fraction_se_problems": 0.0503,
+      "greedy_solved": 19,
+      "greedy_case_fraction": 0.4739,
+      "holdout_problems": 120,
+      "holdout_graded": 112,
+      "holdout_greedy_graded": 118,
+      "holdout_stalled": 10,
+      "holdout_solved_any": 83,
+      "holdout_mean_case_fraction": 0.6386,
+      "holdout_case_fraction_se": 0.0322,
+      "holdout_greedy_solved": 63,
+      "holdout_greedy_case_fraction": 0.6599
+    }
+  ],
+  "greedy_solved": {
+    "values": [
+      18,
+      19,
+      19
+    ],
+    "spread": 1,
+    "sd": 0.5774
+  },
+  "greedy_case_fraction": {
+    "values": [
+      0.4514,
+      0.4397,
+      0.4739
+    ],
+    "spread": 0.0342,
+    "sd": 0.0174
+  },
+  "mean_case_fraction": {
+    "values": [
+      0.4296,
+      0.4037,
+      0.4305
+    ],
+    "spread": 0.0268,
+    "sd": 0.0152
+  },
+  "holdout_greedy_solved": {
+    "values": [
+      68,
+      59,
+      63
+    ],
+    "spread": 9,
+    "sd": 4.5092
+  },
+  "holdout_greedy_case_fraction": {
+    "values": [
+      0.6981,
+      0.6314,
+      0.6599
+    ],
+    "spread": 0.0667,
+    "sd": 0.0335
+  },
+  "holdout_mean_case_fraction": {
+    "values": [
+      0.6575,
+      0.6334,
+      0.6386
+    ],
+    "spread": 0.0241,
+    "sd": 0.0127
+  },
+  "holdout_solved_any": {
+    "values": [
+      86,
+      83,
+      83
+    ],
+    "spread": 3,
+    "sd": 1.7321
+  }
+}
