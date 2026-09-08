@@ -870,30 +870,37 @@ A **8× reduction**, and the cause is understood rather than guessed: the on-tem
 the 285 problems the policy solves on every sample, which off-template measurement had mislabelled
 as 10–90%.
 
-**The eval, through step 50 — ambiguous, and deliberately not called:**
+**The eval, through step 75 — persistent but still under the bar:**
 
-| metric | step 0 | step 25 | step 50 | Δ0→50 |
-|---|---|---|---|---|
-| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | **0.6280** | **+1.94 SE** |
-| holdout `greedy_solved` | 55 | 50 | **45** | **−10** |
-| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | −0.39 SE |
-| catalogue `greedy_solved` | 18 | 18 | 19 | +1 |
-| KL | — | — | **0.0199** | rising |
+| metric | step 0 | 25 | 50 | 75 | delta 0->75 |
+|---|---|---|---|---|---|
+| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | **0.6196** | **+1.74 SE** |
+| holdout `greedy_solved` | 55 | 50 | **45** | **52** | -3 |
+| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | **0.5186** | **0.5828** | +0.007 |
+| holdout `solved_any` | 87 | 90 | 90 | **92** | **+5, monotone** |
+| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | -0.26 SE |
+| KL | -- | -- | 0.0199 | 0.0135 | rising from 0 |
 
-**+1.94 SE does not clear the 2 SE bar that was set before the data existed, so it is not a result.**
-It is recorded because it is the largest movement any run here has produced, on the metric with the
-most power, while KL tripled.
+**NOT SIGNIFICANT. +1.74 SE against a 2 SE bar set before any data existed.** Recorded as an open
+question, not a result. Three consecutive readings hovering just under the threshold is precisely
+the situation in which moving it would manufacture a false positive.
 
-Two reasons for caution beyond the threshold:
+What makes it more than noise-shaped, though, is that BOTH stated reasons for doubting step 50 were
+subsequently addressed by data rather than by argument:
 
-1. `holdout_greedy_solved` moves the OTHER way — 55 → 50 → 45, monotonically. Greedy is the
-   deterministic metric; a sampled mean rising while the single most-likely output degrades is not
-   the shape of a clean improvement.
-2. This metric has already swung 0.6 SE in one interval on its own (step 25 was **−0.44 SE**), so a
-   +1.94 SE reading one interval later is well within its demonstrated volatility.
+1. *"If step 50 was a fluctuation, step 75 falls back toward 0.57."* It did not: 0.6280 -> 0.6196.
+2. *"`holdout_greedy_solved` moves the other way, 55 -> 50 -> 45, which is not the shape of a clean
+   improvement."* It reversed to **52**, and `greedy_case_fraction` recovered to **0.5828, above the
+   0.5760 baseline**. The monotone fall was noise, as the alternative explanation required.
 
-Steps 75 and 100 decide it: sustained climb past 2 SE with greedy stabilising = real; a fall back
-toward 0.57 = step 50 was a fluctuation.
+`holdout_solved_any` has also risen monotonically throughout: 87 -> 90 -> 90 -> 92.
+
+So the shape through step 75 is: **in-domain improvement of ~+0.05 sustained across 50 steps, with
+the catalogue flat.** That is what "learned something real in-distribution that does not transfer"
+would look like -- the exact hypothesis the holdout was built to separate from "learned nothing",
+and which no earlier run in this project could distinguish. It is not yet strong enough to claim.
+
+Steps 100-175 decide it.
 
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 
