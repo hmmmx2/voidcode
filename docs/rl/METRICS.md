@@ -852,6 +852,49 @@ strictly stronger result than any previous run could support.
 `oom_skipped: 0` across all 50 steps — the broadened OOM guard was never needed, and no step was
 abandoned. Eval `stalled` was 0/1/0.
 
+### The uncapped run: dead groups solved, first non-flat eval — IN PROGRESS, 2026-09-08
+
+`docs/rl/grpo-run-30b-uncapped.json`. On-template band, `--problems-per-step 2 --group 16
+--max-new 1024 --max-cases 0 --lora-r 32 --holdout 120`, 175 steps planned.
+
+**Dead groups: solved.** The series across every 30B run, and the one number this whole effort was
+chasing:
+
+| run | band | config | dead groups |
+|---|---|---|---|
+| 30B | 1.5B-calibrated | G=4, B=1 | **72%** |
+| 30B | 30B off-template | G=16, B=1 | **36%** |
+| **30B** | **30B on-template** | **G=16, B=2** | **9%** |
+
+A **8× reduction**, and the cause is understood rather than guessed: the on-template band excludes
+the 285 problems the policy solves on every sample, which off-template measurement had mislabelled
+as 10–90%.
+
+**The eval, through step 50 — ambiguous, and deliberately not called:**
+
+| metric | step 0 | step 25 | step 50 | Δ0→50 |
+|---|---|---|---|---|
+| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | **0.6280** | **+1.94 SE** |
+| holdout `greedy_solved` | 55 | 50 | **45** | **−10** |
+| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | −0.39 SE |
+| catalogue `greedy_solved` | 18 | 18 | 19 | +1 |
+| KL | — | — | **0.0199** | rising |
+
+**+1.94 SE does not clear the 2 SE bar that was set before the data existed, so it is not a result.**
+It is recorded because it is the largest movement any run here has produced, on the metric with the
+most power, while KL tripled.
+
+Two reasons for caution beyond the threshold:
+
+1. `holdout_greedy_solved` moves the OTHER way — 55 → 50 → 45, monotonically. Greedy is the
+   deterministic metric; a sampled mean rising while the single most-likely output degrades is not
+   the shape of a clean improvement.
+2. This metric has already swung 0.6 SE in one interval on its own (step 25 was **−0.44 SE**), so a
+   +1.94 SE reading one interval later is well within its demonstrated volatility.
+
+Steps 75 and 100 decide it: sustained climb past 2 SE with greedy stabilising = real; a fall back
+toward 0.57 = step 50 was a fluctuation.
+
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 
 Measured on the A40 with the per-phase timers, `--problems-per-step 2 --group 16 --max-new 1024
