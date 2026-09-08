@@ -870,37 +870,35 @@ A **8× reduction**, and the cause is understood rather than guessed: the on-tem
 the 285 problems the policy solves on every sample, which off-template measurement had mislabelled
 as 10–90%.
 
-**The eval, through step 75 — persistent but still under the bar:**
+**The eval, through step 100 — the two metrics diverge:**
 
-| metric | step 0 | 25 | 50 | 75 | delta 0->75 |
+| metric | 0 | 25 | 50 | 75 | 100 |
 |---|---|---|---|---|---|
-| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | **0.6196** | **+1.74 SE** |
-| holdout `greedy_solved` | 55 | 50 | **45** | **52** | -3 |
-| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | **0.5186** | **0.5828** | +0.007 |
-| holdout `solved_any` | 87 | 90 | 90 | **92** | **+5, monotone** |
-| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | -0.26 SE |
-| KL | -- | -- | 0.0199 | 0.0135 | rising from 0 |
+| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | 0.6196 | **0.5982** |
+| *vs baseline* | -- | -0.44 SE | **+1.94 SE** | +1.74 SE | **+0.93 SE** |
+| holdout `greedy_solved` | 55 | 50 | 45 | 52 | **66** |
+| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | 0.5186 | 0.5828 | **0.6640** |
+| holdout `solved_any` | 87 | 90 | 90 | 92 | **83** |
+| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | 0.4220 |
+| KL | -- | -- | 0.0199 | 0.0135 | 0.0258 (peak 0.0415 @ step 80) |
 
-**NOT SIGNIFICANT. +1.74 SE against a 2 SE bar set before any data existed.** Recorded as an open
-question, not a result. Three consecutive readings hovering just under the threshold is precisely
-the situation in which moving it would manufacture a false positive.
+**On the PRE-REGISTERED metric the evidence WEAKENED: +1.94 -> +1.74 -> +0.93 SE.** Whatever step 50
+was, by step 100 it is half-way back to baseline. Recorded prominently because a run that reports
+only its best interim reading is how a null becomes a false positive.
 
-What makes it more than noise-shaped, though, is that BOTH stated reasons for doubting step 50 were
-subsequently addressed by data rather than by argument:
+Greedy moved the other way: **+11 of 120 solved, `greedy_case_fraction` +0.088**, while `solved_any`
+(any of 4 samples) FELL to 83. Greedy up with sampled mean and union both down is the signature of a
+policy **sharpening around its best mode** -- consistent with KL tripling after step 80.
 
-1. *"If step 50 was a fluctuation, step 75 falls back toward 0.57."* It did not: 0.6280 -> 0.6196.
-2. *"`holdout_greedy_solved` moves the other way, 55 -> 50 -> 45, which is not the shape of a clean
-   improvement."* It reversed to **52**, and `greedy_case_fraction` recovered to **0.5828, above the
-   0.5760 baseline**. The monotone fall was noise, as the alternative explanation required.
+**The caveat, applied symmetrically.** This ledger earlier called greedy "the metric that cannot be
+sampling noise" and used its 55 -> 50 -> 45 decline as grounds for doubt. Its full trajectory is
+55, 50, 45, 52, 66 -- swings of +/-10 in BOTH directions. So greedy is not noise-free here, and the
+reason is known: batching the eval made greedy decoding non-bitwise-reproducible, because vLLM's
+continuous batching changes numerics with batch composition. A -10 swing treated as noise cannot
+have a +11 swing treated as proof.
 
-`holdout_solved_any` has also risen monotonically throughout: 87 -> 90 -> 90 -> 92.
-
-So the shape through step 75 is: **in-domain improvement of ~+0.05 sustained across 50 steps, with
-the catalogue flat.** That is what "learned something real in-distribution that does not transfer"
-would look like -- the exact hypothesis the holdout was built to separate from "learned nothing",
-and which no earlier run in this project could distinguish. It is not yet strong enough to claim.
-
-Steps 100-175 decide it.
+Net through step 100: the pre-registered test says no; the secondary evidence is suggestive and
+self-undermined. Steps 125-175 are the remaining evidence.
 
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 
