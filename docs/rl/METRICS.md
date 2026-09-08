@@ -870,35 +870,34 @@ A **8× reduction**, and the cause is understood rather than guessed: the on-tem
 the 285 problems the policy solves on every sample, which off-template measurement had mislabelled
 as 10–90%.
 
-**The eval, through step 100 — the two metrics diverge:**
+**The eval, through step 150 — a consistent in-domain gain that does not transfer:**
 
-| metric | 0 | 25 | 50 | 75 | 100 |
-|---|---|---|---|---|---|
-| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | 0.6196 | **0.5982** |
-| *vs baseline* | -- | -0.44 SE | **+1.94 SE** | +1.74 SE | **+0.93 SE** |
-| holdout `greedy_solved` | 55 | 50 | 45 | 52 | **66** |
-| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | 0.5186 | 0.5828 | **0.6640** |
-| holdout `solved_any` | 87 | 90 | 90 | 92 | **83** |
-| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | 0.4220 |
-| KL | -- | -- | 0.0199 | 0.0135 | 0.0258 (peak 0.0415 @ step 80) |
+| metric | 0 | 25 | 50 | 75 | 100 | 125 | 150 |
+|---|---|---|---|---|---|---|---|
+| holdout `mean_case_fraction` (n=120) | 0.5680 | 0.5552 | 0.6280 | 0.6196 | 0.5982 | 0.6343 | **0.6606** |
+| *vs baseline* | -- | -0.44 SE | +1.94 | +1.74 | +0.93 | +2.14 | **+2.90 SE** |
+| holdout `greedy_solved` | 55 | 50 | 45 | 52 | 66 | 61 | **68** |
+| holdout `greedy_case_fraction` | 0.5760 | 0.5731 | 0.5186 | 0.5828 | 0.6640 | 0.6353 | **0.6968** |
+| catalogue `mean_case_fraction` (n=60) | 0.4479 | 0.4534 | 0.4277 | 0.4341 | 0.4220 | 0.4438 | **0.4181** |
+| KL | -- | -- | 0.0199 | 0.0135 | 0.0258 | 0.1382 (peak) | 0.0402 |
 
-**On the PRE-REGISTERED metric the evidence WEAKENED: +1.94 -> +1.74 -> +0.93 SE.** Whatever step 50
-was, by step 100 it is half-way back to baseline. Recorded prominently because a run that reports
-only its best interim reading is how a null becomes a false positive.
+The last four evals are **+1.74, +0.93, +2.14, +2.90** -- all positive, trending up, and the two
+holdout metrics that contradicted each other at step 100 now agree and are both at run highs.
+Greedy's earlier dip (55 -> 50 -> 45) reads as the anomaly rather than the signal.
 
-Greedy moved the other way: **+11 of 120 solved, `greedy_case_fraction` +0.088**, while `solved_any`
-(any of 4 samples) FELL to 83. Greedy up with sampled mean and union both down is the signature of a
-policy **sharpening around its best mode** -- consistent with KL tripling after step 80.
+**THE CATALOGUE HAS NEVER MOVED, IN ANY RUN.** -0.60 SE here; flat in every 30B run before it. The
+60 authored problems are the readout this project exists to improve, and RL on DeepCoder does not
+touch them. That is the headline finding, and it is a negative one.
 
-**The caveat, applied symmetrically.** This ledger earlier called greedy "the metric that cannot be
-sampling noise" and used its 55 -> 50 -> 45 decline as grounds for doubt. Its full trajectory is
-55, 50, 45, 52, 66 -- swings of +/-10 in BOTH directions. So greedy is not noise-free here, and the
-reason is known: batching the eval made greedy decoding non-bitwise-reproducible, because vLLM's
-continuous batching changes numerics with batch composition. A -10 swing treated as noise cannot
-have a +11 swing treated as proof.
+Three caveats kept attached to the positive number:
 
-Net through step 100: the pre-registered test says no; the secondary evidence is suggestive and
-self-undermined. Steps 125-175 are the remaining evidence.
+1. **Six looks at the same 2 SE test.** No multiple-comparisons correction was pre-registered, and
+   inventing one after the fact -- in either direction -- would be fitting the analysis to the data.
+2. **The noise floor is unmeasured** until `scripts/greedy_noise.py` runs. `greedy_solved` swung
+   +/-10 mid-run on a slowly changing policy; if identical-policy repeats spread ~0.05 on the
+   holdout mean, +0.093 is about two floors -- suggestive, not clean.
+3. **Four variables changed at once** entering this run (all cases, r=32, B=2, max-new 1024), so
+   even a confirmed gain cannot be attributed to any one of them without an ablation.
 
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 
