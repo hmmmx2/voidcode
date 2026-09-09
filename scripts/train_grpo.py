@@ -840,7 +840,14 @@ def main() -> int:
     # precisely what makes a group dead. Grading every case costs ~5x per group and buys both a
     # finer gradient and fewer dead groups.
     ap.add_argument("--max-cases", type=int, default=20,
-                    help="cases used for the reward; 0 uses all of them")
+                    help="cases used for the TRAINING REWARD; 0 uses all of them")
+    # SEPARATE from --max-cases so an ablation can change the treatment without changing the
+    # measurement. --max-cases governs the reward; this governs the in-domain holdout metric.
+    # Tying them together would mean reverting the reward to 20 cases ALSO redefines
+    # holdout_mean_case_fraction, and the ablation could not be compared to the run it ablates.
+    # Defaults to --max-cases, so nothing changes unless it is set.
+    ap.add_argument("--eval-max-cases", type=int, default=-1,
+                    help="cases used for the HOLDOUT METRIC; -1 follows --max-cases")
     ap.add_argument("--holdout", type=int, default=0,
                     help="band problems reserved from training and evaluated IN-DOMAIN; "
                          "0 disables. See evaluate_holdout for why this is not optional in "
@@ -871,6 +878,8 @@ def main() -> int:
         # writes a complete-looking artefact with 0 dead groups and a flat curve.
         print("ABORT: --problems-per-step must be >= 1", flush=True)
         return 2
+
+    eval_max_cases = args.max_cases if args.eval_max_cases < 0 else args.eval_max_cases
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -1021,7 +1030,7 @@ def main() -> int:
         if holdout:
             row.update(evaluate_holdout(model, tok, holdout, args.eval_group, args.max_new,
                                         args.temperature, args.grade_timeout, engine=engine,
-                                        max_cases=args.max_cases))
+                                        max_cases=eval_max_cases))
         return row
 
     history = [eval_all(0)]
@@ -1302,6 +1311,7 @@ def main() -> int:
         json.dumps({"model": args.model, "train_problems": len(train),
                     "group": args.group, "max_new": args.max_new, "signal": args.signal,
                     "holdout": len(holdout), "band": args.corpus,
+                    "max_cases": args.max_cases, "eval_max_cases": eval_max_cases,
                     "dead_groups": dead, "oom_skipped": oom_skipped,
                     "steps_without_update": steps_without_update,
                     "short_groups": short_groups,

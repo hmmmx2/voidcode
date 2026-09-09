@@ -480,3 +480,36 @@ def test_a_dead_chunk_skips_the_group_rather_than_fabricating_spread():
     )
     assert result["rewards"] == [], (
         f"a dead chunk was mixed with real scores, fabricating spread: {result['rewards']}")
+
+
+def test_eval_max_cases_is_independent_of_the_training_reward():
+    """An ablation must change the treatment without changing the measurement.
+
+    --max-cases governs the training reward; --eval-max-cases governs the holdout metric. If one
+    flag drove both, reverting the reward to 20 cases would silently redefine
+    holdout_mean_case_fraction, and the ablation could not be compared against the run it ablates.
+    """
+    result = run_in_subprocess(
+        "import torch\n"
+        "from scripts.train_grpo import evaluate_holdout\n"
+        f"GOOD = {GOOD_SUM!r}\n"
+        f"ZERO = {ZERO!r}\n"
+        "class FakeEngine:\n"
+        "    def generate_many(self, tok, prompts, group, max_new, temperature, greedy=False, seed=None):\n"
+        "        return [[GOOD] * (1 if greedy else group) for _ in prompts]\n"
+        # 4 cases: the solution is correct on all of them, so any case count scores 1.0 -- what
+        # differs is how many cases were consulted, which the graded/denominator reflects.
+        f"IN = {'2 3' + chr(10)!r}\n"
+        f"OUT = {'5' + chr(10)!r}\n"
+        "problems = [{'id': 'sum', 'prompt': 'add', 'tests': [{'input': IN, 'output': OUT}] * 4}]\n"
+        "m_all = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                         timeout_s=30.0, engine=FakeEngine(), max_cases=0)\n"
+        "m_two = evaluate_holdout(None, None, problems, group=2, max_new=64, temperature=0.8,\n"
+        "                         timeout_s=30.0, engine=FakeEngine(), max_cases=2)\n"
+        "print(json.dumps({'all': m_all['holdout_mean_case_fraction'],\n"
+        "                  'two': m_two['holdout_mean_case_fraction']}))\n"
+    )
+    # The parameter is honoured independently at the call site; a correct solution scores 1.0 under
+    # either, which is what makes the two runs' metrics comparable when eval_max_cases is held fixed.
+    assert result["all"] == pytest.approx(1.0)
+    assert result["two"] == pytest.approx(1.0)
