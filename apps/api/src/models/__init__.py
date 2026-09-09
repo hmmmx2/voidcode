@@ -12,6 +12,7 @@ from .catalogue import (
 )
 from .chat import ChatMessage, ChatSession
 from .draft import CodeDraft
+from .gpu_billing import GpuLedger, GpuReservation, GpuWallet
 from .knowledge import KnowledgeDocument
 from .notification import Notification
 from .problem import CodeTemplate, Problem, TestCase
@@ -26,6 +27,9 @@ __all__ = [
     "CodeDraft",
     "CodeTemplate",
     "DailyDelivery",
+    "GpuLedger",
+    "GpuReservation",
+    "GpuWallet",
     "InterviewAttempt",
     "InterviewQuestion",
     "KnowledgeDocument",
