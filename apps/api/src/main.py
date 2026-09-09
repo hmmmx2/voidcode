@@ -56,7 +56,7 @@ except ImportError:
     _TRANSFORMERS_AVAILABLE = False
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -65,7 +65,9 @@ from pydantic import BaseModel, Field
 # In the vLLM/Docker path, LoRA is already merged into the AWQ weights at
 # quantisation time, so peft is never imported and does not need to be installed.
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
-from . import config, knowledge_cache, multimodal, ratelimit
+from . import config, identity, knowledge_cache, metering, multimodal, ratelimit
+from .database import AsyncSessionLocal
+from .services import gpu_wallet_service
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
@@ -1643,6 +1645,7 @@ def _is_model_ready() -> bool:
 
 async def _semaphore_wrapped(
     gen: AsyncGenerator[str, None],
+    meter: "metering.Meter | None" = None,
 ) -> AsyncGenerator[str, None]:
     """Hold the inference semaphore for the full lifetime of an SSE stream.
 
@@ -1650,12 +1653,106 @@ async def _semaphore_wrapped(
     released in the finally block once the generator is exhausted or the client
     disconnects.  This ensures the concurrency limit is enforced end-to-end, not
     just at request intake.
+
+    `meter` extends that lifetime to credit: the billable interval and the permit-held interval are
+    deliberately the same interval, so this `finally` is both the release and the settle. The
+    argument is added HERE rather than by wrapping this generator in another one -- see the comment
+    on the stage-A header below for the API that died silently after 20-60 requests when a discarded
+    wrapper's `finally` never ran. One layer, one `finally`, one invariant.
+
+    `finish()` schedules and returns; it never awaits. During a client disconnect this `finally`
+    runs while the task is being cancelled, and awaiting database I/O there risks swallowing the
+    `CancelledError` or hanging the close.
     """
     try:
         async for chunk in gen:
             yield chunk
     finally:
-        _inference_semaphore.release()
+        _release_slot(meter, consumed=True)
+
+
+async def _begin_metering(
+    caller: "identity.Caller", *, request_id: str
+) -> "metering.Meter | None":
+    """Refuse an identity that cannot be charged, then take a hold. None when not enforcing.
+
+    WHY BOTH CHECKS, AND WHY `verified` ALONE IS NOT ENOUGH.
+
+    `resolve_caller` returns `Caller(ANONYMOUS_USER_ID, verified=True)` when the header is missing or
+    malformed -- anonymous is "verified" because there is no id to forge. So `caller.verified` alone
+    passes every unauthenticated visitor straight through to a wallet lookup. Both conditions are
+    needed, and `Caller.is_anonymous` exists for exactly this.
+
+    Anonymous is refused rather than given a free tier because that UUID is a single shared identity
+    handed to every caller who presents no header: a wallet on it would be one bank account for the
+    whole internet, drained by the first abuser. A free tier, if one is wanted, has to be per-IP or
+    per-device with its own quota, not a wallet.
+
+    `verified` is refused here even though `INTERNAL_AUTH_ENFORCE` still defaults False globally.
+    That flag governs a two-phase rollout for read paths; this is a write path that spends money, and
+    `identity.py` says in as many words that such a path may want to refuse on this basis. The web
+    client's proxy already signs every request, so the only callers this turns away are the ones
+    bypassing it -- which is the population that must be turned away.
+    """
+    if not config.GPU_BILLING_ENFORCE:
+        # Shadow mode: measure only. Metering an unusable identity would mean creating wallets for
+        # anonymous callers, so there is nothing to measure until an identity can be charged.
+        if caller.is_anonymous or not caller.verified:
+            return None
+    else:
+        if caller.is_anonymous:
+            raise HTTPException(status_code=401, detail="Sign in to use the tutor.")
+        if not caller.verified:
+            raise HTTPException(status_code=401, detail="This request could not be authenticated.")
+
+    backend = "sglang" if USE_SGLANG else ("vllm" if USE_VLLM else "hf")
+    try:
+        async with AsyncSessionLocal() as db:
+            return await metering.begin(
+                db,
+                caller.user_id,
+                request_id=request_id,
+                kind="chat",
+                backend=backend,
+                max_slot_seconds=config.GPU_MAX_SLOT_SECONDS,
+                floor_micro=config.GPU_FLOOR_MICRO,
+            )
+    except gpu_wallet_service.InsufficientCredit as exc:
+        if not config.GPU_BILLING_ENFORCE:
+            logger.info("[%s] would refuse (402) but billing is not enforced: %s", request_id, exc)
+            return None
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credit",
+                "message": str(exc),
+                "required_micro": exc.required_micro,
+                "available_micro": exc.available_micro,
+            },
+        ) from exc
+    except gpu_wallet_service.NoWallet:
+        if not config.GPU_BILLING_ENFORCE:
+            return None
+        raise HTTPException(
+            status_code=402,
+            detail={"error": "no_wallet", "message": "This account has no GPU credit yet."},
+        ) from None
+
+
+def _release_slot(meter: "metering.Meter | None", *, consumed: bool) -> None:
+    """Release the permit and finish the meter, together, at every site that does either.
+
+    Collapsing the five bare `release()` calls into one helper is what makes the invariant
+    checkable: `test_gpu_metering.py` asserts that every `_inference_semaphore.release()` in this
+    file is inside this function. A sixth release site added later without a settle would leave a
+    reservation held forever, and the learner's credit with it.
+
+    `consumed=False` means the request never reached the model -- a failed prompt build, or a
+    configuration refusal -- so the hold is released without a charge.
+    """
+    _inference_semaphore.release()
+    if meter is not None:
+        meter.finish(consumed=consumed)
 
 
 # --- API Endpoints ---
@@ -1793,7 +1890,11 @@ async def list_models():
 
 
 @app.post("/v1/chat/completions")
-async def create_chat_completion(request: ChatCompletionRequest, http_request: Request):
+async def create_chat_completion(
+    request: ChatCompletionRequest,
+    http_request: Request,
+    caller: identity.Caller = Depends(identity.resolve_caller),
+):
     """
     Create chat completion with hybrid architecture.
 
@@ -1848,13 +1949,28 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
     # opaque and the OpenAI shape says nothing about how the suffix is built.
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
 
+    # The clock starts HERE, after acquire() returned, so a request never pays for the time it
+    # spent waiting for a slot. Queue wait is a throughput problem, not a learner's cost.
+    meter = None
+
     # Prepare messages with hybrid architecture (mode detection + system prompt injection)
     # Guard separately: if this throws after acquire(), the permit must be released
     # or it leaks forever (no outer try/finally covers this section).
+    #
+    # The reservation joins this block rather than getting one of its own: the block already exists
+    # and already releases the permit on every failure, and extending it is strictly less risky than
+    # introducing a second acquire-then-guard.
     try:
+        if config.GPU_METERING_ENABLED:
+            meter = await _begin_metering(caller, request_id=request_id)
         messages, detected_mode = prepare_messages_hybrid(request.messages)
+    except HTTPException:
+        # Already the right status -- 401 for an unusable identity, 402 for insufficient credit.
+        # Nothing was consumed, so void rather than settle.
+        _release_slot(meter, consumed=False)
+        raise
     except Exception as _prep_err:
-        _inference_semaphore.release()
+        _release_slot(meter, consumed=False)
         logger.exception(f"[{request_id}] prepare_messages_hybrid failed: {_prep_err}")
         raise HTTPException(status_code=500, detail=f"Request preparation failed: {_prep_err!s}") from _prep_err
 
@@ -1906,7 +2022,7 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
                     top_p=request.top_p,
                     repetition_penalty=request.repetition_penalty,
                     request_id=request_id,
-                )),
+                ), meter),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -1963,7 +2079,7 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
                     presence_penalty=gen_cfg.get("presence_penalty", 0.0),
                     thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
                     enable_thinking=gen_cfg.get("enable_thinking", True),
-                )),
+                ), meter),
                 media_type="text/event-stream",
                 headers=_headers,
             )
@@ -1979,7 +2095,7 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
                 top_p=request.top_p,
                 repetition_penalty=request.repetition_penalty,
                 request_id=request_id,
-            )),
+            ), meter),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -1993,7 +2109,9 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
     # stream=false while vLLM is active, return a clear error rather than
     # crashing on model.device (model=None in the vLLM path).
     if USE_VLLM:
-        _inference_semaphore.release()  # not using _semaphore_wrapped; release manually
+        # Not using _semaphore_wrapped; release manually. Nothing reached the model, so the hold
+        # is voided rather than settled.
+        _release_slot(meter, consumed=False)
         raise HTTPException(
             status_code=400,
             detail=(
@@ -2065,7 +2183,7 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
                 ),
             )
         finally:
-            _inference_semaphore.release()
+            _release_slot(meter, consumed=True)
 
     try:
         start_time = time.time()
@@ -2132,9 +2250,15 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
     finally:
         # Release semaphore for non-streaming and error paths.
         # Streaming paths set _semaphore_held_by_wrapper=True so the permit is
-        # held until _semaphore_wrapped() exhausts the generator and releases it.
+        # held until _semaphore_wrapped() exhausts the generator and releases it —
+        # and, with it, the meter, so a stream is not settled twice.
         if not _semaphore_held_by_wrapper:
-            _inference_semaphore.release()
+            # `consumed=True` even on the error paths: reaching here means the permit was held
+            # through an attempt at generation, and the slot was occupied whether or not an answer
+            # came back. Charging for a failed generation is uncomfortable but it is the honest
+            # reading of occupancy, and the alternative — free retries on any error — is the one
+            # that can be driven deliberately.
+            _release_slot(meter, consumed=True)
 
 
 # --- Main ---

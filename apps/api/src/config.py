@@ -109,6 +109,32 @@ INTERNAL_AUTH_ENFORCE = _flag("INTERNAL_AUTH_ENFORCE", default=False)
 # 404 and the UI hides the fields — OAuth is unaffected.
 ENABLE_PASSWORD_AUTH = _flag("ENABLE_PASSWORD_AUTH", default=True)
 
+# ── GPU credit metering ──────────────────────────────────────────
+#
+# Two switches, not one, and the split is the whole rollout plan.
+#
+# GPU_METERING_ENABLED turns on measurement: reservations are taken and settled against measured
+# slot occupancy, so the `slot_ms` distribution becomes real data. GPU_BILLING_ENFORCE turns on
+# refusal: without credit, a 402 before the pod runs. Measuring first is what lets a price be chosen
+# from observed occupancy rather than guessed, and choosing a price from a guess is the failure this
+# whole subsystem exists to avoid.
+#
+# Both default OFF, so the request path behaves exactly as it did until someone turns them on
+# deliberately. There is no wallet for anyone yet.
+GPU_METERING_ENABLED = _flag("GPU_METERING_ENABLED", default=False)
+GPU_BILLING_ENFORCE = _flag("GPU_BILLING_ENFORCE", default=False)
+
+# The ceiling a request may occupy a slot for, which is what gets held up front. A ceiling rather
+# than a forecast: the settle charges measured occupancy and returns the rest, and holding the
+# maximum is what makes "refuse before the pod runs" possible.
+GPU_MAX_SLOT_SECONDS = int(os.getenv("GPU_MAX_SLOT_SECONDS", "180"))
+
+# Minimum charge per request, in micro-credits. A one-token reply still occupied a slot and still
+# cost a share of the pod's hour; without a floor, a flood of trivial requests runs the pod at a
+# loss. Applied at the hold as well as the settle, so a learner who cannot afford the floor is
+# refused up front rather than mid-generation.
+GPU_FLOOR_MICRO = int(os.getenv("GPU_FLOOR_MICRO", "1000"))
+
 # Salts the email before it becomes a Redis rate-limit key. Redis is an
 # unencrypted cache whose dumps have no retention guarantee; it must not hold a
 # plaintext list of every address anyone has tried to log in as.
