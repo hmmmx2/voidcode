@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, nullcontext
@@ -1835,7 +1836,17 @@ async def create_chat_completion(request: ChatCompletionRequest, http_request: R
     # For non-streaming paths the inner try/finally releases it.
     _semaphore_held_by_wrapper = False
 
-    request_id = f"chatcmpl-{int(time.time() * 1000)}"
+    # A UUID, not a millisecond timestamp.
+    #
+    # This was `f"chatcmpl-{int(time.time() * 1000)}"`, which is not unique: two requests in the
+    # same millisecond collide, and `deploy/base/api-deployment.yaml` runs two replicas (HPA to
+    # four) whose clocks collide freely. Nothing depended on uniqueness while the id was only an
+    # OpenAI-shaped echo, but GPU metering keys a reservation to a request, and a duplicate id
+    # there charges one learner for another's generation.
+    #
+    # Format is preserved -- `chatcmpl-` prefix, opaque suffix -- because clients treat it as
+    # opaque and the OpenAI shape says nothing about how the suffix is built.
+    request_id = f"chatcmpl-{uuid.uuid4().hex}"
 
     # Prepare messages with hybrid architecture (mode detection + system prompt injection)
     # Guard separately: if this throws after acquire(), the permit must be released
