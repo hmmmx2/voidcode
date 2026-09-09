@@ -1492,24 +1492,50 @@ export default function VoidCodeAIPanel({
      * does not store it in the first place.
      */
     const sent = attachmentsRef.current;
-    const latest: TutorContent =
-      sent.length === 0
-        ? enrichedContent
-        : [
-            { type: "text" as const, text: enrichedContent },
-            ...sent.map((a) => ({
-              type: "image" as const,
-              data: a.data,
-              mediaType: a.mediaType,
-            })),
-          ];
+
+    /**
+     * THE IMAGE RIDES ITS OWN TURN, not the enriched one, and that is measured rather than
+     * stylistic.
+     *
+     * Bundling `enrichedContent` and the image into one message is what shipped, and under it
+     * qwen2.5vl answered about the picture without looking at it: a solid red test image was
+     * called "white" on every one of three runs, with the bytes verified byte-identical on the
+     * wire. The same image, same model and the *same full tutor system prompt* is read correctly
+     * when it arrives on its own turn — also three of three. Sending the bare question with no
+     * enrichment works too, but throws away the mode, the title and the test results.
+     *
+     * `enrichedContent` is the learner's question wrapped in several hundred characters of
+     * problem context, mode reasoning and test output. The picture ends up buried under it, and
+     * the failure is silent: a fluent, confident description of a screenshot the model never
+     * read, which the learner has no way to detect. That is the same class of failure
+     * `apps/api/src/multimodal.py` refuses to allow, arriving by a different route -- there the
+     * image was never delivered, here it is delivered and not attended to.
+     *
+     * Not a prompt fix, deliberately. Bisecting the persona showed no single bad paragraph:
+     * every paragraph alone is fine, and it is the combination that tips it, so any wording
+     * change would be a guess that the next model invalidates. Message structure is the part
+     * we can reason about.
+     *
+     * The question is repeated in the image turn on purpose — an image with no question
+     * attached is the case where a model is most likely to narrate the picture instead of
+     * answering.
+     */
+    const imageTurn: TutorContent = [
+      { type: "text" as const, text: userContent },
+      ...sent.map((a) => ({
+        type: "image" as const,
+        data: a.data,
+        mediaType: a.mediaType,
+      })),
+    ];
 
     const apiMessages = [
       ...messages.map((msg) => ({
         role: msg.role,
         content: msg.content,
       })),
-      { role: "user", content: latest },
+      { role: "user", content: enrichedContent as TutorContent },
+      ...(sent.length === 0 ? [] : [{ role: "user", content: imageTurn }]),
     ];
 
     // Cleared now rather than on success. A failed send should not silently re-attach the same

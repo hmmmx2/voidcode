@@ -1824,10 +1824,11 @@ async function runBuildSmoke(): Promise<string[]> {
 
         const before = document.querySelector(".find-widget") !== null;
 
-        window.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
-        }));
-        await settle();
+        const pressCtrlF = () => {
+          window.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+          }));
+        };
 
         /**
          * Polled, not slept. This was a flat 400ms followed by one look, and it flaked — the find
@@ -1843,9 +1844,51 @@ async function runBuildSmoke(): Promise<string[]> {
           const w = document.querySelector(".find-widget");
           return w !== null && w.classList.contains("visible");
         };
-        await until(isVisible);
 
-        return { stage: "ok", before, visible: isVisible() };
+        /**
+         * THE KEYSTROKE IS RE-SENT EACH ROUND, and that is the fix rather than a longer wait.
+         *
+         * A registered Monaco model is not the same as a registered *command*. Publishing the
+         * instance sets React state, useEditorCommands recomputes its supported set in an effect,
+         * and only then does useRegisterCommands bind edit.find. The wait above clears as soon as
+         * Monaco creates the model, which can be several effect ticks earlier — so on a contended
+         * run the one dispatch landed before anything was listening.
+         *
+         * Polling after a lost keystroke can never recover: the widget opens in response to a
+         * keypress, so there is nothing for the poll to observe. That is why the previous fix —
+         * "poll for the widget instead of sleeping 400ms" — did not stop the flake, and this is
+         * its third occurrence. Re-pressing makes the probe insensitive to the ordering entirely,
+         * while still testing exactly what it claims: that a Ctrl+F reaches the editor.
+         */
+        await until(() => {
+          if (isVisible()) return true;
+          pressCtrlF();
+          return false;
+        });
+        await settle();
+        if (isVisible()) return { stage: "ok", before, visible: true };
+
+        /**
+         * The chain has four links and "did not open" named none of them, which cost a round of
+         * guessing. So when the keystroke route fails, ask Monaco directly: if the action runs
+         * and the widget appears, Monaco and the selector are fine and the break is upstream in
+         * publish -> registry -> keybinding. If it does not, the break is at the editor end.
+         */
+        const monacoEditor = window.monaco?.editor?.getEditors?.()[0];
+        const action = monacoEditor?.getAction?.("actions.find");
+        const diagnosis = {
+          editors: window.monaco?.editor?.getEditors?.().length ?? 0,
+          actionExists: action != null,
+          isSupported: action?.isSupported?.() ?? null,
+          direct: null,
+        };
+        if (action != null) {
+          monacoEditor.focus();
+          await action.run();
+          await until(isVisible, 3000);
+          diagnosis.direct = isVisible();
+        }
+        return { stage: "ok", before, visible: false, diagnosis };
       })()
     `)) as Record<string, unknown>;
 
@@ -1854,7 +1897,11 @@ async function runBuildSmoke(): Promise<string[]> {
     } else if (editorCommand.before === true) {
       failures.push("transport/the find widget was already open, so the test proves nothing");
     } else if (editorCommand.visible !== true) {
-      failures.push("transport/Ctrl+F did not open Monaco's find widget");
+      failures.push(
+        "transport/Ctrl+F did not open Monaco's find widget " +
+          `(${JSON.stringify(editorCommand.diagnosis)}; ` +
+          "direct:true means Monaco is fine and the break is publish -> registry -> keybinding)"
+      );
     } else {
       console.log("[smoke] editor: Ctrl+F reached Monaco through the registry");
     }
