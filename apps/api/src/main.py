@@ -65,6 +65,7 @@ from pydantic import BaseModel, Field
 # quantisation time, so peft is never imported and does not need to be installed.
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
 from . import config, knowledge_cache, multimodal, ratelimit
+from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
 from .routers.dashboard import router as dashboard_router
@@ -582,7 +583,14 @@ app.include_router(recommendations_router)
 # --- Pydantic Models ---
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    #: V3: `MessageContent`, not `str`. This annotation is what makes the vision guard in
+    #: `create_chat_completion` reachable at all. While it was `str`, FastAPI rejected an image
+    #: request with a 422 "Input should be a valid string" during body validation -- BEFORE
+    #: `multimodal.assert_can_accept` ran -- so the 415 with its actionable message was dead code,
+    #: and setting VISION_ENABLED=true on a multimodal deployment still could not pass an image.
+    #: The unit tests did not catch it because they exercise `assert_can_accept` directly and
+    #: `SaveMessageRequest` (the history schema, already widened); neither goes through this model.
+    content: MessageContent
 
 
 class ChatCompletionRequest(BaseModel):

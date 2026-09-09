@@ -158,3 +158,85 @@ def test_text_only_requests_are_never_blocked(monkeypatch):
     """The guard must not become a tax on the 100% of traffic that sends strings."""
     monkeypatch.delenv("VISION_ENABLED", raising=False)
     assert assert_can_accept([msg("just text")]) is None
+
+
+# ── The request model the ENDPOINT actually validates against ────────────────
+#
+# Everything above tests `SaveMessageRequest` (the history schema) and `assert_can_accept`
+# directly. Both passed while the vision path was completely unreachable, because
+# `/v1/chat/completions` validates against `main.ChatMessage`, which is a DIFFERENT model and was
+# still `content: str`. FastAPI rejected an image with a 422 during body validation, before the
+# guard could run — so the 415 and its "NOT sent to the model" message were dead code, and
+# VISION_ENABLED=true on a multimodal deployment still could not pass an image through.
+#
+# Run in a subprocess: `src.main` imports torch and transformers at module scope, and the
+# apps/api suite documents that it never imports main for exactly that reason. Skipped rather
+# than failed where the inference stack is absent, so the light CI job stays light.
+
+import json  # noqa: E402
+import subprocess  # noqa: E402
+
+_ENDPOINT_MODEL_PROBE = r"""
+import json, os, sys
+sys.path.insert(0, %(api)r)
+os.environ.pop("VISION_ENABLED", None)
+from src.main import ChatCompletionRequest
+from src import multimodal
+
+body = {"messages": [{"role": "user", "content": [
+    {"type": "text", "text": "what is in this image?"},
+    {"type": "image_url", "image_url": {"url": %(png)r}},
+]}]}
+
+out = {}
+req = ChatCompletionRequest(**body)          # 422 lived here
+out["parsed"] = True
+out["is_parts_list"] = isinstance(req.messages[0].content, list)
+try:
+    multimodal.assert_can_accept(req.messages)
+    out["guard"] = "did not fire"
+except multimodal.VisionUnsupported as exc:
+    out["guard"] = "fired"
+    out["detail"] = str(exc)
+
+os.environ["VISION_ENABLED"] = "true"
+multimodal.assert_can_accept(req.messages)   # must now pass through to the model
+out["enabled_passes"] = True
+out["wire"] = multimodal.to_wire(req.messages[0].content)
+print("PROBE" + json.dumps(out))
+"""
+
+
+def _run_probe():
+    api = str(ROOT / "apps" / "api")
+    src = _ENDPOINT_MODEL_PROBE % {"api": api, "png": PNG}
+    proc = subprocess.run([sys.executable, "-c", src], capture_output=True, text=True, cwd=api)
+    if proc.returncode != 0:
+        if "No module named 'torch'" in proc.stderr or "No module named 'transformers'" in proc.stderr:
+            pytest.skip("inference stack not installed; endpoint model cannot be imported")
+        pytest.fail(f"probe failed rc={proc.returncode}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+    line = [l for l in proc.stdout.splitlines() if l.startswith("PROBE")]
+    assert line, f"probe printed nothing parseable:\n{proc.stdout}\n{proc.stderr}"
+    return json.loads(line[-1][len("PROBE"):])
+
+
+def test_the_chat_endpoint_body_model_accepts_an_image():
+    """Red when `main.ChatMessage.content` is `str`: the body never parses, so the guard is dead."""
+    out = _run_probe()
+    assert out["parsed"] is True
+    assert out["is_parts_list"] is True, "content was coerced to a string, not kept as parts"
+
+
+def test_the_endpoint_guard_fires_on_a_parsed_image_request():
+    """The 415 path must be reachable from a real request body, not only from a hand-built list."""
+    out = _run_probe()
+    assert out["guard"] == "fired"
+    assert "NOT sent to the model" in out["detail"]
+
+
+def test_vision_enabled_lets_the_image_reach_the_wire():
+    """The other half: with a multimodal model deployed, the image must actually get delivered."""
+    out = _run_probe()
+    assert out["enabled_passes"] is True
+    urls = [p["image_url"]["url"] for p in out["wire"] if p.get("type") == "image_url"]
+    assert urls == [PNG], f"image did not survive serialisation to the model: {out['wire']}"
