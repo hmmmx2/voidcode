@@ -941,6 +941,44 @@ max-new 1024). A confirmed gain says nothing about which caused it; that needs a
 per-eval fluctuation is ~1 SE, so no single reading is meaningful on its own -- the sustained
 elevation is the evidence, not the maximum.
 
+### Ablation: does the in-domain gain survive without all-cases grading? — RUNNING, 2026-09-09
+
+Record: `docs/rl/grpo-run-30b-ablate-maxcases.json`. The uncapped run changed FOUR things at once
+(`--max-cases 0`, `--lora-r 32`, `--problems-per-step 2`, `--max-new 1024`) and produced +0.0705
+in-domain. A gain from four simultaneous changes attributes to none of them.
+
+This reverts exactly ONE -- the training reward's case count, 0 -> 20 -- holding the other three,
+the band, the seed, the split, and the step count identical.
+
+**A design flaw had to be fixed first, or the ablation would have been meaningless.** `--max-cases`
+governed BOTH the training reward and the holdout metric. Reverting it would have changed the
+treatment and the measurement simultaneously: `holdout_mean_case_fraction` would then be computed
+over a different case subset, and the ablation could not be compared against the run it ablates.
+`--eval-max-cases` now splits them -- reward on 20 cases, metric still on all cases.
+
+**Two independent estimates of the eval's noise floor now agree**, which is what makes any of this
+readable:
+
+| method | estimate |
+|---|---|
+| 3 evals, policy frozen (`greedy_noise.py`) | sd **0.0127**, spread 0.0241 |
+| 2 step-0 evals, same policy, different runs | difference **0.0143** |
+
+So the main run's +0.0705 is **~5x the baseline-to-baseline variation**. That framing is measured
+rather than assumed, and is stronger evidence than the +2.19 SE it was originally reported as.
+
+**Power, stated in advance.** Comparing the two runs at a SINGLE eval is ~1.6 SE -- too weak, and
+single evals in the main run swung by more than the whole effect (-0.0128 to +0.0926). The
+comparison that counts averages the six post-baseline evals within each run, roughly halving the
+error to ~3 SE against "the gain vanished entirely". This can answer *does the gain survive without
+all-cases grading?* It CANNOT partition credit among the four variables; that needs three more runs.
+
+**A counter-signal to the stated mechanism, logged early.** The argument for removing the cap was
+that finer reward resolution (102 vs 21 distinct `case_fraction` values) makes ties rarer and dead
+groups fewer. Through step 40 the COARSER-reward ablation has FEWER dead groups (0/40) than the main
+run had (3/40) -- the opposite direction. n is far too small to conclude anything, but it is
+recorded now so the mechanism is not quietly assumed if the result comes out favourable.
+
 ### Where a GRPO step actually spends its time ✅ — 2026-09-07
 
 Measured on the A40 with the per-phase timers, `--problems-per-step 2 --group 16 --max-new 1024
