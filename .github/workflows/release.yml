@@ -1,151 +1,146 @@
-# Build and publish the container images.
-#
-# THERE WAS NO CD WORKFLOW AT ALL — no image publish, no environments, nothing. `ci.yml`
-# ran tests and stopped, so the only way an image existed was somebody building it by
-# hand on a laptop.
-#
-# This publishes images and DOES NOT DEPLOY. That is deliberate: the manifests in
-# `deploy/base` have never been applied to a cluster, and a workflow that applies
-# unvalidated manifests to a real environment on every tag is worse than no workflow.
-# The `deploy` job is written and gated off; the gate comes off when someone has
-# applied them once by hand.
-
 name: release
+
+# ── NOTHING IN THIS FILE HAS EVER RUN ─────────────────────────────────────────────────────────────
+#
+# There is no git remote on this repository, so no workflow here has executed once — which is exactly
+# how the original CI bug survived review. That is stated at the top rather than buried, because it
+# changes how this should be read: the YAML is checked by `tests/packaging.test.ts` and the *substance*
+# of every step was rehearsed locally by hand (checksums computed, the archive extracted elsewhere, a
+# real stack from the packaged app resolved against it), but the orchestration is unproven.
+#
+# Separate from `desktop.yml` for two concrete reasons rather than tidiness:
+#
+#   - `desktop.yml` is path-filtered to `desktop/**`. A tag push touches no paths, so a job added
+#     there would silently never run on the one event that matters.
+#   - `contents: write` lives only in this file. The gate that runs on every pull request has no
+#     permission to publish anything, which is the point of the split.
 
 on:
   push:
     tags: ["v*"]
-  # Manual runs, so the build can be exercised without minting a version tag. Tags are
-  # cheap but they are also permanent and they imply a release happened.
   workflow_dispatch:
     inputs:
-      publish:
-        description: "Push images to the registry (otherwise build only)"
-        type: boolean
-        default: false
+      tag:
+        description: "Existing tag to release from, e.g. v0.1.0"
+        required: true
+        type: string
 
-env:
-  REGISTRY: ghcr.io
-
-permissions:
-  contents: read
-  packages: write
+# Never cancel a release in flight. `desktop.yml` cancels superseded pull-request runs because the
+# newer commit is what matters; here a half-finished run may already have created a draft, and the
+# recovery is worse than waiting.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  # Tests gate the images. Without this a tag builds and publishes an image from a
-  # commit whose tests were never run — and a published image is much harder to
-  # retract than a failed build.
-  test:
-    uses: ./.github/workflows/ci.yml
+  # The whole gate — licences, typecheck, tests, smoke, and the installers on all three platforms.
+  # Called rather than copied: see the `workflow_call:` comment in desktop.yml.
+  gate:
+    uses: ./.github/workflows/desktop.yml
 
-  images:
-    needs: test
-    runs-on: ubuntu-latest
-    strategy:
-      # Independent so a web failure does not hide an API failure, and both logs exist.
-      fail-fast: false
-      matrix:
-        include:
-          - { name: api, dockerfile: apps/api/Dockerfile, context: apps/api }
-          # The web build needs the REPO ROOT as context, not apps/web: the Dockerfile
-          # copies pnpm-lock.yaml and packages/shared to install a workspace. Getting
-          # this wrong fails with a confusing "pnpm-lock.yaml not found".
-          - { name: web, dockerfile: apps/web/Dockerfile, context: . }
+  release:
+    name: draft release
+    needs: gate
+    runs-on: ubuntu-22.04
+    # Scoped to this job, not the workflow. The gate above inherits none of it.
+    permissions:
+      contents: write
+      # Both required by attest-build-provenance: the OIDC token it signs with, and the store it
+      # writes the attestation to.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to the registry
-        # Only when actually publishing. A build-only run needs no credentials, and not
-        # requesting them is one less place a token can leak from.
-        if: github.event_name == 'push' || inputs.publish
-        uses: docker/login-action@v3
+      # `merge-multiple` flattens installer-*, sourcemaps-* and sbom into one directory, which is what
+      # a single checksum file over the whole release wants.
+      - uses: actions/download-artifact@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          path: assets
+          merge-multiple: true
 
-      - name: Tags and labels
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=long
-          # `latest` on a tag push only. A manual run tagging `latest` would silently
-          # move what a cluster pulls, from a commit nobody released.
-          flavor: latest=${{ github.event_name == 'push' }}
+      - name: Refuse a tag that is not a version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # A dispatch can name any ref. Without this, `gh release create` would happily create a
+          # release *and a tag* from a branch name, which is a mess to undo on a public repository.
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::'$TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
-      - name: Build${{ (github.event_name == 'push' || inputs.publish) && ' and push' || '' }}
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name == 'push' || inputs.publish }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8000' }}
-
-      # A .dockerignore that stops excluding .env would put a live API key into a
-      # published layer, and `docker history` would show it. This repo had no
-      # .dockerignore at all until the web image was first built, and the first build's
-      # 1.1 GB context DID include apps/api/.env.
+      # ── ONE CHECKSUM FILE, OVER EVERYTHING ATTACHED ──────────────────────────────────────────────
       #
-      # Checked here rather than trusted: the build context is assembled by Docker from
-      # rules in a file anyone can edit, and a published layer cannot be un-published.
-      - name: Refuse to publish an image containing a .env
-        if: github.event_name == 'push' || inputs.publish
+      # The substitute for a code signature, and the only thing a user can currently check a download
+      # against — the installers are unsigned on all three platforms and the README says so.
+      #
+      # One file rather than one per artifact, so verifying the set is a single command and a missing
+      # line is visible. Sorted, so two builds of the same commit produce byte-identical output, which
+      # is the same reason `artifactName` in electron-builder.yml carries no timestamp.
+      - name: Checksums
+        working-directory: assets
         run: |
-          set -euo pipefail
-          image="$(echo '${{ steps.meta.outputs.tags }}' | head -1)"
-          echo "inspecting $image"
-          # Every layer, not just the final filesystem: a file deleted in a later layer
-          # is still present in the earlier one and still shipped.
-          if docker history --no-trunc "$image" | grep -qiE '(^|[^a-z])\.env([^a-z.]|$)'; then
-            echo "::error::a build step references a .env file — check .dockerignore"
-            exit 1
-          fi
-          docker create --name probe "$image" >/dev/null
-          if docker export probe | tar -t 2>/dev/null | grep -E '(^|/)\.env(\.|$)' | grep -v '\.env\.example'; then
-            echo "::error::the image filesystem contains a .env"
-            docker rm probe >/dev/null
-            exit 1
-          fi
-          docker rm probe >/dev/null
-          echo "no .env in the image"
+          find . -maxdepth 1 -type f -printf '%f\0' | sort -z | xargs -0 sha256sum > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt .
+          cat SHA256SUMS.txt
 
-  # WRITTEN AND DELIBERATELY DISABLED.
-  #
-  # `deploy/base` has never been applied to a cluster — kubectl is available in CI but
-  # no cluster was reachable while it was written, so `--dry-run=client` validated
-  # nothing (it needs a live API server for its OpenAPI schema). Rolling out unvalidated
-  # manifests automatically on every tag is a worse failure than deploying by hand.
-  #
-  # To enable: apply them once manually, then change `if: false` to
-  # `if: github.event_name == 'push'` and add the KUBE_CONFIG secret.
-  deploy:
-    needs: images
-    if: false
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - name: Roll out
+      # Real SLSA provenance: a signed statement of which workflow, at which commit, produced these
+      # bytes. `subject-checksums` reads the file above, so one call covers every asset in the release
+      # and the attestation cannot drift from the checksums a user verifies against.
+      #
+      # Unverified like everything else here, and with one known precondition: this requires a public
+      # repository (or GitHub Advanced Security). If it fails on the first real release, delete the step
+      # and say so in docs/RELEASE.md rather than leaving a claim to provenance nobody can check.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: assets/SHA256SUMS.txt
+
+      # ── THE DRAFT ────────────────────────────────────────────────────────────────────────────────
+      #
+      # `gh` rather than a third-party release action: it is preinstalled on every runner, so there is
+      # no third-party code in the one job that holds `contents: write`, and nothing to pin.
+      #
+      # `--draft` is the load-bearing flag. A human writes the notes and can delete a bad build before
+      # anyone can download it. Packaging already runs under `--publish never`, so building and
+      # publishing stay separable at both ends.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "${{ secrets.KUBE_CONFIG }}" > /tmp/kubeconfig
-          export KUBECONFIG=/tmp/kubeconfig
-          kubectl -n voidcode set image deployment/voidcode-api \
-            api=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }} \
-            migrate=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }}
-          kubectl -n voidcode set image deployment/voidcode-web \
-            web=${{ env.REGISTRY }}/${{ github.repository }}/web:${{ github.ref_name }}
-          # Fail the job if the rollout does not converge, rather than reporting success
-          # for a deployment whose new pods are crash-looping.
-          kubectl -n voidcode rollout status deployment/voidcode-api --timeout=5m
-          kubectl -n voidcode rollout status deployment/voidcode-web --timeout=5m
+          cat > notes.md <<'BODY'
+          ## Install
+
+          Read **Installing a build** in the README first. These installers are **not code-signed** on
+          any platform: Windows will show a SmartScreen prompt whose "Run anyway" is hidden behind
+          "More info", and macOS will refuse the app until you allow it in System Settings → Privacy &
+          Security.
+
+          Verify what you downloaded against `SHA256SUMS.txt`:
+
+          ```
+          sha256sum --check --ignore-missing SHA256SUMS.txt
+          ```
+
+          ## What the other assets are
+
+          - `sbom-main.json`, `sbom-renderer.json` — CycloneDX SBOMs for the two dependency trees. Two
+            files because the app has two; one would describe half of it and read as if it described
+            all of it.
+          - `voidcode-sourcemaps-*.tar.gz` — the renderer's build output for this release: the
+            JavaScript chunks **and** their `.js.map` files. This is not application source and it is
+            not a leak; it is what `scripts/resolve-log.mjs` needs to turn a stack trace from an
+            installed build back into file names and line numbers, and it is attached to the tag so a
+            released stack stays resolvable for the life of the release. Both halves are required —
+            Next hashes each map's name independently of its chunk, so a maps-only archive resolves
+            nothing. `BUILD-COMMIT.txt` inside the archive names the commit that produced it, because
+            a position only means something against the source it was compiled from. Note that the
+            build runs the React Compiler and the maps resolve to *its* output rather than to the
+            original file, so the filename and function in a resolved frame are exact and the line
+            number is approximate — `scripts/resolve-log.mjs` explains this at length.
+          BODY
+          gh release create "$TAG" \
+            --draft \
+            --title "VoidCode $TAG" \
+            --notes-file notes.md \
+            assets/*

@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["node"],
+    // The same aliases the renderer declares. A couple of renderer modules are pure logic
+    // tested from this suite — the keybinding parser above all — which pulls them into this
+    // program and therefore needs the paths here too.
+    //
+    // `@/*` arrived with `markdown-render.test.ts`, which renders a real component through
+    // `react-dom/server`. It has to be declared in BOTH places: `vitest.config.ts` for the
+    // runner and here for `tsc`. Adding it to only one is silent — the tests pass and
+    // `npm run typecheck` fails, which is exactly how it shipped the first time.
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@/*": ["./renderer/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.config.ts"]
+}

@@ -1,0 +1,409 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface Section {
+  id: string;
+  title: string;
+  content: React.ReactNode;
+}
+
+/**
+ * ── WHY THIS DOCUMENT WAS REPLACED ────────────────────────────────────────────────────────────
+ *
+ * It was a hosted-service agreement, and this is local software. Twelve sections, the word
+ * "Platform" forty-three times as a service the reader accesses, and almost every operative clause
+ * describing something that does not exist: registered accounts, an age warranty, suspension and
+ * termination, a liability cap measured against fees paid, "as available" uptime, notification of
+ * changes by posting to a server, and exclusive jurisdiction over a contract nobody forms.
+ *
+ * Three of its claims were worse than absent.
+ *
+ * **It contradicted the Privacy Policy in the same build.** Section 5 said conversations "may be
+ * logged and used to improve the Platform". The Policy, rewritten a few commits earlier and pinned by
+ * `tests/honest-copy.test.ts`, says nothing is collected and nothing trains a model. Two shipped
+ * legal documents disagreeing about data retention is the sharpest kind of wrong.
+ *
+ * **It contradicted the licence it ships under.** Apache-2.0 grants reproduction, modification and
+ * distribution; §4 prohibited reverse-engineering and §6 prohibited derivative works and claimed all
+ * content as "the property of VoidCode AI". A distribution whose terms are narrower than its own
+ * licence misstates the reader's rights, in the direction that costs them something.
+ *
+ * **It took a licence over code nobody submits.** §6 had the user grant VoidCode a licence to use
+ * "submitted code for assessment and platform improvement". Grading happens in-process in Pyodide and
+ * submissions land in local SQLite. There is no licensee.
+ *
+ * WHAT REPLACED IT. Seven sections about software you run. The through-line is that Apache-2.0
+ * already governs almost everything a Terms of Use would otherwise invent, so the honest document is
+ * mostly a pointer to it — plus the two things Apache-2.0 does not cover: the separately-licensed
+ * exercise content, and the one liability sentence this product actually needs, about an agent that
+ * writes to your files.
+ *
+ * DELIBERATELY NOT CHANGED, being legal rather than descriptive: the entity name and the contact
+ * address. The address is now the *same* one the Privacy Policy uses — this page named a second
+ * mailbox, which is a defect on its own — but whether either belongs here is a decision for a human.
+ *
+ * NO GOVERNING-LAW CLAUSE, and that is a removal rather than an omission. The old §11 asserted
+ * exclusive jurisdiction in Victoria over an agreement that is never formed: no acceptance step, no
+ * consideration, and Apache-2.0 carries no choice of law. It was the most fictional sentence here.
+ */
+
+// ── Table of Contents ──────────────────────────────────────────────────────
+
+const SECTIONS: Section[] = [
+  {
+    id: "what-this-is",
+    title: "1. What This Is",
+    content: (
+      <>
+        <p>
+          VoidCode is a desktop application you install and run on your own computer. These terms
+          describe how it is licensed, and what it does not promise.
+        </p>
+        <p>
+          <strong className="text-ink-2">There is no service here.</strong> No account to create, no
+          sign-in, no server of ours for it to talk to, and nothing you write is submitted anywhere.
+          Your code is executed and graded inside the application; your work is stored in a file on
+          your own disk. So there is nothing that can go down, nothing to suspend, and nothing to
+          bill.
+        </p>
+        <p>
+          You do not need to agree to anything in order to use it. Apache-2.0 grants you rights; it
+          does not ask for any in return.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "licence",
+    title: "2. Your Licence to the Software",
+    content: (
+      <>
+        <p>
+          The application is free and open-source software under the{" "}
+          <strong className="text-ink-2">Apache License 2.0</strong>. The full text ships with it,
+          under <code className="text-ink-2">resources/licenses</code>, and Help &rsaquo; Open Licences
+          opens that directory.
+        </p>
+        <p>Among other things, that licence means you may:</p>
+        <ul>
+          <li>Use the application for any purpose, including commercially</li>
+          <li>Read, modify and redistribute the source, including as part of something else</li>
+          <li>Reverse-engineer it — though the source is published, which is usually easier</li>
+        </ul>
+        <p>
+          An earlier version of this page prohibited the last two. That was narrower than the licence
+          in the same distribution, so it misstated your rights; it is corrected here rather than
+          softened.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "content",
+    title: "3. Exercise Content",
+    content: (
+      <>
+        <p>
+          The exercises — problem statements, hints, test cases, reference implementations and the
+          visualisers written for them — are licensed separately from the code, under{" "}
+          <strong className="text-ink-2">CC-BY-SA-4.0</strong> (Creative Commons
+          Attribution-ShareAlike 4.0 International).
+        </p>
+        <p>
+          Two licences rather than one is deliberate: contributing a problem does not entangle you
+          with the application&rsquo;s terms, and the content can be reused in a course or another
+          tool. In practice it means attribution and share-alike — keep the credit, and license what
+          you build from it the same way.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "third-party",
+    title: "4. Components It Bundles",
+    content: (
+      <>
+        <p>
+          The application ships third-party software under its own licences, and each licence is
+          installed alongside it rather than merely listed:
+        </p>
+        <ul>
+          <li>
+            <strong className="text-ink-2">Pyodide</strong> — the Python runtime your code is graded
+            in, under MPL-2.0
+          </li>
+          <li>
+            <strong className="text-ink-2">Monaco</strong> — the code editor, under MIT, with its own
+            third-party notices
+          </li>
+          <li>Every other dependency&rsquo;s licence, copied verbatim into the same directory</li>
+        </ul>
+        <p>
+          Model weights are not bundled and are not ours: a model you download is governed by whoever
+          published it. Research papers are not redistributed at all.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "models",
+    title: "5. Models and Networks",
+    content: (
+      <>
+        <p>
+          By default nothing leaves your machine. Models run through a local Ollama or llama.cpp, and
+          your code executes in a sandbox with no network access at all.
+        </p>
+        <p>
+          If you add an API key for a remote provider, the conversations you send reach that provider
+          under their terms rather than these. If you ask the coding assistant to look something up,
+          it may fetch a page from a fixed list of documentation sites. Our{" "}
+          <Link
+            href="/privacy"
+            className="text-ink hover:text-ink underline underline-offset-2 transition-colors"
+          >
+            Privacy Policy
+          </Link>{" "}
+          lists both precisely.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "no-warranty",
+    title: "6. No Warranty, and the Assistant in Particular",
+    content: (
+      <>
+        <p>
+          Apache-2.0 §§7&ndash;8 apply, and in plain language they say: the software is provided
+          as-is, with no warranty of any kind, and the contributors are not liable for damages arising
+          from using it. Nothing on this page narrows that or adds to it.
+        </p>
+        <p>
+          <strong className="text-ink-2">One thing is worth saying specifically.</strong> The coding
+          assistant proposes changes to files in a folder you open, and applying a batch requires you
+          to confirm a dialogue that names every file. It is a language model: it can be wrong, and it
+          can be wrong in a way that looks right. Review what it proposes, and keep your work in
+          version control. We are not liable for what it writes to your files, and a confirmation
+          dialogue does not make that our judgement rather than yours.
+        </p>
+        <p>
+          The same holds for the tutor. It is an aid to learning rather than an authority — verify what
+          it tells you, particularly anything you are relying on in an interview.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "changes",
+    title: "7. Changes and Contact",
+    content: (
+      <>
+        <p>
+          These terms ship with the application, so the version you are reading is the one that
+          applies to the release you installed. They change when the software does, and that history
+          lives in the repository rather than in a notice we send you — we hold no address for you,
+          and{" "}
+          <Link
+            href="/privacy"
+            className="text-ink hover:text-ink underline underline-offset-2 transition-colors"
+          >
+            the Privacy Policy
+          </Link>{" "}
+          explains why.
+        </p>
+        <div className="mt-3 p-4 rounded-lg bg-void-2 border border-line space-y-1">
+          <p className="text-ink font-medium">VoidCode AI</p>
+          <p>John Street, Hawthorn VIC 3122, Australia</p>
+          <p>
+            Email:{" "}
+            <a
+              href="mailto:privacy@swin.edu.au"
+              className="text-ink hover:text-ink transition-colors"
+            >
+              privacy@swin.edu.au
+            </a>
+          </p>
+        </div>
+      </>
+    ),
+  },
+];
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+function TableOfContents({
+  activeId,
+  onSelect,
+}: {
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <nav className="sticky top-6 w-64 flex-shrink-0 hidden lg:block">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-4">
+        Table of Contents
+      </p>
+      <ul className="space-y-1">
+        {SECTIONS.map((s) => (
+          <li key={s.id}>
+            <button
+              onClick={() => onSelect(s.id)}
+              className={`w-full text-left text-[12px] px-3 py-1.5 rounded-lg transition-colors ${
+                activeId === s.id
+                  ? "bg-white/8 text-ink font-medium"
+                  : "text-ink-3 hover:text-ink-2 hover:bg-white/4"
+              }`}
+            >
+              {s.title}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function SectionBlock({ section }: { section: Section }) {
+  return (
+    <section
+      id={section.id}
+      className="scroll-mt-8 pb-10 border-b border-line last:border-0 last:pb-0"
+    >
+      <h2 className="text-base font-semibold text-ink mb-4">{section.title}</h2>
+      <div className="text-[13px] text-ink-2 leading-relaxed space-y-3 [&_ul]:mt-2 [&_ul]:ml-4 [&_ul]:space-y-1.5 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:marker:text-ink-3/60">
+        {section.content}
+      </div>
+    </section>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────
+
+export default function TermsClient() {
+  const [activeId, setActiveId] = useState(SECTIONS[0].id);
+
+  function scrollTo(id: string) {
+    setActiveId(id);
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  return (
+    <div className="page-document">
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div className="mb-10 pb-8 border-b border-line">
+        <div className="flex items-center gap-2 mb-4">
+          <Link
+            href="/profile"
+            className="text-[11px] text-ink-3/60 hover:text-ink-2 transition-colors"
+          >
+            Settings
+          </Link>
+          <span className="text-ink-3/60">/</span>
+          <span className="text-[11px] text-ink-2">Terms of Use</span>
+        </div>
+
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-ink mb-2">Terms of Use</h1>
+            <p className="text-sm text-ink-3">
+              How this application is licensed, and what it does not promise.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[11px] text-ink-3/60">Last updated</span>
+            {/* Moves with the substance, as section 7 says. */}
+            <span className="text-[12px] text-ink-2 font-medium">7 August 2026</span>
+          </div>
+        </div>
+
+        {/*
+          The banner said these terms were "effective from 1 January 2025 and apply to all users…
+          By continuing to use the Platform, you agree to be bound by these Terms." Three claims,
+          none of them true: a date predating the application, a user base, and a contract formed by
+          continued use. Replaced with the one fact a reader benefits from knowing up front.
+        */}
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-line-strong bg-void-2 px-4 py-3">
+          <svg
+            className="w-4 h-4 text-ink mt-0.5 flex-shrink-0"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <p className="text-[12px] text-ink/80 leading-relaxed">
+            This is free software under the Apache License 2.0. You are not required to accept
+            anything to use it, and there is no account, no service and no fee — see{" "}
+            <Link href="#what-this-is" className="text-ink underline underline-offset-2">
+              section 1
+            </Link>
+            .
+          </p>
+        </div>
+      </div>
+
+      {/* ── Body: ToC sidebar + sections ────────────────────────────── */}
+      <div className="flex gap-12">
+        <TableOfContents activeId={activeId} onSelect={scrollTo} />
+
+        {/* Sections */}
+        <div className="flex-1 min-w-0 space-y-10">
+          {SECTIONS.map((section) => (
+            <SectionBlock key={section.id} section={section} />
+          ))}
+
+          {/* Bottom nav */}
+          <div className="pt-6 flex items-center justify-between">
+            <Link
+              href="/privacy"
+              className="flex items-center gap-2 text-[12px] text-ink-3 hover:text-ink transition-colors group"
+            >
+              <svg
+                className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform"
+                viewBox="0 0 14 14"
+                fill="none"
+              >
+                <path
+                  d="M9 2L4 7L9 12"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Privacy Policy
+            </Link>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="flex items-center gap-2 text-[12px] text-ink-3 hover:text-ink transition-colors group"
+            >
+              Back to top
+              <svg
+                className="w-3.5 h-3.5 group-hover:-translate-y-0.5 transition-transform"
+                viewBox="0 0 14 14"
+                fill="none"
+              >
+                <path
+                  d="M2 9L7 4L12 9"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

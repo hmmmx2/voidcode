@@ -1,0 +1,176 @@
+appId: ai.voidcode.desktop
+productName: VoidCode
+copyright: Copyright © 2026 VoidCode contributors
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+# Pyodide reads its .wasm, stdlib zip and wheels as real files, so they cannot live
+# inside the asar archive.
+#
+# The pty prebuilds are the same problem for a different reason: a `.node` addon is loaded by
+# the OS loader, which cannot read inside an archive. On Windows it also ships OpenConsole.exe,
+# an executable ConPTY spawns — so that has to be a real file on disk too, or the terminal
+# fails at spawn rather than at load, which is the harder failure to diagnose.
+asarUnpack:
+  - node_modules/pyodide/**
+  - node_modules/@lydell/node-pty*/**
+
+extraResources:
+  # The renderer. THIS IS THE APP — without it a packaged build starts, opens a window, and
+  # serves 404 for every route, because `app://bundle/...` resolves against a directory that
+  # was never copied.
+  #
+  # It cannot go in `files` above. That list is the asar archive, built from electron-vite's
+  # output, and `renderer/out` is produced by a separate Next static export that electron-vite
+  # knows nothing about. So it is copied as a resource instead.
+  #
+  # `to: renderer` is not free choice: `onReady` in src/main/index.ts joins
+  # `process.resourcesPath` with exactly this name. tests/packaging.test.ts pins the two
+  # together, because the failure mode of disagreeing is a blank window with nothing in any
+  # log explaining it.
+  - from: renderer/out
+    to: renderer
+    # Everything except the source maps.
+    #
+    # `productionBrowserSourceMaps` is on, because a logged stack is otherwise minified chunk
+    # coordinates and nothing else. But the maps are 6.8MB and they reconstruct the original
+    # TypeScript, so they stay on the build machine: keep `renderer/out` for any release you
+    # ship, and `npm run resolve-log` reads the maps from there.
+    #
+    # The `**/*` line is not optional. electron-builder treats a filter list as the complete
+    # description of what to copy, so a list containing only the negation copies nothing — and
+    # the failure mode is a packaged app that opens a window and 404s every route, which is
+    # exactly the defect tests/packaging.test.ts was written for.
+    filter:
+      - "**/*"
+      - "!**/*.map"
+
+  # The vendored wheels, so a first run works with no network (spec §4.4).
+  - from: vendor/pyodide-packages
+    to: vendor/pyodide-packages
+    filter: ["*.whl"]
+
+  # Licence text, gathered by scripts/collect-licences.mjs.
+  #
+  # The app shipped none of this. `files:` above is the asar archive built from electron-vite's
+  # output, and the app root is `desktop/` — so the repository-root LICENSE and NOTICE were outside
+  # it and never copied, and Monaco's LICENSE and ThirdPartyNotices were not copied either because
+  # `copy-monaco.mjs` takes only `min/vs`.
+  #
+  # That is an obligation, not tidiness: Apache-2.0 §4(d) requires the NOTICE to accompany
+  # distribution and MPL-2.0 §3.1 requires recipients be given the terms. `NOTICE` also *claimed*
+  # the licences were reproduced in the build, which they were not.
+  #
+  # `to: licenses` is joined with `process.resourcesPath` by `PACKAGED_LICENSES_DIR`, the same way
+  # the renderer entry above is; tests/packaging.test.ts pins the pair.
+  - from: build/licenses
+    to: licenses
+
+  # The icon, for the Linux window and for dev. Not how the taskbar or dock gets it — see the
+  # `icon:` keys below — but `windows.ts` passes it to BrowserWindow and main must be able to find
+  # the file it names.
+  - from: build/icon.png
+    to: icon.png
+
+# Reproducibility (spec §4.3): no timestamps or machine paths baked into the
+# artifact name, so two builds of the same commit produce the same filename and a
+# published checksum means something.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+
+# NO `publish:` BLOCK, AND ITS ABSENCE IS LOAD-BEARING.
+#
+# It read `provider: github` / `releaseType: release`, with a comment that GitHub Releases "doubles as
+# the electron-updater feed". Two things were wrong with that, and the second is why it is gone rather
+# than merely corrected:
+#
+#   1. `electron-updater` is not a dependency, so there was no feed to be the source for.
+#   2. **It broke packaging outright.** `npm run package` failed in `computeChannelNames` with
+#      "Cannot read properties of null (reading 'channel')" — even with `--publish never`, the block
+#      makes electron-builder build update-info metadata, and it cannot resolve a repository because
+#      there is no git remote and `package.json` has no `repository` field. Removing it is what made
+#      packaging succeed for the first time.
+#
+# So this is not a stale comment; it is why no installer had ever been produced. `tests/packaging.test.ts`
+# pins the absence against `electron-updater` also being absent, so it fails on the day someone adds the
+# updater — which is the right day to design a release channel rather than inherit one.
+
+# One 1024x1024 source for every platform's icon.
+#
+# electron-builder derives the Windows .ico, the macOS .icns and the Linux PNG set from a single
+# `build/icon.png` using its bundled app-builder, so there is no need for sharp, png-to-ico or
+# iconutil. Declared explicitly per platform rather than relying on auto-detection from
+# `buildResources`, because an explicit path is one a test can assert exists — and a missing icon is
+# invisible until the day of a release, when the installer ships the default Electron logo.
+#
+# `build/icon.png` and `build/icon.svg` are generated by `scripts/render-icon.mjs` from one set of
+# constants, so the reviewable vector and the shipped raster cannot disagree.
+#
+# KNOWN AND ACCEPTED: the derived `.ico` holds a single 256x256 image, so Windows scales it down for
+# the 16px taskbar rather than using a purpose-rendered one. That is electron-builder's default from a
+# single PNG, and the mark survives it — butt caps and the framing were chosen for exactly that size
+# (`components/brand/Mark.tsx` records the measurements). Emitting a multi-size `.ico` from the
+# generator is the follow-up if it ever looks soft; it is written down here so the default is a choice
+# rather than something nobody checked.
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  icon: build/icon.png
+  # Unsigned. Certificates cost money, and the consequence is documented rather than hidden: the
+  # README's "Installing a build" section quotes the SmartScreen dialog, says the Run anyway button is
+  # behind More info, and says plainly that signing would silence the warning without changing the
+  # file (spec §4.3). Verified against the built artifact — `Get-AuthenticodeSignature` reports
+  # `NotSigned` for all three Windows installers.
+  #
+  # Checksums are the substitute for a signature and there is no release workflow yet to publish them
+  # with, so that half is a follow-up and not a present-tense claim. SignPath, free for OSS, is the
+  # follow-up for the signature itself rather than a paid cert.
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # The Apache-2.0 text with a plain-English preamble. Committed rather than generated so the file
+  # exists without a build having run — which is what lets tests/packaging.test.ts assert it, the
+  # same way it already asserts the mac entitlements file. Its preamble says plainly that acceptance
+  # is not required, because under Apache-2.0 it is not.
+  license: build/eula.txt
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  # Hardened runtime without notarisation still produces a Gatekeeper prompt, but
+  # it is the honest configuration: claiming notarisation we do not have would be
+  # worse than documenting the prompt.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+  icon: build/icon.png
+  category: Development
+  # Flatpak is listed in the spec as a distribution channel but is deliberately not
+  # built here: it needs flatpak-builder on the runner and its own manifest, which
+  # is a task of its own rather than a flag.
+
+# ASAR keeps the bundle as one archive. Not a security boundary — anyone can unpack
+# it, and in an open-source app the source is published anyway — but it keeps
+# install size and file count down.
+asar: true

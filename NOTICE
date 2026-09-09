@@ -1,0 +1,36 @@
+VoidCode
+Copyright 2026 VoidCode contributors
+
+This product includes software developed by third parties. Their licences are
+reproduced in the distributed build, under `resources/licenses/`, assembled by
+desktop/scripts/collect-licences.mjs; and they are enumerated in the two CycloneDX
+SBOMs — one per dependency tree — that .github/workflows/release.yml attaches to
+each release.
+
+Both halves of that sentence were false when it was first written: the build shipped
+no licence text at all, and no release workflow existed. Naming the script and the
+workflow is deliberate, so the claim can be checked rather than believed;
+desktop/tests/packaging.test.ts holds both ends of it.
+
+Components whose terms require specific notice:
+
+  Pyodide — Mozilla Public License 2.0
+    Bundled to provide the sandboxed Python execution tier. MPL-2.0 is file-level
+    copyleft: the Pyodide files themselves remain under MPL-2.0, and modifications
+    to those files must be published under the same terms. It does not affect the
+    licence of the rest of this application.
+    https://github.com/pyodide/pyodide
+
+Not bundled, and deliberately so:
+
+  CUDA / cuDNN are proprietary NVIDIA components. They are never redistributed
+  here; a user who wants GPU acceleration installs them themselves.
+
+  Model weights are not distributed with this application. They are downloaded by
+  the user, and their licences are the model publishers' own. Only OSI-licensed
+  weights are offered as defaults — see CONTRIBUTING.md.
+
+  Research papers are not redistributed. arXiv's default licence grants
+  distribution rights to arXiv, not to third parties. Papers are fetched by the
+  user's own machine, cached locally, and never re-served. Each cached paper
+  records its arXiv id, licence string and fetch time.

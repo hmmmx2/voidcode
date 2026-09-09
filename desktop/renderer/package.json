@@ -1,0 +1,41 @@
+{
+  "name": "@voidcode/desktop-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "next build && node scripts/copy-monaco.mjs",
+    "//dev": "3110, deliberately. 3000 and 3100 are what everything else reaches for first, and a dev server that dies with EADDRINUSE reads as a broken script rather than a taken port. Nothing else here references this number — `desktop/package.json` reaches it through `npm --prefix renderer run dev`, and the packaged app never runs a dev server at all.",
+    "dev": "next dev --port 3110",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.24",
+    "@radix-ui/react-tabs": "^1.0.4",
+    "@radix-ui/react-tooltip": "^1.0.7",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "framer-motion": "^12.43.0",
+    "katex": "^0.18.1",
+    "monaco-editor": "^0.52.2",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwind-merge": "^2.2.1",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.1",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

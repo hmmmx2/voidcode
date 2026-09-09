@@ -1,0 +1,17 @@
+Exercise content in this repository — problem statements, hints, test cases,
+reference implementations and interactive visualisers authored for this project —
+is licensed under the Creative Commons Attribution-ShareAlike 4.0 International
+Licence (CC-BY-SA-4.0).
+
+  https://creativecommons.org/licenses/by-sa/4.0/
+
+Licensed separately from the code (Apache-2.0, see ../LICENSE) so that
+contributing a problem does not entangle you with the application's terms, and so
+content can be reused in courses and other tools.
+
+This licence covers content authored here. It does not extend to:
+
+  - Research paper text, which is not redistributed by this project at all. See
+    ../NOTICE.
+  - Content generated on a user's own machine from a paper they fetched. That is
+    theirs, derived from a source whose licence is the publisher's.

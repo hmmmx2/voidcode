@@ -19,7 +19,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
-  # Callable from release.yml, so a tag cannot publish an image from a commit whose
+  # Callable from containers.yml, so a tag cannot publish an image from a commit whose
   # tests never ran. Without this trigger, `uses: ./.github/workflows/ci.yml` fails at
   # runtime with "workflow is not reusable" — the release workflow parses fine and
   # breaks only when it is first tagged.

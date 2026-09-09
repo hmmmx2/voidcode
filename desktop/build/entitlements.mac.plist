@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Referenced by electron-builder.yml (`mac.entitlements`), which declared this path before the
+  file existed. It is only read during signing, so an unsigned build never noticed — the day a
+  signing identity is configured is the day it would have failed.
+
+  Every entitlement here is one this app actually needs. Hardened runtime denies by default and
+  each of these is a hole in it, so the list stays short.
+-->
+<plist version="1.0">
+  <dict>
+    <!-- V8 compiles JavaScript at runtime. Without this, Electron does not start at all. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!--
+      Pyodide is CPython compiled to WebAssembly, which V8 also maps as executable. `allow-jit`
+      alone does not cover the older mapping path Electron still uses on some macOS versions.
+    -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!--
+      The pty prebuild is a `.node` addon signed by its own publisher, not by us, and the app
+      loads it at runtime. Library validation would refuse it, and the terminal would fail at
+      load with an error that reads like a missing file rather than a policy refusal.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!--
+      Deliberately absent: `com.apple.security.cs.allow-dyld-environment-variables`. Nothing
+      here sets DYLD_* — `sanitisedEnv()` in terminal/pty.ts strips the environment it hands a
+      shell — and granting it would let anything that can set the environment inject a library.
+    -->
+  </dict>
+</plist>

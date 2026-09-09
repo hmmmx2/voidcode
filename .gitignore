@@ -178,3 +178,13 @@ docs/**/*.log
 # Local copies of pod artefacts (adapters, tokenizers). The volume dies with the pod, so these
 # are pulled off it for safekeeping -- but weights stay out of git, same as the *.safetensors rule.
 artifacts/
+
+# Desktop app build output and vendored runtime. `desktop/vendor/` holds Pyodide wheels fetched by
+# `npm run vendor:pyodide`; electron-builder copies it as an extraResource at package time.
+desktop/node_modules/
+desktop/out/
+desktop/vendor/
+desktop/dist/
+desktop/renderer/node_modules/
+desktop/renderer/.next/
+desktop/renderer/out/

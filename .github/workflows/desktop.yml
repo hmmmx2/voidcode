@@ -1,0 +1,263 @@
+name: desktop
+
+# Phase 1 exit criterion (docs/desktop-app-spec.md §Part 3): reproducible
+# installers on all three platforms from a clean public checkout, with the licence
+# gate passing and a Study window provably unable to call `fs:*`.
+
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", ".github/workflows/desktop.yml", ".github/allowed-licenses.txt"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop.yml", ".github/allowed-licenses.txt"]
+  # Callable, so `release.yml` runs *this* gate rather than its own copy of it.
+  #
+  # This is the cheap half of the refactor the release phase was going to do. The original CI bug was
+  # two jobs each independently remembering to install the renderer, and one forgetting; duplicating
+  # all three jobs into a release workflow would have been the same mistake at workflow scale. One
+  # `workflow_call:` key means there is exactly one definition of what "green" means, and a release
+  # cannot be built by a laxer gate than a pull request.
+  #
+  # Artifacts cross the boundary because a called workflow runs inside the caller's run, so the
+  # installers and source maps uploaded below are what `release.yml` downloads.
+  workflow_call:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  # Separate from `build` so a licence violation fails fast and unambiguously,
+  # rather than surfacing as one red cross among three platform builds.
+  licences:
+    name: licence gate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # Both trees, now that both are installed in this job. Keying on one
+          # lockfile would leave the renderer's install uncached and, worse, would
+          # not invalidate when only the renderer's dependencies changed.
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/renderer/package-lock.json
+      - run: npm ci
+
+      # The gate that stops a future contributor quietly re-adding PyMuPDF (AGPL)
+      # or a package with CC-BY-NC model weights. Spec §4.2 and §4.3.
+      - name: Fail on any dependency outside the allowlist
+        run: |
+          ALLOWED=$(tr '\n' ';' < ../.github/allowed-licenses.txt)
+          npx license-checker-rseidelsohn \
+            --production \
+            --onlyAllow "$ALLOWED" \
+            --excludePrivatePackages
+
+      # The renderer is a separate npm package with its own tree, and it was not
+      # gated at all — which mattered, because it is the half a UI dependency
+      # actually lands in. Everything the app renders comes from here.
+      - name: Install renderer dependencies
+        run: npm ci
+        working-directory: desktop/renderer
+
+      # Two exclusions, both build-time toolchain rather than shipped code, and
+      # named individually rather than by loosening the allowlist — a named
+      # exception is reviewable, whereas permitting a licence globally silently
+      # admits every future dependency that happens to carry it.
+      #
+      #   @img/sharp-*   Apache-2.0 AND LGPL-3.0-or-later. An optional transitive
+      #                  dependency of Next for image optimisation, which
+      #                  `output: "export"` never invokes.
+      #   caniuse-lite   CC-BY-4.0. The browser-support data browserslist reads
+      #                  while compiling.
+      #
+      # Neither is distributed: `electron-builder.yml` ships `out/**` and
+      # `package.json` only, so `renderer/node_modules` is not in the installer.
+      # If that `files:` list ever grows to include it, these exclusions stop
+      # being true and this comment is the thing to re-read.
+      - name: Fail on any renderer dependency outside the allowlist
+        run: |
+          ALLOWED=$(tr '\n' ';' < ../../.github/allowed-licenses.txt)
+          npx license-checker-rseidelsohn \
+            --production \
+            --onlyAllow "$ALLOWED" \
+            --excludePrivatePackages \
+            --excludePackagesStartingWith "@img/sharp;caniuse-lite"
+        working-directory: desktop/renderer
+
+      # Two files, because there are two dependency trees. One SBOM covering only
+      # `desktop/` would describe half the application and read as if it described
+      # all of it — the same blind spot the licence gate had.
+      - name: Generate SBOM
+        run: npx @cyclonedx/cyclonedx-npm --omit dev --output-file ../sbom-main.json
+      - name: Generate renderer SBOM
+        run: npx @cyclonedx/cyclonedx-npm --omit dev --output-file ../../sbom-renderer.json
+        working-directory: desktop/renderer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-main.json
+            sbom-renderer.json
+
+  verify:
+    name: typecheck + tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # All three, because the containment tests behave differently per platform:
+        # Windows needs Developer Mode for symlinks (the escape cases skip there and
+        # say so), and only POSIX exercises setrlimit later in Phase 2.
+        os: [ubuntu-22.04, windows-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # Both lockfiles. The renderer keeps its own install, so a cache keyed on one
+          # of them goes stale whenever the other moves.
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/renderer/package-lock.json
+      - run: npm ci
+
+      # THIS STEP WAS MISSING, AND IT FAILED THREE OF THE STEPS BELOW.
+      #
+      # `desktop/` and `desktop/renderer/` are separate installs — no workspaces, no
+      # postinstall. Without this, `npm run typecheck` fails (the tests import renderer
+      # components through the `@` alias, so main's tsc reaches renderer sources),
+      # `npm --prefix renderer run typecheck` fails outright, and `npm run smoke` fails
+      # inside `build:renderer` with "'next' is not recognized".
+      #
+      # It went unnoticed because there is no git remote, so this workflow had never run.
+      # `tests/packaging.test.ts` now asserts the property — every job installs what its
+      # steps read — derived over all jobs rather than checking these two by name.
+      - name: Install renderer dependencies
+        run: npm ci
+        working-directory: desktop/renderer
+
+      # Downloads the Pyodide wheels. Must precede the tests: they execute real
+      # numpy, and without this Pyodide reaches for a CDN.
+      - run: npm run vendor:pyodide
+
+      - run: npm run typecheck
+
+      # The renderer is a separate TypeScript project with its own tsconfig, and `npm run
+      # typecheck` above only covers main and the tests. It was not unchecked — `next build`
+      # runs tsc over it inside `npm run smoke` further down — but a renderer type error then
+      # failed a step named "Study window privilege boundary", four minutes and an Electron
+      # launch later. Thirty seconds and an honest name.
+      - run: npm --prefix renderer run typecheck
+
+      - run: npm test
+
+      - name: Build all three bundles
+        run: npm run build
+
+      # The runtime half of the exit criterion. Needs a display on Linux, hence
+      # xvfb; the assertion is that a live Study window exposes no fs/pty/lsp
+      # namespace and that mode:get agrees with argv.
+      - name: Smoke — Study window privilege boundary
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run smoke
+      - name: Smoke — Study window privilege boundary
+        if: runner.os != 'Linux'
+        run: npm run smoke
+
+  package:
+    name: installer (${{ matrix.os }})
+    needs: [licences, verify]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/renderer/package-lock.json
+      - run: npm ci
+
+      # Same omission as `verify` had: `npm run package` runs `build:renderer`, which
+      # needs the renderer's own install.
+      - name: Install renderer dependencies
+        run: npm ci
+        working-directory: desktop/renderer
+
+      # `npm run package` vendors Pyodide itself now, so this is belt-and-braces for the
+      # cache rather than a requirement. It stays because a warm wheel cache makes the
+      # packaging step's own vendor call a no-op instead of a download.
+      - run: npm run vendor:pyodide
+
+      # No signing. Certificates cost money and this is an OSS project (spec §4.3). The README's
+      # "Installing a build" section documents the SmartScreen and Gatekeeper prompts rather than
+      # letting users discover them. Checksums are the other half of that answer and are not built yet
+      # — they arrive with the release workflow. SignPath is the follow-up for signing itself.
+      - run: npm run package
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+          if-no-files-found: error
+
+      # ── THE SOURCE MAPS, WITH THEIR CHUNKS ──────────────────────────────────────────────────────
+      #
+      # `electron-builder.yml` filters `.map` out of the packaged renderer, so an installed app has
+      # chunks and no mappings and a stack from it resolves to nothing. This archive is the other side
+      # of that decision: the maps do not ship, but they are kept.
+      #
+      # **Both the `.js` and the `.js.map` files, in their original layout.** Not a maps-only tarball,
+      # which would look perfectly reasonable and resolve nothing: Next hashes each map's filename
+      # independently of the chunk's, so `03b639d8.js` is described by `f881e26f.js.map`, and the only
+      # link between them is the `sourceMappingURL` comment at the end of the chunk.
+      # `scripts/resolve-log.mjs` reads that comment rather than deriving a name, precisely because a
+      # derived name matches about one chunk in thirty-six.
+      #
+      # Per-OS rather than one shared archive. The chunk hashes are content-derived and *should* be
+      # identical across the three runners — but resolve-log's own warning is that a hash which
+      # collides across builds produces a confident wrong answer rather than an error, which is worse
+      # than no answer. Three 11MB archives is a cheap price for never having to trust "should".
+      #
+      # `BUILD-COMMIT.txt` is in the archive because resolving a stack needs two things and the archive
+      # can only carry one of them. A map resolves a chunk coordinate to `MenuBar.tsx:223`, and line 223
+      # means nothing without the version of `MenuBar.tsx` that was compiled. Rehearsing this locally
+      # cost real time: the archived map resolved to a line that was a different function entirely in
+      # the working tree, and the map was right — `renderer/out` was simply older than `renderer/src`.
+      # Without the commit there is no way to tell that from a bug in the tooling.
+      - name: Archive the source maps with their chunks
+        shell: bash
+        run: |
+          echo "${{ github.sha }}" > renderer/out/_next/static/BUILD-COMMIT.txt
+          tar -czf "voidcode-sourcemaps-${{ matrix.os }}.tar.gz" \
+            -C renderer/out/_next/static BUILD-COMMIT.txt chunks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sourcemaps-${{ matrix.os }}
+          path: desktop/voidcode-sourcemaps-${{ matrix.os }}.tar.gz
+          if-no-files-found: error
+          # Short, because on an ordinary push these exist only so a stack from a CI build is
+          # resolvable for a few days. A release does not depend on this number: `release.yml`
+          # downloads them inside the same run and attaches them to the tag, which is what makes a
+          # released stack resolvable for the life of the release rather than for 90 days.
+          retention-days: 5
