@@ -5,7 +5,7 @@ command in its row. **`NOT MEASURED` means not measured** — never an estimate 
 for one (spec §0 rule 2).
 
 **Phase status.** Phase 2 complete and passing its acceptance gate. Phase 1 blocked on
-hardware (`docs/OPEN_QUESTIONS.md` Q-001); the operator has elected to move it to rented
+hardware (`docs/specs/OPEN_QUESTIONS.md` Q-001); the operator has elected to move it to rented
 cloud GPUs, which are not yet provisioned. Phases 3–5 not started.
 
 **Scale, stated plainly (spec §0 rule 3).** The Spark pipeline processes **2,296,409

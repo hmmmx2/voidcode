@@ -55,28 +55,32 @@ const MUST_EXIST_EXACT = [
 ];
 
 /**
- * What the document asserts this branch does not have.
+ * What the document asserts this repository does not have.
  *
  * Not derived from the prose, because the claim being guarded is about the world rather than about
  * the text: if any of these appears, the document is wrong regardless of how it is worded.
+ *
+ * **THIS LIST WAS CUT DOWN ONCE, AND THAT WAS THE TEST WORKING.** It used to also name `training`,
+ * `rl`, `features`, `sql`, `ranking`, `deploy`, `experiments`, `quality`, `analysis`, `Makefile`,
+ * `docs/METRICS.md`, `docs/KNOWLEDGE_ARCHITECTURE.md` and `docs/RANKING_DESIGN.md` — correct while
+ * the desktop application was its own repository, and false the moment the two codebases were
+ * consolidated into one tree, because the platform and RL halves brought every one of them.
+ *
+ * Thirteen entries failing at once is what sent someone back to reread the document, which is
+ * exactly what the header of this file says the second half is for. The entries were removed only
+ * after the document was rewritten to say what is now true: the claim it makes is *absent from
+ * `desktop/`*, which is a narrower claim than *absent from the repository*, and the two are no
+ * longer the same sentence.
+ *
+ * What remains here is the genuinely-absent set. Do not trim it further to make a failure go away —
+ * a failure here means the document needs rereading, not that the list needs editing.
  */
 const MUST_STAY_ABSENT = [
-  "training",
-  "rl",
-  "features",
-  "sql",
-  "ranking",
   "serving",
-  "deploy",
-  "experiments",
-  "quality",
-  "analysis",
   "configs",
-  "Makefile",
-  "docs/METRICS.md",
-  "docs/KNOWLEDGE_ARCHITECTURE.md",
-  "docs/RANKING_DESIGN.md",
   "docs/RISK_REGISTER.md",
+  // The specs are committed now, but at docs/specs/ — a copy reappearing at the ROOT would mean
+  // the consolidation had been partly undone.
   "VOIDCODE_PLATFORM_SPEC.md",
   "VOIDCODE_TRAINING_SPEC.md",
 ];

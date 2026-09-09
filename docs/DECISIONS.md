@@ -63,7 +63,7 @@ interconnect.
 | NCCL transport selected | **NOT MEASURED — hardware absent** |
 
 Route selection under §2.5 is therefore **blocked**, not deferred. See
-`OPEN_QUESTIONS.md` Q-001.
+`docs/specs/OPEN_QUESTIONS.md` Q-001.
 
 ---
 
@@ -111,7 +111,7 @@ imposes lifts. §2 needs rewriting before Phase 1 starts rather than being follo
 written.
 
 **Still blocked.** No instance is provisioned and the cloud budget ceiling is unanswered
-(OPEN_QUESTIONS Q-008).
+(`docs/specs/OPEN_QUESTIONS.md` Q-008).
 
 ## D-006 — ML tree added alongside the existing monorepo (operator decision)
 
@@ -152,7 +152,7 @@ model's recovered difficulty correlates with the published Codeforces rating it 
 at Spearman 0.917. Full numbers in `docs/METRICS.md`.
 
 **Not resolved by this phase:** the catalog is only 103 problems, which breaks Phase 3's
-Recall@100 metric. Raised as OPEN_QUESTIONS Q-010 before building the ranker against an
+Recall@100 metric. Raised as `docs/specs/OPEN_QUESTIONS.md` Q-010 before building the ranker against an
 evaluation that cannot mean anything.
 
 ---

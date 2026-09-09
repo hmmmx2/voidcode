@@ -3,9 +3,10 @@
 Training and post-training infrastructure for the VoidCode tutor: distributed SFT, GRPO on a
 verifiable reward, Triton kernels, and FP8 — on RunPod.
 
-Separate from the [desktop application](../swinburne_ai_tutor_project), which is a shipped
-Electron/TypeScript product with its own CI, licence gate and packaging tests. The two exchange
-exactly one artefact: `data/catalogue.json`.
+Separate from the [desktop application](../../desktop), which is a shipped Electron/TypeScript
+product with its own CI, licence gate and packaging tests. It used to be a separate repository and
+this link used to point out of the tree at it; since the consolidation both halves are here. They
+still exchange exactly one artefact: `data/catalogue.json`.
 
 **Nothing here has run on a GPU yet.** The plan is `docs/PLAN.md`; what is built so far is the reward
 harness, which is CPU-only by design.
@@ -93,7 +94,7 @@ covers pausing mid-phase.
 
 ## Running the P0 probe
 
-**[`docs/RUNBOOK-P0.md`](docs/RUNBOOK-P0.md) is the paste-able version** — pod settings, the exact
+**[`RUNBOOK-P0.md`](RUNBOOK-P0.md) is the paste-able version** — pod settings, the exact
 commands, what to read before terminating, and a symptom table. Read it before renting anything; the
 one setting that costs a restart if you get it wrong is picking a `runtime` image when building
 `nccl-tests` needs `nvcc` from a `devel` one.

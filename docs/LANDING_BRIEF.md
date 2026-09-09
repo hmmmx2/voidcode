@@ -250,7 +250,7 @@ The repo contains **no ML, LLM, VLM or system-design learner content**. The prob
 
 **Honest and available:** self-hosted Qwen inference (SGLang / vLLM), QLoRA fine-tuning on Qwen2.5-7B-Instruct, AWQ quantization, an 8192-token reasoning budget with visible thinking traces, and an 88-concept prerequisite DAG mapped onto Codeforces' 38 tags with rating-band gating. That is a real "we built the stack ourselves" story and it is what the stack strip says.
 
-**Not available:** any claim that ML system-design practice problems exist. The demo authors its own content, which is normal for a demo, but the gap between demo subject matter and shipped curriculum is a launch blocker tracked in `docs/OPEN_QUESTIONS.md`.
+**Not available:** any claim that ML system-design practice problems exist. The demo authors its own content, which is normal for a demo, but the gap between demo subject matter and shipped curriculum is a launch blocker tracked in `docs/specs/OPEN_QUESTIONS.md`.
 
 ---
 

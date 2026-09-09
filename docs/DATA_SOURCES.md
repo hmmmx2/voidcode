@@ -111,7 +111,7 @@ expects the old wording. Retraining is required before that checkpoint and this 
 
 Spec §3.1 nominates Project CodeNet, Codeforces dumps and the MBPP / HumanEval families.
 Status: **NOT ACQUIRED.** Phase 1 is blocked on the hardware question in
-`docs/OPEN_QUESTIONS.md` Q-001, so acquisition is deferred rather than skipped. Licences
+`docs/specs/OPEN_QUESTIONS.md` Q-001, so acquisition is deferred rather than skipped. Licences
 to record when it happens:
 
 | Corpus | Licence | Note |

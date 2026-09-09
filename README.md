@@ -80,6 +80,31 @@ docs/              platform docs + evidence/
 infra              docker-compose*.yml, nginx.conf, deploy/, sql/
 ```
 
+## Where to read next
+
+Each of these exists because a question was answered by a full repository audit more than once. A
+document nobody is pointed at gets re-derived by audit, which is the cost it was written to remove —
+so `desktop/tests/doc-links.test.ts` fails if this table stops naming the first two.
+
+| Document | Answers |
+|---|---|
+| [`docs/OPEN_QUESTIONS.md`](docs/OPEN_QUESTIONS.md) | What is undecided about **shipping** — signing, notarisation, updates, provenance |
+| [`docs/SUPERSEDED-SPECS.md`](docs/SUPERSEDED-SPECS.md) | What became of the two specs, phase by phase, and which of their goals were solved differently on purpose |
+| [`docs/rl/RESULT.md`](docs/rl/RESULT.md) | What the GRPO run measured, including the part that did not work |
+| [`docs/rl/METRICS.md`](docs/rl/METRICS.md) | The RL ledger — every number, and `NOT MEASURED` where there is none |
+| [`docs/rl/OPEN_QUESTIONS.md`](docs/rl/OPEN_QUESTIONS.md) | What the RL half built ahead of its own prerequisites |
+| [`docs/specs/OPEN_QUESTIONS.md`](docs/specs/OPEN_QUESTIONS.md) | Review findings raised against the two specs, under their own §0 rule 5 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Platform-half decisions, with the reasoning kept |
+| [`desktop/docs/DECISIONS.md`](desktop/docs/DECISIONS.md) | Desktop-app decisions — including what became of the fine-tune |
+| [`docs/desktop-app-spec.md`](docs/desktop-app-spec.md) | What the desktop application was specified to be |
+| [`docs/RELEASE.md`](docs/RELEASE.md) | Release trade-offs, each pointing at an open question that can close it |
+| [`docs/MEMORY_AUDIT.md`](docs/MEMORY_AUDIT.md) | The VRAM feasibility study — a memory instrument, not a trainer |
+
+**Three files are called `OPEN_QUESTIONS.md` and they are not interchangeable.** The one at
+`docs/` is about shipping this product; `docs/rl/` is the training half's; `docs/specs/` holds
+review findings against the specs. The consolidation collapsed two of them onto one path once
+already, which is why each is named separately here.
+
 ## Running it
 
 ```bash

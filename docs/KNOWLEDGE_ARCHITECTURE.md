@@ -167,7 +167,7 @@ The repository already says so in three places:
   all."*
 - `ConceptGraph.tsx:18-22` — *"listing its contents on a page positioned for ML
   interviews would be a claim the repository does not support."*
-- `docs/OPEN_QUESTIONS.md:246-263`, **Q-010, BLOCKER FOR LAUNCH** — *"The repository
+- `docs/specs/OPEN_QUESTIONS.md:246-263`, **Q-010, BLOCKER FOR LAUNCH** — *"The repository
   contains no ML learner content of any kind."*
 
 The fine-tuning corpus is likewise 100% DSA: 26 distinct LeetCode problems across
@@ -176,7 +176,7 @@ The fine-tuning corpus is likewise 100% DSA: 26 distinct LeetCode problems acros
 **Correction to a repo fact you may be carrying:** `data/concepts.yaml` holds
 **exactly 80 concepts, not 88** (verified by parsing: techniques 16, graphs 14,
 data_structures 12, recursion_dp 11, math 11, foundations 7, strings 6, geometry 3).
-`OPEN_QUESTIONS.md` and `MEMORY.md` both say 88 and are stale. This is not pedantry —
+`docs/specs/OPEN_QUESTIONS.md` and `MEMORY.md` both say 88 and are stale. This is not pedantry —
 `features/taxonomy.py:24` sets `MAX_CONCEPTS = 80`, so **the taxonomy is sitting exactly
 on its ceiling and adding an 81st concept raises `TaxonomyError`.** Any ML concept
 added to that file fails validation until the cap is raised.
@@ -524,7 +524,7 @@ cap (`features/taxonomy.py:24`, `MAX_CONCEPTS = 80`, currently at exactly 80 —
 concept raises `TaxonomyError`), and hidden test cases (all 15 are `is_hidden: False`,
 so there is no held-out grading signal for any reward or eval work).
 
-**7.6 Correct the stale concept count** in `docs/OPEN_QUESTIONS.md` and `MEMORY.md`: 80,
+**7.6 Correct the stale concept count** in `docs/specs/OPEN_QUESTIONS.md` and `MEMORY.md`: 80,
 not 88. Q-010's argument is unaffected — it is stronger, since 80 is the hard ceiling.
 
 **7.7 `docs/METRICS.md` is stale relative to `docs/DECISIONS.md`** — it still reports
