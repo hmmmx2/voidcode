@@ -145,6 +145,40 @@ rather than hidden.
 creation, so CI would embed the icon. Then confirm against the artefact with the same hash comparison,
 because a config that looks right is what produced this.
 
+## Q-009 — The llama.cpp provider is declared local, and pointing it elsewhere makes that false
+
+`inference/registry.ts` declares that provider `capabilities: { tools: false, grammar: true,
+remote: false }`, and its own comment invites the situation that breaks it: *"Also where a vLLM
+endpoint is pointed: same protocol, and deliberately connect-only."* Pointing it at an SSH tunnel or
+a machine on the LAN is the documented use, and doing so does not change the flag.
+
+Three gates key on that flag, and all three are image-upload consent:
+`ipc/handlers/index.ts:578`, `:820`, `:1323`, each `if (… provider?.capabilities.remote === true)`.
+So with the provider pointed off-box, a learner's screenshot leaves the machine with no prompt —
+the control that `inference/consent.ts` exists to enforce, and that the smoke calls the only
+security property in its phase.
+
+**Latent, not live.** While `baseUrl` really is `127.0.0.1:8080`, nothing leaves and the flag is
+honest. It goes live the first time someone tunnels that port, which is exactly what serving the
+30B policy off-box requires.
+
+**Flipping the boolean is not the fix.** `destinationFor` is a hardcoded switch returning the
+literal `"127.0.0.1:8080"` for this provider, so a naive `remote: true` produces a prompt that asks
+permission to send an image to localhost while the bytes go to a rented host. That is precisely the
+failure `consent.ts` names: *"The user is being asked to send data to a place, and 'a remote
+provider' is not a place. Naming the host is the difference between an informed decision and a
+reflex."* A prompt naming the wrong place is worse than none, because it is reassuring.
+
+Two details that make this cheaper than it looks. `hostOf(baseUrl)` already does the right thing,
+is exported from `consent.ts` and is covered by `tests/consent.test.ts` — and is called by nothing
+in `src/`, so the correct helper sits unused beside the hardcoded switch. And no test pins this
+provider's `remote` value, so nothing fails today either way.
+
+*Settled by:* deriving both the remote-ness and the destination from the provider's configured
+`baseUrl` rather than from literals — loopback is local, anything else is not — with a test that a
+non-loopback base URL reports remote and names its own host in the prompt. Until then, do not point
+that provider off-box.
+
 ---
 
 ## The standing constraint behind most of the above

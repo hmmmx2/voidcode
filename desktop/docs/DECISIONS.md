@@ -901,3 +901,43 @@ its absence.
 `docs/ide-parity-plan.md` plans IDE parity with VS Code. That direction was abandoned — the
 standalone editor was removed from Build and the app is chat-first. The file is kept only because
 its subsystem studies are still accurate reading; nothing in it should be treated as intended work.
+
+
+## Serving the RL policy: point at a bigger card rather than shrink the model
+
+The GRPO run produced a LoRA adapter for `Qwen/Qwen3-Coder-30B-A3B-Instruct` (r=32, attention-only,
+102 MB at `artifacts/policy-30b-uncapped`). Three ways to serve it were considered; the choice is to
+run it on a 24-48 GB card and connect to it, not to make it fit locally.
+
+**Local was not a close call, and the numbers are measured rather than estimated.** The AWQ weights
+are **16 GB** on disk; the development machine's card is **15.9 GB** total. The weights alone exceed
+the card before any KV cache, activations or CUDA context. For a working footprint, training served
+this same model at `--vllm-gpu-util 0.40` on a 46 GB A40 with `max_len 5120` — about **18 GB**. That
+is the smallest configuration known to work, and it is ~2 GB more than the whole local card.
+
+**Shrinking it was rejected because it changes what was measured.** The adapter is bound to this
+base; a different base or a heavier quantisation means retraining, and any result would no longer be
+the one `docs/rl/RESULT.md` reports.
+
+**The serving path itself is not new work.** `scripts/train_grpo.py` already builds vLLM with
+`enable_lora=True` and dispatches through `LoRARequest`, so the rollout path in training *is* a
+serving path. The desktop already has the socket: the `llamacpp` provider exists to be pointed at an
+OpenAI-compatible endpoint, which is what vLLM speaks.
+
+Two things do have to change first, and neither is about the model:
+
+- **`docs/OPEN_QUESTIONS.md` Q-009.** That provider declares `remote: false`, and three image-consent
+  gates key on it. Pointing it off-box without fixing that sends learners' screenshots to another
+  machine with no prompt. This is a prerequisite, not a follow-up.
+- **There is no model picker.** `usableProvider()` returns the first provider with any models and its
+  first model, and Ollama sorts before this provider — so a vLLM endpoint is ignored entirely while
+  Ollama has anything pulled. Selection has to exist, or Ollama has to be stopped.
+
+**Sequencing.** The only suitable card available is the A40 currently running the seed-1 replication
+and then the max-cases ablation — roughly two days of occupied GPU. Serving waits for it or needs a
+second card; it is not blocked on code.
+
+**What this decision does not claim.** `docs/rl/RESULT.md` measured transfer at **-0.67 SE** on the
+60 authored ML/DL problems, flat in every run attempted. The interview curriculum is that content, so
+serving this policy is an infrastructure capability and not a quality improvement to the tutor. It is
+recorded here so nobody later reads the decision as evidence the tutor got better.
