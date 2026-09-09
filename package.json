@@ -8,7 +8,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "dev:web": "pnpm --filter @voidcode/web dev",
-    "dev:api": "cd apps/api && python src/main.py --port 8000",
+    "dev:api": "cd apps/api && python -m uvicorn src.main:app --host 127.0.0.1 --port 8000",
     "build:web": "pnpm --filter @voidcode/web build",
     "clean": "turbo run clean && rm -rf node_modules"
   },
