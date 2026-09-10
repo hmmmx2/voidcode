@@ -1780,7 +1780,25 @@ export default function VoidCodeAIPanel({
               <div key={msg.id}>
                 <ChatMessage
                   message={msg}
-                  isStreaming={isStreaming && idx === messages.length - 1 && msg.role === "assistant"}
+                  /**
+                   * `queuePosition === null` is not a tidy-up: it stops the panel telling a lie.
+                   *
+                   * `ChatMessage` renders `ThinkingBlock` whenever `isStreaming` is true, and
+                   * `isStreaming` goes true the moment the response opens — which, for a queued
+                   * request, is before any model has seen the question. The learner was shown
+                   * "Thinking..." above "Waiting for a free GPU slot...", so the app claimed the
+                   * tutor was reasoning about their problem while it sat in a queue behind
+                   * somebody else.
+                   *
+                   * A message that is waiting is not streaming an answer. The thinking block
+                   * appears when the first token does.
+                   */
+                  isStreaming={
+                    isStreaming
+                    && queuePosition === null
+                    && idx === messages.length - 1
+                    && msg.role === "assistant"
+                  }
                 />
                 {/* Show review template after the user message that triggered it */}
                 {msg.role === "user" &&
