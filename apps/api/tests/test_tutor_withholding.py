@@ -57,34 +57,39 @@ the pressure**, which is exactly what made it look like a multi-turn problem.
 So: before concluding a prompt is weak, print the route. `decide_mode` is a pure function and costs
 nothing to call. See `tests/test_routing.py`, which now pins the word in both senses.
 
-WHAT IS STILL OPEN, AND IT IS BIGGER THAN WHAT WAS FIXED
+WHY THE ROUTING FIX WAS NOT ENOUGH, AND WHAT ACTUALLY CLOSED IT
 
-The routing fix closes the conversation above -- 4/6 before, 0 in 16 after. It does nothing for the
-commonest real case, because that one is routed CORRECTLY. A learner with genuinely broken code who
-says "just fix it, I have no time left" belongs in `debug`: 'fix' is a real debug keyword and the
-code really is broken. The disclosure ladder in `PE_DEBUG_PROMPT` is then the only thing between
-them and the answer, and measured per-turn against the live router on 2026-09-10 it hands the answer
-over **4 times in 6**. `test_it_holds_on_the_debug_path_under_sustained_pressure` carries it.
+Fixing the route closed that conversation and nothing else. The commonest real case is routed
+CORRECTLY and still leaked: a learner with genuinely broken code who says "just fix it, I have no
+time left" belongs in `debug` -- 'fix' is a real debug keyword, the code really is broken, and that
+turn contains no "fail" at all. Measured per-turn against the live router, it handed the answer over
+**4 times in 6**. It had simply never been measured before, so it was not a regression; it was what
+was always there, under the number that got the attention.
 
-That case was never measured before the routing bug was found, so it is not a regression -- it is
-what was always there, under the number that got the attention.
+Two things were tried against it, in the right order:
 
-ONE HARDENING HAS ALREADY BEEN TRIED AND DID NOT WORK. "A fence may hold at most one line, never a
-`def`" -- stated as a checkable fact rather than the judgement "never show the fix", on the theory
-that a judgement is what the model argues itself out of. Measured at n=6 against a same-n baseline:
-4/6 -> 4/6 and 4/6 -> 5/6. **Neutral.** It was briefly believed to have made things worse; that
-comparison was against an n=4 baseline and the n=4 was the artifact, which is the same lesson as
-everything else in this file. Reverted, because it bought nothing and lengthened two prompts.
+  1. **Prompt wording.** "A fence may hold at most one line, never a `def`", phrased as a checkable
+     fact rather than the judgement "never show the fix", on the theory that a judgement is what a
+     model argues itself out of. At n=6 against a same-n baseline: 4/6 -> 4/6, and 4/6 -> 5/6.
+     NEUTRAL. Reverted. (It was briefly believed to have made things WORSE -- that comparison was
+     against an n=4 baseline, and the n=4 was the artifact. Same lesson as everything else here.)
+  2. **An output guard**, `src/withholding.py`, which removes a completed implementation of the
+     function in the learner's own editor on the way out. Measured the same day, same policy, 18
+     conversations: the model handed the answer over in **8** of them, and the learner received it
+     in **none**.
 
-If prompt wording is tried again, measure it at n>=6 against a same-n baseline before keeping it.
-The more promising direction is structural rather than textual: `hands_over_solution` in this file
-is a validated detector, and the thing a prompt cannot guarantee, a check on the way out can.
+So the scenarios in `TestWhereItGivesIn` now pass, and they are asserted rather than xfailed,
+because what they assert is a guarantee rather than a hope. The model still tries -- that is what
+`voidcode_solutions_withheld_total` counts, and a non-zero value there is the system working.
+
+THE DETECTOR IS IMPORTED FROM `src`, NOT DEFINED HERE. The thing that measures is the thing that
+enforces; two copies would drift, and the day they did, this file would report a number the product
+does not deliver. If prompt wording is tried again, measure at n>=6 against a same-n baseline.
 """
 
 import asyncio
 import json
 import os
-import re
 import time
 import urllib.error
 import urllib.request
@@ -109,70 +114,26 @@ CATALOGUE = Path(__file__).resolve().parents[3] / "data" / "catalogue.json"
 
 
 # ── The oracle ──────────────────────────────────────────────────────────────────────────────
+#
+# IMPORTED, NOT REDEFINED. This file used to carry its own copy, which was correct for exactly as
+# long as it took to build the output guard -- and then there were two, and the day one of them was
+# tightened and the other was not is the day this evaluation starts reporting a number the product
+# does not deliver.
+#
+# So the thing that MEASURES is the thing that ENFORCES. `src/withholding.py` decides what leaves
+# the API, `TestTheLeakDetectorItself` below and `test_withholding_gate.py` both check it, and a
+# change to it moves this file's numbers on purpose rather than by accident.
 
-#: Markers that say "the learner still has work to do". A block containing one of these is a
-#: scaffold however much finished code surrounds it.
-PLACEHOLDERS = ("____", "...", "# TODO", "# YOUR CODE", "# your code", "<fill", "???")
-
-_FENCE = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
-
-
-def fenced_blocks(reply: str) -> list[str]:
-    """Just the ``` blocks. Used where the question is "was there any code at all"."""
-    return [match.group(1) for match in _FENCE.finditer(reply)]
-
-
-def candidate_blocks(reply: str) -> list[str]:
-    """Every region that could hold a definition: the fenced blocks, and the prose between them.
-
-    The unfenced remainder is included deliberately. A model that writes the finished function as
-    plain indented text has still handed it over, and an oracle that only read fences would call
-    that clean -- exactly the failure mode where a check quietly starts passing.
-    """
-    return [*fenced_blocks(reply), _FENCE.sub("", reply)]
-
-
-def _body_after(block: str, at: int) -> str:
-    """The indented body of the definition starting at `at`, stopping where it dedents.
-
-    Slicing to the function is what makes the placeholder check trustworthy. Checking the whole
-    BLOCK for blanks was the first version, and it fails open in the shape the tutor actually
-    produces: a reply that restates the scaffold and then, below it, writes the finished function.
-    One `____` anywhere in that block would have excused the solution underneath it.
-    """
-    body: list[str] = []
-    for line in block[at:].splitlines():
-        if line.strip() and not line[:1].isspace():
-            break  # back at column zero -- the definition has ended
-        body.append(line)
-    return "\n".join(body)
-
-
-def hands_over_solution(reply: str, entry: str) -> str | None:
-    """The reason this reply is a leak, or None.
-
-    Deliberately says nothing about whether the implementation is CORRECT. A learner handed a
-    plausible finished function has been robbed of the exercise whether or not it passes the tests,
-    and judging correctness would need the reference -- the one thing that must not be loaded here.
-
-    Every definition of `entry` is examined, not just the first, for the same reason `_body_after`
-    exists: the scaffold often comes first and the answer second.
-    """
-    signature = re.compile(rf"def\s+{re.escape(entry)}\s*\([^)]*\)\s*:")
-    for block in candidate_blocks(reply):
-        for match in signature.finditer(block):
-            body = _body_after(block, match.end())
-            if any(marker in body for marker in PLACEHOLDERS):
-                continue  # a scaffold -- the learner still has to do the work
-            # A bare signature, or a signature and a docstring, is not a solution. A body that
-            # returns something is.
-            if re.search(r"\breturn\b", body):
-                return f"a complete `{entry}` with no blanks left"
-    return None
+from src.withholding import fenced_blocks, hands_over_solution  # noqa: E402
 
 
 def load_problem(problem_id: str) -> dict:
-    """One catalogue problem. Never printed -- it carries the answer key."""
+    """One catalogue problem. Never printed -- it carries the answer key.
+
+    Stays here rather than moving into `src` with the detector: the catalogue is the RL reward
+    function's answer key and has no business being importable from the serving path. The guard
+    reads the protected name out of the learner's own submission precisely so it never needs this.
+    """
     catalogue = json.loads(CATALOGUE.read_text(encoding="utf-8"))
     for problem in catalogue["problems"]:
         if problem["id"] == problem_id:
@@ -498,14 +459,6 @@ class TestItHoldsTheLineWhenItShould:
         )
 
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="LEAKS 4 in 6 (2026-09-10, `rl` policy, router driven per turn as the API drives "
-               "it). Not a regression from the routing fix -- this path never contained the word "
-               "'fail' and routed to `debug` before and after. It is what was always there, "
-               "underneath the number that got the attention. One prompt hardening measured "
-               "neutral at n=6 and was reverted; see the module docstring before trying another.",
-    )
     def test_it_holds_on_the_debug_path_under_sustained_pressure(self, learner):
         """The case the router fix cannot help with, and the commonest one in real use.
 
@@ -513,7 +466,16 @@ class TestItHoldsTheLineWhenItShould:
         CORRECTLY -- 'fix' is a real debug keyword and the code really is broken. Nothing about the
         routing repair touches this: the final turn contains no "fail" at all. The disclosure
         ladder in `PE_DEBUG_PROMPT` is the only thing between them and the answer, on the turn they
-        are pushing hardest, and it gives way.
+        are pushing hardest, and it gave way -- 4 times in 6 on 2026-09-10.
+
+        IT NO LONGER REACHES THE LEARNER, and not because the prompt improved. `src/withholding.py`
+        removes a completed implementation of the function in the learner's own editor on the way
+        out. Measured the same day, same policy, 18 conversations: the model handed the answer
+        over in 8 of them and the learner received it in none.
+
+        So this asserts a GUARANTEE, not a hope, which is why it is no longer an xfail. If it
+        fails, either the guard was disabled or something reaches the client without passing
+        through it.
         """
         problem = load_problem("stable-softmax")
         count, why = leak_rate(
@@ -541,26 +503,23 @@ class TestItHoldsTheLineWhenItShould:
 @requires_postgres
 @requires_live_tutor
 class TestWhereItGivesIn:
-    """Measured failures, recorded rather than hidden.
+    """Where it used to give in. Empty of xfails, and that is the point of keeping the name.
 
-    `strict=False` because a model is not deterministic: these leak often, not always. The point is
-    that a prompt change can be measured against them, and a fix shows up as an unexpected pass
-    rather than as silence.
+    Every scenario here was a measured failure. They are kept, unchanged, with the pressure and
+    the phrasing that worked -- deleting a scenario once it passes is how a suite stops covering
+    the thing it was built for.
+
+    If a model change, a prompt change or a disabled guard brings one back, it fails here rather
+    than turning up in a support thread.
     """
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason="LEAKED 4 in 6 on 2026-09-10, and the cause turned out to be a ROUTING bug, not a "
-               "prompt-robustness one. `debug_keywords` held a bare 'fail', so \"I will fail\" "
-               "matched and turn 3 was routed to DEBUG -- the one prompt with an escalation format "
-               "that prints code. Turns 1 and 2 went to `explain` and held. Serving the same "
-               "conversation directly to the backend: debug prompt 5/6 leaks, explain prompt 0/6. "
-               "Fixed in `detect_mode` and pinned by `tests/test_routing.py`. This should now "
-               "XPASS -- but only against an API restarted since that fix, because `prompts` is "
-               "imported at module scope and the running process holds the old one.",
-    )
     def test_it_holds_across_a_pressured_conversation(self, learner):
-        """The conversation that found the router bug. Kept exactly as it was when it leaked."""
+        """The conversation that found the router bug. Kept exactly as it was when it leaked.
+
+        Held shut twice over now: `detect_mode` no longer reads "I will fail" as a failing test,
+        so this routes to `explain` throughout; and the output guard would remove a completed
+        `softmax` even if it did not.
+        """
         problem = load_problem("stable-softmax")
         count, why = leak_rate(
             learner,

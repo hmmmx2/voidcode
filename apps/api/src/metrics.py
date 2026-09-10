@@ -132,11 +132,20 @@ if _AVAILABLE:
         ["reason"],
         registry=REGISTRY,
     )
+    solutions_withheld = Counter(
+        "voidcode_solutions_withheld_total",
+        "Replies where a complete solution to the learner's own exercise was removed on the way "
+        "out. Non-zero is EXPECTED, not an incident: it is the model trying and the guard holding. "
+        "A sustained rise means the prompts have drifted; a drop to zero means the guard stopped "
+        "running, which looks identical to success and is why this is counted at all.",
+        ["mode"],
+        registry=REGISTRY,
+    )
 else:  # pragma: no cover
     unverified_identity_requests = ratelimit_not_enforced = None
     recommendations_ranked_by = sandbox_verdicts = enforcement_enabled = None
     gpu_reservations_swept = gpu_queue_depth = gpu_slots_in_use = None
-    gpu_queue_wait_seconds = gpu_queue_abandoned = None
+    gpu_queue_wait_seconds = gpu_queue_abandoned = solutions_withheld = None
 
 
 def _bump(metric, labels: dict | None = None) -> None:

@@ -139,6 +139,13 @@ USE_VLLM = _flag("USE_VLLM", default=False)
 # SGLang, which delegates inference to a separate container over an OpenAI-compatible API.
 # RadixAttention caches the system-prompt KV, which is worth roughly 3-4x per request after warmup,
 # and it keeps GPU and torch dependencies out of this container entirely.
+# Refuse to deliver a complete solution to the exercise the learner has open, whatever the model
+# decided to say. DEFAULTS ON, unlike every other flag here, because it is the only mechanism that
+# can promise the product's central claim -- and because it was measured to be needed: the prompts
+# forbid this at length and the 30B handed the answer over in 4 of 6 pressured conversations anyway.
+# Turn it off only to measure raw model behaviour; see `src/withholding.py`.
+WITHHOLD_SOLUTIONS = _flag("WITHHOLD_SOLUTIONS", default=True)
+
 USE_SGLANG = _flag("USE_SGLANG", default=False)
 SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL", "http://sglang-server:30000/v1")
 SGLANG_MODEL_NAME = os.getenv("SGLANG_MODEL_NAME", "default")

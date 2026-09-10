@@ -32,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from threading import Thread
-from typing import NamedTuple, Any
+from typing import Any, NamedTuple
 
 # torch / transformers are only available in the HF and vLLM paths.
 # The SGLang path runs in a CPU-only container — guard all heavy imports.
@@ -65,16 +65,17 @@ from pydantic import BaseModel, Field
 # In the vLLM/Docker path, LoRA is already merged into the AWQ weights at
 # quantisation time, so peft is never imported and does not need to be installed.
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
-from . import config, identity, knowledge_cache, metering, metrics, multimodal, ratelimit
-from .database import AsyncSessionLocal
-from .services import (
-    backend_registry,
-    gpu_sweep_service,
-    gpu_wallet_service,
-    queue_service,
-    spindown,
+from . import (
+    config,
+    identity,
+    knowledge_cache,
+    metering,
+    metrics,
+    multimodal,
+    ratelimit,
+    withholding,
 )
-from .schemas.chat import MessageContent
+from .database import AsyncSessionLocal
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
 from .routers.credits import router as credits_router
@@ -87,6 +88,14 @@ from .routers.papers import router as papers_router
 from .routers.problems import router as problems_router
 from .routers.profile import router as profile_router
 from .routers.recommendations import router as recommendations_router
+from .schemas.chat import MessageContent
+from .services import (
+    backend_registry,
+    gpu_sweep_service,
+    gpu_wallet_service,
+    queue_service,
+    spindown,
+)
 
 # Add llm/scripts directory to path for prompts module
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -1479,6 +1488,7 @@ async def generate_stream_sglang(
     presence_penalty: float = 0.0,
     thinking_budget_tokens: int = 512,
     enable_thinking: bool = True,
+    protected: set[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream tokens from the SGLang server via OpenAI-compatible API.
 
@@ -1499,6 +1509,42 @@ async def generate_stream_sglang(
     """
     created = int(time.time())
     full_response = ""
+
+    # ── The output guard ────────────────────────────────────────────────────────────────────
+    #
+    # INSIDE this generator rather than wrapped around it, and that is not a style preference. The
+    # comment in `_stream_for` records an API that died silently after 20-60 requests, with a
+    # discarded generator wrapper as the only suspect: a wrapper never driven to completion never
+    # runs its `finally`, so the upstream SGLang stream is left open. Adding a second wrapper here
+    # to filter tokens would be re-running that experiment. Filtering where the frames are already
+    # built adds no layer and no new `finally`.
+    gate = (
+        withholding.SolutionGate(protected)
+        if protected and config.WITHHOLD_SOLUTIONS
+        else None
+    )
+
+    def _content_chunk(text: str) -> str:
+        return "data: " + json.dumps({
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "choices": [{"delta": {"content": text}, "index": 0, "finish_reason": None}],
+        }) + "\n\n"
+
+    def _deliver(text: str) -> str | None:
+        """One content frame, or None when the gate is holding everything it was just given.
+
+        Returning None rather than an empty frame matters: an empty `delta.content` is a valid
+        chunk, and emitting one per held token would make a withheld block look like the model
+        stuttering rather than like nothing happening.
+        """
+        nonlocal full_response
+        out = gate.feed(text) if gate is not None else text
+        if not out:
+            return None
+        full_response += out
+        return _content_chunk(out)
 
     # Thinking state
     thinking_buffer: str = ""   # accumulates thinking content
@@ -1590,27 +1636,17 @@ async def generate_stream_sglang(
                     thinking_buffer = ""
                     # Emit any real content that arrived in the same chunk as </think>
                     if after.strip():
-                        full_response += after
                         completion_tokens += 1
-                        stream_chunk = {
-                            "id": request_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "choices": [{"delta": {"content": after}, "index": 0, "finish_reason": None}],
-                        }
-                        yield f"data: {json.dumps(stream_chunk)}\n\n"
+                        frame = _deliver(after)
+                        if frame:
+                            yield frame
                 continue  # buffer all tokens until </think> found
 
             # ── Regular content token ────────────────────────────────────────
-            full_response += token
             completion_tokens += 1
-            stream_chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "choices": [{"delta": {"content": token}, "index": 0, "finish_reason": None}],
-            }
-            yield f"data: {json.dumps(stream_chunk)}\n\n"
+            frame = _deliver(token)
+            if frame:
+                yield frame
 
         # Edge case: stream ended with content still in thinking_buffer (no </think> found)
         if thinking_buffer and not thinking_emitted:
@@ -1625,15 +1661,28 @@ async def generate_stream_sglang(
                 # Path B: model hit max_tokens without outputting </think> — the buffer IS
                 # the actual response (model skipped its thinking format).  Emit as content.
                 if clean:
-                    full_response += clean
                     completion_tokens += len(clean.split())
-                    stream_chunk = {
-                        "id": request_id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "choices": [{"delta": {"content": clean}, "index": 0, "finish_reason": None}],
-                    }
-                    yield f"data: {json.dumps(stream_chunk)}\n\n"
+                    frame = _deliver(clean)
+                    if frame:
+                        yield frame
+
+        # Release whatever the gate is still holding, judged now because nothing more is
+        # coming.
+        #
+        # BEFORE the terminal chunk, deliberately. A strict client treats `finish_reason` as
+        # the end of the answer, so anything released after it is dropped -- and the end of a
+        # reply is exactly where a model that has been talked into it puts the function.
+        if gate is not None:
+            tail = gate.flush()
+            if tail:
+                full_response += tail
+                yield _content_chunk(tail)
+            if gate.withheld:
+                logger.warning(
+                    "[%s] withheld a complete %s from a %s reply",
+                    request_id, ", ".join(gate.withheld), mode,
+                )
+                metrics._bump(metrics.solutions_withheld, {"mode": mode})
 
         # THE TERMINAL CHUNK, WHICH THIS PATH NEVER SENT.
         #
@@ -2173,6 +2222,10 @@ def _stream_for(request: "ChatCompletionRequest", request_id: str, prepared: _Pr
             presence_penalty=gen_cfg.get("presence_penalty", 0.0),
             thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
             enable_thinking=gen_cfg.get("enable_thinking", True),
+            # Read from the learner's own submission, so no catalogue -- and therefore no
+            # answer key -- is ever loaded on the serving path. Empty when no code is
+            # attached, which disables the guard for general questions, deliberately.
+            protected=withholding.protected_functions(prepared.latest_user_message),
         ), headers
 
     # ── HF streaming path (USE_VLLM=false, USE_SGLANG=false) ──────────
@@ -2539,6 +2592,29 @@ async def create_chat_completion(
             # Strip <think>…</think> from non-streaming response — thinking is
             # only meaningful in the streaming UI (ThinkingBlock component).
             response_text, _thinking = strip_thinking_tags(raw_text)
+
+            # The same guard as the streaming path, and it has to be here too: this endpoint
+            # is what the evaluation suite and any script calls, so a guard that only covered
+            # the browser would leave the answer reachable by anything holding a token.
+            # Whole-text here rather than the streaming gate, because there is no stream to
+            # hold -- which also catches an UNFENCED handover that the gate cannot see.
+            _protected = withholding.protected_functions(latest_user_message)
+            if _protected and config.WITHHOLD_SOLUTIONS:
+                _gate = withholding.SolutionGate(_protected)
+                response_text = _gate.feed(response_text) + _gate.flush()
+                _unfenced = withholding.completed_outside_a_fence(response_text, _protected)
+                if _unfenced is not None:
+                    # A finished function written as plain prose, with no fence for the gate
+                    # to hold. Rare, and the whole reply goes rather than trying to excise it:
+                    # a partially-redacted explanation reads as a bug and teaches nothing.
+                    _gate.withheld.append(_unfenced)
+                    response_text = withholding.REDACTION.strip()
+                if _gate.withheld:
+                    logger.warning(
+                        "[%s] withheld a complete %s from a %s reply",
+                        request_id, ", ".join(_gate.withheld), detected_mode,
+                    )
+                    metrics._bump(metrics.solutions_withheld, {"mode": detected_mode})
             prompt_tokens = completion.usage.prompt_tokens if completion.usage else 0
             completion_tokens = completion.usage.completion_tokens if completion.usage else 0
             generation_time = time.time() - start_time
