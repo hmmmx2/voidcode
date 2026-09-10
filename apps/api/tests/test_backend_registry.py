@@ -15,9 +15,10 @@ assert "the probe was made exactly once" -- a claim that is the whole point of t
 a real backend could not be made to prove.
 """
 
+from typing import ClassVar
+
 import httpx
 import pytest
-
 from src.services import backend_registry as registry
 
 pytestmark = pytest.mark.asyncio
@@ -26,9 +27,12 @@ pytestmark = pytest.mark.asyncio
 class _Recorder:
     """A fake backend that counts requests, so caching can be asserted rather than assumed."""
 
-    def __init__(self, status_code: int = 200, boom: bool = False):
+    def __init__(self, status_code: int = 200, boom: bool = False, body: dict | None = None):
         self.status_code = status_code
         self.boom = boom
+        #: What `/models` answers. Defaults to an empty list so every existing test is
+        #: unaffected; the model-reporting tests supply a real OpenAI-shaped body.
+        self.body = body if body is not None else {"object": "list", "data": []}
         self.calls: list[str] = []
 
     def factory(self, base_url: str):
@@ -36,7 +40,7 @@ class _Recorder:
             self.calls.append(str(request.url))
             if self.boom:
                 raise httpx.ConnectError("refused", request=request)
-            return httpx.Response(self.status_code, json={"object": "list", "data": []})
+            return httpx.Response(self.status_code, json=self.body)
 
         return httpx.MockTransport(handle)
 
@@ -259,3 +263,95 @@ class TestTheEndpointWasWiredUp:
             "/health no longer awaits the readiness probe"
         )
         assert '"backendState"' in source
+
+
+class TestWhichModelIsActuallyServing:
+    """`/health` reported a model that was not loaded, and nothing could tell from outside.
+
+    Observed 2026-09-10: the endpoint said `Qwen/Qwen2.5-7B-Instruct` — the in-process
+    HuggingFace default — while a 30B answered every request. `BASE_MODEL_ID` is accurate on
+    the HF path and meaningless when inference is delegated, and one field was being used for
+    both. The answer was already inside the liveness probe's own response.
+    """
+
+    TWO_MODELS: ClassVar[dict] = {"object": "list", "data": [
+        {"id": "base", "root": "QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ"},
+        {"id": "rl", "root": "/workspace/policy-30b-seed1", "parent": "base"},
+    ]}
+
+    async def test_it_resolves_the_configured_alias_to_the_real_model(self, monkeypatch):
+        """A served alias is a label. Two aliases routinely point at different weights."""
+        _install(monkeypatch, _Recorder(body=self.TWO_MODELS))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+
+        assert registry.served_model("rl") == "/workspace/policy-30b-seed1"
+        assert registry.served_model("base") == "QuantTrio/Qwen3-Coder-30B-A3B-Instruct-AWQ"
+
+    async def test_an_unknown_alias_gets_no_answer_rather_than_a_guess(self, monkeypatch):
+        """None, not the first entry.
+
+        A health endpoint that invents a plausible answer is the exact failure this module
+        exists to fix. Naming no model is better than naming the wrong one.
+        """
+        _install(monkeypatch, _Recorder(body=self.TWO_MODELS))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+
+        assert registry.served_model("default") is None
+        assert registry.served_model("") is None
+
+    async def test_a_single_served_model_needs_no_alias(self, monkeypatch):
+        """The ordinary deployment: one model, and no ambiguity to resolve."""
+        body = {"object": "list", "data": [{"id": "default", "root": "Qwen/Qwen3-30B"}]}
+        _install(monkeypatch, _Recorder(body=body))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+
+        assert registry.served_model("") == "Qwen/Qwen3-30B"
+
+    async def test_an_entry_without_a_root_falls_back_to_its_id(self, monkeypatch):
+        """A name is better than nothing; dropping the entry would report None for a live model."""
+        body = {"object": "list", "data": [{"id": "llama3"}]}
+        _install(monkeypatch, _Recorder(body=body))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+
+        assert registry.served_model("llama3") == "llama3"
+
+    async def test_a_dead_backend_reports_no_model(self, monkeypatch):
+        """THE ONE THAT MATTERS, and the reason the last-known value is not kept.
+
+        A backend we cannot reach is one whose model we do not know. Repeating what it said
+        before it died is precisely the stale-but-plausible answer that made this bug invisible
+        for as long as it was.
+        """
+        rec = _Recorder(body=self.TWO_MODELS)
+        _install(monkeypatch, rec)
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+        assert registry.served_model("rl") is not None
+
+        rec.boom = True
+        registry._state.probed_at = 0.0  # expire the cache rather than sleeping
+        assert await registry.probe() == registry.DOWN
+        assert registry.served_model("rl") is None
+
+    async def test_a_backend_answering_with_nonsense_does_not_raise(self, monkeypatch):
+        """A probe is what reports trouble, so it cannot become a source of it."""
+        _install(monkeypatch, _Recorder(body={"unexpected": "shape"}))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+
+        assert await registry.probe() == registry.READY
+        assert registry.served_model("rl") is None
+
+    async def test_it_costs_no_extra_request(self, monkeypatch):
+        """The model list rides along on the liveness probe already being made."""
+        rec = _Recorder(body=self.TWO_MODELS)
+        _install(monkeypatch, rec)
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+        registry.served_model("rl")
+        registry.served_model("base")
+
+        assert len(rec.calls) == 1, f"expected one request, made {len(rec.calls)}"

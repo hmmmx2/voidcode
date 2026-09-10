@@ -18,6 +18,16 @@ call site used that module global. Nothing re-read the address, so:
      a health endpoint that cannot report ill-health is worse than not having one, because
      everything downstream is built on trusting it.
 
+A THIRD THING THE SAME PROBE ANSWERS
+
+`/models` says WHICH model is being served, not just that something is listening, and the probe was
+throwing that away. `/health` reported `base_model` from `BASE_MODEL_ID` -- a value that describes
+the in-process HuggingFace path and means nothing when inference is delegated. Observed 2026-09-10:
+the endpoint reported `Qwen/Qwen2.5-7B-Instruct` while the backend was serving a 30B. Accurate on
+one path, stale on the other, with nothing to distinguish the two from outside.
+
+The answer is already in the response being parsed for liveness, so this costs no extra request.
+
 WHY THE PROBE IS CACHED AND WHY THE TTL IS SHORT
 
 `/health` is polled by a Kubernetes readiness probe and by anything else watching. An uncached probe
@@ -45,7 +55,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -72,6 +82,10 @@ class _State:
     #: Set while a backend is known to be starting, so a caller can be told "waking" rather than
     #: "down". Nothing sets this yet; spin-down will.
     expected_back: bool = False
+    #: {alias: underlying model} as the backend last reported it. Empty when the backend has
+    #: not answered, which is the honest state -- an unreachable backend is one whose model we
+    #: do not know, and saying so beats repeating the last thing it said before it died.
+    models: dict[str, str] = field(default_factory=dict)
 
 
 _state = _State()
@@ -132,12 +146,60 @@ async def probe(now: float | None = None) -> str:
         _state.status = READY if response.status_code == 200 else (
             WAKING if _state.expected_back else DOWN
         )
+        _state.models = _models_from(response) if response.status_code == 200 else {}
     except Exception as exc:
         logger.debug("backend probe failed for %s: %s", url, exc)
         _state.status = WAKING if _state.expected_back else DOWN
+        _state.models = {}
 
     _state.probed_at = now
     return _state.status
+
+
+def _models_from(response) -> dict[str, str]:
+    """{alias: underlying model} from an OpenAI-shaped /models body.
+
+    `root` is the real identity -- a served alias is a label, and two aliases routinely point at
+    different weights (a base model and a fine-tune of it). Falls back to the alias when `root` is
+    absent rather than dropping the entry, because a name is better than nothing.
+
+    Never raises. This runs inside a liveness probe whose whole contract is that it cannot fail, so
+    a backend answering 200 with something unexpected must degrade to "no idea", not to a 500 on
+    the endpoint reporting backend health.
+    """
+    try:
+        data = response.json().get("data") or []
+    except Exception as exc:  # pragma: no cover - defensive; body shape is the backend's choice
+        logger.debug("could not read the model list: %s", exc)
+        return {}
+    found: dict[str, str] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        alias = entry.get("id")
+        if isinstance(alias, str) and alias:
+            root = entry.get("root")
+            found[alias] = root if isinstance(root, str) and root else alias
+    return found
+
+
+def served_model(alias: str = "") -> str | None:
+    """What the backend is actually running behind `alias`, or None when that is not known.
+
+    None rather than a guess. The caller reporting this is `/health`, and a health endpoint that
+    invents a plausible answer is the exact failure this module was written for -- it is better to
+    say nothing than to name a model that is not loaded.
+
+    With one model served and no alias configured, that model is the answer; with several and no
+    match, it is genuinely ambiguous and None is correct.
+    """
+    if not _state.models:
+        return None
+    if alias and alias in _state.models:
+        return _state.models[alias]
+    if len(_state.models) == 1:
+        return next(iter(_state.models.values()))
+    return None
 
 
 def reset_for_tests() -> None:

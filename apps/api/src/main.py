@@ -2037,7 +2037,15 @@ async def health_check():
         "judge0_available": judge0_available,
         "database_connected": db_connected,
         "redis_connected": redis_connected,
-        "base_model": BASE_MODEL_ID,
+        # What is ACTUALLY serving, asked of the backend rather than assumed from config.
+        # `BASE_MODEL_ID` describes the in-process HuggingFace path and means nothing when
+        # inference is delegated -- this endpoint reported a 7B while a 30B answered every
+        # request. Falls back to the configured alias, then to None: naming no model is
+        # better than naming the wrong one, which is the whole reason this module exists.
+        "base_model": (
+            backend_registry.served_model(SGLANG_MODEL_NAME) or (SGLANG_MODEL_NAME or None)
+            if USE_SGLANG else BASE_MODEL_ID
+        ),
         "adapter_path": ADAPTER_PATH if not USE_SGLANG else None,
         "modes": mode_info,
         # Whether grounded modes can actually cite anything. Queryable rather than a log line,
