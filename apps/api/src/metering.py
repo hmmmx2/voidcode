@@ -34,6 +34,7 @@ a garbage-collected task is precisely the class of bug that killed this API once
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
@@ -161,3 +162,64 @@ async def drain(timeout: float = 5.0) -> None:
             "%d gpu settle task(s) did not finish in %.1fs; the sweep will release them",
             len(still_pending), timeout,
         )
+
+
+@contextlib.asynccontextmanager
+async def gpu_slot(
+    semaphore: asyncio.Semaphore,
+    user_id: uuid.UUID,
+    *,
+    kind: str,
+    backend: str,
+    max_slot_seconds: int,
+    floor_micro: int,
+    acquire_timeout: float = 30.0,
+    enforce: bool = False,
+):
+    """Hold a serving slot for one awaited generation, metered, for callers that are not the
+    streaming endpoint.
+
+    SAFE AS A CONTEXT MANAGER HERE, AND ONLY HERE. The streaming path cannot use one, because
+    wrapping an async generator is the failure `main.py` documents at length. This wraps a single
+    `await`, so there is no generator to discard and no `finally` that can be skipped.
+
+    IT ALSO TAKES THE PERMIT, WHICH THE CALLER PREVIOUSLY DID NOT. Interview grading ran
+    `generate_response` through `asyncio.to_thread` with no permit at all, so on the HuggingFace
+    backend it executed `model.generate()` concurrently with up to `MAX_CONCURRENT_REQUESTS` chat
+    generations — outside the semaphore that exists specifically to stop that from exhausting VRAM.
+    That is a live out-of-memory risk independent of billing, and it is fixed here because the fix
+    and the meter are the same acquire.
+
+    Waiting rather than failing fast, unlike the chat endpoint: grading follows a submission the
+    learner has already made, so a short wait is better than losing their assessment. Bounded, so a
+    wedged pod returns an error instead of hanging the request.
+    """
+    try:
+        await asyncio.wait_for(semaphore.acquire(), timeout=acquire_timeout)
+    except (TimeoutError, asyncio.TimeoutError) as exc:
+        raise SlotUnavailable(
+            f"no serving slot became free within {acquire_timeout:.0f}s"
+        ) from exc
+
+    meter = None
+    try:
+        if enforce:
+            async with AsyncSessionLocal() as db:
+                meter = await begin(
+                    db, user_id, request_id=f"assess-{uuid.uuid4().hex}", kind=kind,
+                    backend=backend, max_slot_seconds=max_slot_seconds, floor_micro=floor_micro,
+                )
+        yield meter
+    except BaseException:
+        semaphore.release()
+        if meter is not None:
+            meter.finish(consumed=False)
+        raise
+    else:
+        semaphore.release()
+        if meter is not None:
+            meter.finish(consumed=True)
+
+
+class SlotUnavailable(Exception):
+    """No serving slot came free in time. Callers map this to a 503."""

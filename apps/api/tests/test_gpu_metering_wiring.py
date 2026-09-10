@@ -159,3 +159,68 @@ class TestRefusalsHappenBeforeTheGpuIsTouched:
         endpoint = _function("create_chat_completion")
         body = ast.get_source_segment(SOURCE, endpoint) or ""
         assert body.index(marker) < body.index("prepare_messages_hybrid(")
+
+
+class TestTheInterviewGradingPathIsNotFreeGpu:
+    """The bypass that no endpoint-level guard can see.
+
+    `interviews.assess_answer` reaches `generate_response` directly rather than through
+    `/v1/chat/completions`, and it must — `prepare_messages_hybrid` replaces the system prompt,
+    which is what produced hallucinated feedback and is documented at that call site. But going
+    around the endpoint went around the semaphore and the meter too, so grading ran unthrottled on
+    the same card and cost nothing.
+    """
+
+    INTERVIEWS = Path(__file__).resolve().parents[1] / "src" / "routers" / "interviews.py"
+
+    def test_generate_response_is_only_called_inside_a_metered_slot(self):
+        source = self.INTERVIEWS.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        # Every REFERENCE, not every call. `generate_response` is handed to `asyncio.to_thread`
+        # rather than called directly, so looking for `ast.Call` finds nothing and the test passes
+        # while proving nothing — which is exactly what the first version of it did.
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Name)
+            and node.id == "generate_response"
+            and isinstance(node.ctx, ast.Load)
+        ]
+        assert calls, "generate_response is no longer used here — rewrite this test, do not drop it"
+
+        slots = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncWith)
+            and "gpu_slot" in (ast.get_source_segment(source, node.items[0].context_expr) or "")
+        ]
+        assert slots, "the grading generation is not inside a `gpu_slot` — it is free, unthrottled GPU"
+
+        covered = {
+            call.lineno
+            for slot in slots
+            for call in calls
+            if slot.lineno <= call.lineno <= (slot.end_lineno or slot.lineno)
+        }
+        # The import line is a reference too, and it is not inside the slot. Exclude the one that
+        # is part of `from ..main import generate_response`.
+        import_lines = {
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and any(a.name == "generate_response" for a in node.names)
+        }
+        uncovered = sorted({c.lineno for c in calls} - covered - import_lines)
+        assert uncovered == [], (
+            f"generate_response used outside a metered slot at line(s) {uncovered}"
+        )
+
+    def test_it_takes_a_permit_not_only_a_meter(self):
+        """The out-of-memory half of the bug, which billing being off does not excuse.
+
+        Without the permit this runs `model.generate()` alongside up to MAX_CONCURRENT_REQUESTS
+        chat generations, outside the gate that exists to stop that exhausting VRAM.
+        """
+        source = self.INTERVIEWS.read_text(encoding="utf-8")
+        assert "_inference_semaphore" in source, (
+            "grading does not take an inference permit; it can OOM the card regardless of billing"
+        )

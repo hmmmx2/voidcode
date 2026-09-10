@@ -67,7 +67,7 @@ from pydantic import BaseModel, Field
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
 from . import config, identity, knowledge_cache, metering, multimodal, ratelimit
 from .database import AsyncSessionLocal
-from .services import gpu_wallet_service
+from .services import gpu_sweep_service, gpu_wallet_service
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
@@ -528,10 +528,40 @@ async def lifespan(app: FastAPI):
     except Exception as _corpus_err:
         logger.warning(f"knowledge corpus load skipped (non-fatal): {_corpus_err}")
 
+    # The recovery sweep, only when metering is on. It is the sole backstop for a hold whose
+    # request died between releasing its permit and settling — which is what happens on every
+    # deploy that lands mid-request — so the metering path is allowed to fail loudly because this
+    # exists.
+    _sweep_task = None
+    if config.GPU_METERING_ENABLED:
+        _sweep_task = asyncio.create_task(
+            gpu_sweep_service.sweep_loop(
+                interval_seconds=config.GPU_SWEEP_INTERVAL_SECONDS,
+                max_age_seconds=config.GPU_SWEEP_MAX_AGE_SECONDS,
+            )
+        )
+        logger.info("gpu reservation sweep started")
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+
+    # Settles first, then the sweep, then everything else. An in-flight settle finishing now is one
+    # the sweep does not have to void later, and `terminationGracePeriodSeconds` is 60, so the
+    # five-second wait is affordable.
+    if config.GPU_METERING_ENABLED:
+        try:
+            await metering.drain(timeout=5.0)
+        except Exception:
+            logger.exception("gpu settle drain failed at shutdown; the sweep will recover")
+    if _sweep_task is not None:
+        _sweep_task.cancel()
+        try:
+            await _sweep_task
+        except asyncio.CancelledError:
+            pass
+
     executor.shutdown(wait=False)
 
     # Close Redis

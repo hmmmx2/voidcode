@@ -35,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .. import identity
+from .. import config, identity
 from ..database import get_db
 from ..models.catalogue import InterviewAttempt, InterviewQuestion
 from ..models.problem import Problem
@@ -506,17 +506,50 @@ async def assess_answer(
         f"QUESTION\n{question.prompt}\n\nREFERENCE ANSWER\n{question.model_answer}\n\nCANDIDATE ANSWER\n{stripped}"
     )
 
+    # THIS CALL USED TO HOLD NO PERMIT AND COST NOTHING, AND BOTH WERE BUGS.
+    #
+    # It reaches `generate_response` directly rather than through `/v1/chat/completions` -- and it
+    # must, because `prepare_messages_hybrid` replaces the system prompt, which is what produced
+    # hallucinated feedback and is documented above. But going around the endpoint also went around
+    # the inference semaphore and the rate limiter.
+    #
+    # Without the permit, on the HuggingFace backend this ran `model.generate()` concurrently with
+    # up to MAX_CONCURRENT_REQUESTS chat generations, outside the gate that exists to stop exactly
+    # that exhausting VRAM. That is an out-of-memory risk that has nothing to do with billing.
+    # Without the meter, grading was free GPU on the same card everything else is charged for.
+    #
+    # `gpu_slot` fixes both with one acquire, and is safe as a context manager here specifically
+    # because the generation is a single `await` -- there is no generator to discard.
+    from .. import metering
+    from ..main import USE_SGLANG, USE_VLLM, _inference_semaphore
+
+    backend = "sglang" if USE_SGLANG else ("vllm" if USE_VLLM else "hf")
     try:
-        text, _pt, _ct, _think = await asyncio.to_thread(
-            generate_response,
-            [{"role": "system", "content": system},
-             {"role": "user", "content": user}],
-            "explain",
-            700,
-            0.2,
-            0.9,
-            1.05,
-        )
+        async with metering.gpu_slot(
+            _inference_semaphore,
+            user_id,
+            kind="interview_grade",
+            backend=backend,
+            max_slot_seconds=config.GPU_MAX_SLOT_SECONDS,
+            floor_micro=config.GPU_FLOOR_MICRO,
+            enforce=config.GPU_METERING_ENABLED,
+        ):
+            text, _pt, _ct, _think = await asyncio.to_thread(
+                generate_response,
+                [{"role": "system", "content": system},
+                 {"role": "user", "content": user}],
+                "explain",
+                700,
+                0.2,
+                0.9,
+                1.05,
+            )
+    except metering.SlotUnavailable:
+        logger.warning("Assessment for %s could not get a serving slot", slug)
+        raise HTTPException(
+            status_code=503,
+            detail="The tutor is busy. Your answer is saved — try assessing again shortly.",
+        ) from None
     except Exception:
         logger.exception("Assessment failed for %s", slug)
         raise HTTPException(

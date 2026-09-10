@@ -109,6 +109,12 @@ INTERNAL_AUTH_ENFORCE = _flag("INTERNAL_AUTH_ENFORCE", default=False)
 # 404 and the UI hides the fields — OAuth is unaffected.
 ENABLE_PASSWORD_AUTH = _flag("ENABLE_PASSWORD_AUTH", default=True)
 
+# How often each replica sweeps for stranded holds, and how old a hold must be before it is
+# considered stranded. The age must be comfortably beyond any legitimate request, or the sweep races
+# the settle it exists to back up and voids requests that were merely slow.
+GPU_SWEEP_INTERVAL_SECONDS = int(os.getenv("GPU_SWEEP_INTERVAL_SECONDS", "300"))
+GPU_SWEEP_MAX_AGE_SECONDS = int(os.getenv("GPU_SWEEP_MAX_AGE_SECONDS", "900"))
+
 # ── GPU credit metering ──────────────────────────────────────────
 #
 # Two switches, not one, and the split is the whole rollout plan.
