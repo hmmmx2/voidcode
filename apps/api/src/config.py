@@ -115,6 +115,74 @@ ENABLE_PASSWORD_AUTH = _flag("ENABLE_PASSWORD_AUTH", default=True)
 GPU_SWEEP_INTERVAL_SECONDS = int(os.getenv("GPU_SWEEP_INTERVAL_SECONDS", "300"))
 GPU_SWEEP_MAX_AGE_SECONDS = int(os.getenv("GPU_SWEEP_MAX_AGE_SECONDS", "900"))
 
+# ── Inference backend ────────────────────────────────────────────
+#
+# THESE LIVED IN `main.py` AS INLINE `os.getenv` CALLS AND WERE THEREFORE UNPOLICED.
+#
+# `tests/test_env_templates.py` derives the set of variables that must be documented by scanning
+# THIS FILE with a regex over the getenv and flag call sites -- note that writing either call
+# out literally in a comment would itself register as a variable, which is why this sentence
+# describes it instead. Six variables that decide which backend
+# serves every request, what address it lives at, and how many requests may hit it at once were
+# invisible to that scan, absent from both `.env` templates, and discoverable only by reading
+# `main.py`. Moving them here is the whole change: the guard already existed.
+#
+# It is also a prerequisite for making the backend address re-resolvable. Today the URL is baked
+# into an `AsyncOpenAI` client built once in the lifespan, so a backend that moves is invisible
+# until the process restarts.
+
+# vLLM. Requires an AWQ-quantised model built offline (merge_lora.py then quantize_awq.py) and
+# WSL2/Linux -- vLLM has no native Windows support. False falls back to HuggingFace
+# `model.generate()` in-process.
+USE_VLLM = _flag("USE_VLLM", default=False)
+
+# SGLang, which delegates inference to a separate container over an OpenAI-compatible API.
+# RadixAttention caches the system-prompt KV, which is worth roughly 3-4x per request after warmup,
+# and it keeps GPU and torch dependencies out of this container entirely.
+USE_SGLANG = _flag("USE_SGLANG", default=False)
+SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL", "http://sglang-server:30000/v1")
+SGLANG_MODEL_NAME = os.getenv("SGLANG_MODEL_NAME", "default")
+
+# Client timeout for calls to SGLang. MUST exceed the longest generation any mode can ask for, or
+# the request is cut off mid-answer and the learner sees an error on exactly the questions that
+# needed the most explanation.
+#
+# The old value was 120s, which was never long enough for this config:
+#   teaching  max_new_tokens=8192   debug/explain/general  4096
+# Measured at 18.6 tok/s, so 8192 tokens is ~440s and 4096 is ~220s. 120s truncated every mode
+# except followup (1024) and empathy (512). At a datacentre-class ~80 tok/s an 8192-token teaching
+# answer still takes ~102s, and the thinking phase is spent before the visible answer begins.
+#
+# HOW THIS RELATES TO THE 300s IN `nginx.conf` AND `deploy/base/ingress.yaml`, BECAUSE THE THREE
+# NUMBERS LOOK CONTRADICTORY AND ARE NOT:
+#
+#   * `proxy_read_timeout 300s` is a gap-BETWEEN-READS timeout, not a total. A streaming response
+#     resets it on every token, so a stream that is producing output has no 300s ceiling. 900 here
+#     is the backstop for a backend that has gone silent, which is the case nginx is also watching.
+#   * A NON-streaming request is one long gap, so for that path 300s IS a hard total and the proxy
+#     gives up first. Waiting 900s behind a proxy that left at 300 holds a serving slot for ten
+#     minutes on behalf of nobody -- and, with metering on, bills it. That is a real defect and the
+#     fix is not to shorten this: it is for the non-streaming path to refuse rather than wait, which
+#     is what the queue work does.
+#
+# The comment in `nginx.conf` claiming "the backend's own timeout (180 s)" was simply stale. There
+# has been no 180 anywhere for some time.
+SGLANG_TIMEOUT_SECONDS = float(os.getenv("SGLANG_TIMEOUT_SECONDS", "900"))
+
+# How many inference requests may be in flight IN THIS PROCESS.
+#   SGLang 16 -- SGLang batches internally, so this bounds the FastAPI queue depth only.
+#   vLLM    8 -- likewise.
+#   HF      2 -- `model.generate()` runs in a thread and more than two risks GPU OOM on 16 GB.
+#
+# PER PROCESS, WHICH IS NOT THE SAME AS PER POD OR PER FLEET. `deploy/base/api-hpa.yaml` runs two to
+# four replicas, so the fleet can push 32-64 concurrent requests at a backend sized for 16 while
+# each replica believes it is within its limit. The semaphore cannot see the other replicas. Sizing
+# a shared budget needs shared state, which is the queue work; this number stays as the per-process
+# memory guard it has always been.
+MAX_CONCURRENT_REQUESTS = int(
+    os.getenv("MAX_CONCURRENT_REQUESTS", "0")
+) or (16 if USE_SGLANG else (8 if USE_VLLM else 2))
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the

@@ -113,45 +113,18 @@ BASE_MODEL_ID = os.getenv("BASE_MODEL_ID", "Qwen/Qwen2.5-7B-Instruct")
 DEFAULT_ADAPTER_PATH = str(LLM_DIR / "outputs" / "final_model")
 ADAPTER_PATH = os.getenv("ADAPTER_PATH", DEFAULT_ADAPTER_PATH)
 
-# P4: vLLM feature flag — set USE_VLLM=true in environment to activate.
-# Requires: AWQ-quantized model at llm/outputs/awq_model/ (run merge_lora.py
-# then quantize_awq.py offline first). Must run in WSL2/Linux — vLLM has no
-# native Windows support. When false, HuggingFace model.generate() is used.
-USE_VLLM = os.getenv("USE_VLLM", "false").lower() == "true"
+# ── Inference backend ────────────────────────────────────────────────────────
+# These moved to `config.py` so `test_env_templates.py` can see them: it derives the
+# must-be-documented set by scanning that file, and six inline `os.getenv` calls here were invisible
+# to it. The reasoning behind each value moved with it -- particularly why the SGLang timeout is 900
+# while nginx reads 300, which looks contradictory and is not.
+USE_VLLM = config.USE_VLLM
+USE_SGLANG = config.USE_SGLANG
+SGLANG_BASE_URL = config.SGLANG_BASE_URL
+SGLANG_MODEL_NAME = config.SGLANG_MODEL_NAME
+SGLANG_TIMEOUT_SECONDS = config.SGLANG_TIMEOUT_SECONDS
 
-# SGLang feature flag — set USE_SGLANG=true to delegate inference to a
-# separate sglang-server container via OpenAI-compatible HTTP API.
-# Benefits: RadixAttention caches system-prompt KV, ~3-4x faster per-request
-# after warmup; no GPU/torch deps in this container.
-USE_SGLANG = os.getenv("USE_SGLANG", "false").lower() == "true"
-SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL", "http://sglang-server:30000/v1")
-SGLANG_MODEL_NAME = os.getenv("SGLANG_MODEL_NAME", "default")
-
-# Client timeout for SGLang calls. MUST exceed the longest generation any mode can ask for, or the
-# request is cut off mid-answer and the learner sees an error on exactly the questions that needed
-# the most explanation.
-#
-# The old value was 120s, which was never long enough for this config:
-#   teaching  max_new_tokens=8192   debug/explain/general  4096
-# Measured on the local RTX 5060 Ti serving Qwen3.5-9B fp8: 18.6 tok/s, so 8192 tokens is ~440s and
-# 4096 is ~220s. 120s truncates every mode except followup (1024) and empathy (512).
-#
-# This is not only a slow-hardware problem. At a datacentre-class ~80 tok/s an 8192-token teaching
-# answer still takes ~102s, so 120s left no margin for prefill on long code context either. The
-# thinking phase makes it worse: those tokens are spent before the visible answer begins.
-SGLANG_TIMEOUT_SECONDS = float(os.getenv("SGLANG_TIMEOUT_SECONDS", "900"))
-
-# ── Concurrency limiter ──────────────────────────────────────────────────────
-# Limits concurrent LLM inference requests to prevent OOM / queue overload.
-# SGLang (USE_SGLANG=true): default 16 — SGLang handles batching internally;
-#   this limits the FastAPI queue depth only.
-# vLLM  (USE_VLLM=true) : default 8  — vLLM batches internally; guards endpoint queue.
-# HF    (USE_VLLM=false): default 2  — model.generate() runs in a thread; > 2
-#   concurrent requests risk GPU OOM on 16 GB VRAM.
-# Override via MAX_CONCURRENT_REQUESTS env var (e.g. in docker-compose.sglang.yml).
-_MAX_CONCURRENT_REQUESTS = int(
-    os.getenv("MAX_CONCURRENT_REQUESTS", "16" if USE_SGLANG else ("8" if USE_VLLM else "2"))
-)
+_MAX_CONCURRENT_REQUESTS = config.MAX_CONCURRENT_REQUESTS
 _inference_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
 
 # Global model references

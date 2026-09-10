@@ -54,6 +54,28 @@ def test_main_calls_assert_production_config() -> None:
     assert "config.assert_production_config()" in source
 
 
+def test_main_reads_the_backend_settings_from_config() -> None:
+    """Six variables that decide which backend serves every request were inline in `main.py`.
+
+    `test_env_templates.py` derives what must be documented by scanning `config.py` only, so an
+    inline `os.getenv` here is exempt from every template check by construction -- which is how
+    `SGLANG_BASE_URL` came to be undocumented in both `.env` templates while deciding where every
+    inference request goes.
+
+    Asserted against the source rather than by import, per the module docstring: importing `main`
+    pulls in torch.
+    """
+    source = MAIN.read_text(encoding="utf-8")
+    for name in (
+        "USE_VLLM", "USE_SGLANG", "SGLANG_BASE_URL", "SGLANG_MODEL_NAME",
+        "SGLANG_TIMEOUT_SECONDS", "MAX_CONCURRENT_REQUESTS",
+    ):
+        assert f'os.getenv("{name}"' not in source, (
+            f"`{name}` is read inline in main.py again. Put it in config.py, or it is invisible to "
+            "test_env_templates.py and will go undocumented."
+        )
+
+
 def test_main_uses_cors_settings_and_hardcodes_no_tunnel_regex() -> None:
     """The specific regression: an inline CORS block with the dev tunnel regex and no env branch.
 

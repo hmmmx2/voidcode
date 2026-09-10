@@ -86,8 +86,13 @@ def test_no_template_carries_a_real_secret() -> None:
 
 
 def test_secret_shaped_variables_are_empty_in_every_template() -> None:
+    # The Stripe pair was missing from this list from the day payments landed, and the separate
+    # real-secret scan could not have caught them either: its pattern is `sk-[A-Za-z0-9]{16,}` and
+    # Stripe keys are `sk_test_`/`sk_live_`, with an underscore. Two guards, neither covering the
+    # two values that let somebody charge the account or forge a credit grant.
     secretish = ("INTERNAL_API_SECRET", "RESEND_API_KEY", "RATELIMIT_PEPPER", "AUTH_SECRET",
-                 "JUDGE0_AUTH_TOKEN", "JUDGE0_ADMIN_TOKEN", "AUTH_GOOGLE_SECRET")
+                 "JUDGE0_AUTH_TOKEN", "JUDGE0_ADMIN_TOKEN", "AUTH_GOOGLE_SECRET",
+                 "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")
     for template in (API_ENV, DOCKER_ENV, WEB_ENV):
         for line in template.read_text(encoding="utf-8").splitlines():
             if "=" not in line or line.strip().startswith("#"):
