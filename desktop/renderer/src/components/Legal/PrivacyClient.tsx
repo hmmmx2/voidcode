@@ -151,8 +151,8 @@ const SECTIONS: Section[] = [
         <p>
           By default, nothing. Models run through a local Ollama or llama.cpp on your own machine,
           and your code is executed inside the application in a WebAssembly sandbox that has no
-          network access at all. There are exactly three ways anything reaches the internet, and all
-          three require you to act first:
+          network access at all. There are exactly four ways anything reaches the internet, and all
+          four require you to act first:
         </p>
         <ul>
           <li>
@@ -160,6 +160,16 @@ const SECTIONS: Section[] = [
             OpenRouter key and selecting one of its models sends that conversation — your prompt, and
             any code or images attached to it — to OpenRouter, under their privacy policy. With no
             key, their models are listed and cannot be used. It goes to them, not to us.
+          </li>
+          <li>
+            <strong className="text-ink-2">The VoidCode model, if you select it.</strong> This one
+            goes <em>to us</em>, and it is the only thing here that does. Choosing the
+            &ldquo;VoidCode&rdquo; provider sends that conversation — your prompt, and any code or
+            images attached to it — to our servers, where a model we run answers it. We do this
+            because the model is far larger than anything most machines can hold, and running it
+            costs us GPU time, which is why it is metered against credits rather than free. Every
+            other provider in this list is a machine you control or a company you chose; this one
+            is ours. It is never selected for you, and the local providers keep working without it.
           </li>
           <li>
             <strong className="text-ink-2">Downloading a model.</strong> Ollama fetches the weights
@@ -402,8 +412,13 @@ const SECTIONS: Section[] = [
         <p>
           The application has no third-party integrations that are active by default. There is no
           analytics provider, no error-reporting service, no advertising network, and no
-          authentication provider — sign-in with Microsoft or Google is not offered, because there is
-          nothing to sign in to.
+          authentication provider — sign-in with Microsoft or Google is not offered.
+        </p>
+        <p>
+          One party that can become involved is not a third party at all: it is us. Selecting the
+          VoidCode model sends that conversation to our servers, as section 3 describes. We mention
+          it here because a list of &ldquo;who else might see this&rdquo; that quietly omits the
+          people who wrote the application would be the least useful kind of accurate.
         </p>
         <p>Two third parties can become involved, in both cases because you chose it:</p>
         <ul>

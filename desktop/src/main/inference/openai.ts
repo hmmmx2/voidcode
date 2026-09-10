@@ -30,6 +30,16 @@ interface ChatCompletionChunk {
   }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string };
+  /**
+   * A VoidCode extension, and shaped so that it is invisible to anything that does not want it.
+   *
+   * The hosted API sends a queue update as a valid `chat.completion.chunk` with an EMPTY delta
+   * plus these two fields. A provider that ignores them -- every other OpenAI-compatible server
+   * this class talks to -- sees a chunk with no content and skips it, which is why this parsing
+   * is safe to leave switched on for all of them rather than gated behind the provider id.
+   */
+  type?: string;
+  queue?: { position?: number; ahead?: number; backendState?: string };
 }
 
 export interface OpenAICompatibleOptions {
@@ -45,6 +55,13 @@ export interface OpenAICompatibleOptions {
    * into a log or a crash dump ends up holding a credential.
    */
   authToken?: () => Promise<string | undefined>;
+  /**
+   * Extra headers, read at request time for the same reason `authToken` is a getter.
+   *
+   * The hosted provider needs to say who is asking, and an identity read once at construction
+   * would survive a sign-out. Nothing here holds the value.
+   */
+  extraHeaders?: () => Promise<Record<string, string>>;
 }
 
 export class OpenAICompatibleProvider implements InferenceProvider {
@@ -167,6 +184,20 @@ export class OpenAICompatibleProvider implements InferenceProvider {
           completionTokens = frame.usage.completion_tokens;
         }
 
+        // A queue update from the hosted backend. Handled before the delta below because the
+        // frame deliberately carries an empty one -- falling through would be harmless but would
+        // also mean the position never reached the surface that wants to show it.
+        if (frame.type === "queue" && frame.queue !== undefined) {
+          const position = frame.queue.position ?? 1;
+          yield {
+            kind: "queued",
+            position,
+            ahead: frame.queue.ahead ?? Math.max(position - 1, 0),
+            backendState: frame.queue.backendState ?? "ready",
+          };
+          continue;
+        }
+
         const choice = frame.choices?.[0];
         const text = choice?.delta?.content;
         if (text !== undefined && text !== "") yield { kind: "token", text };
@@ -213,7 +244,10 @@ export class OpenAICompatibleProvider implements InferenceProvider {
 
   private async headers(): Promise<Record<string, string>> {
     const token = await this.options.authToken?.();
-    return token === undefined ? {} : { authorization: `Bearer ${token}` };
+    return {
+      ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+      ...(await this.options.extraHeaders?.() ?? {}),
+    };
   }
 }
 

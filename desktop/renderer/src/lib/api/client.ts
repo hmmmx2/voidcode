@@ -387,7 +387,7 @@ const IPC_ROUTES: Array<[string, IpcRoute]> = [
         // Fixed here, not taken from the caller. The panel is the tutor; a renderer that
         // could name its own surface could ask for the unrestricted assistant instead.
         surface: "tutor",
-        provider: usable.id as "ollama" | "llamacpp" | "openrouter",
+        provider: usable.id as "ollama" | "llamacpp" | "openrouter" | "hosted",
         model: usable.model,
         // The contract admits only user and assistant turns — the persona is main's. Any
         // system turn is dropped rather than passed through, because passing it would make
@@ -1087,7 +1087,15 @@ type ChatChunk =
       promptTokens?: number;
       completionTokens?: number;
     }
-  | { kind: "error"; message: string; retryable: boolean };
+  | { kind: "error"; message: string; retryable: boolean }
+  /**
+   * Waiting for a GPU slot on the hosted backend. Only `hosted` ever sends one.
+   *
+   * Present here because `tests/chat-chunk-parity.test.ts` compares this union against main's and
+   * fails when they drift -- which is the check that exists because a kind added on one side and
+   * missing on the other makes streaming stop silently.
+   */
+  | { kind: "queued"; position: number; ahead: number; backendState: string };
 
 function sseFromPort(chat: ChatStream): Response {
   const encoder = new TextEncoder();
@@ -1140,6 +1148,32 @@ function sseFromPort(chat: ChatStream): Response {
          * tools to call. That is a property of today's callers, not of this function, and it
          * is not something to leave a landmine under.
          */
+        /**
+         * Re-emitted in the SAME shape the hosted API sends over the wire.
+         *
+         * This function exists to hand the panel OpenAI-shaped SSE regardless of which provider
+         * produced it, and the queue frame is the one case where the original was already in that
+         * shape: main decoded it into a `queued` chunk to cross the port, and here it goes back to
+         * being what it was. The payoff is that the panel's parsing is identical whether the app
+         * is talking to the API directly or through this port -- one branch, one contract, and no
+         * desktop-only frame format to keep in step.
+         *
+         * The empty delta is deliberate and is carried through: a chunk with no content is what
+         * makes this invisible to any consumer that has not opted in.
+         */
+        if (chunk.kind === "queued") {
+          frame({
+            type: "queue",
+            queue: {
+              position: chunk.position,
+              ahead: chunk.ahead,
+              backendState: chunk.backendState,
+            },
+            choices: [{ index: 0, delta: {}, finish_reason: null }],
+          });
+          return;
+        }
+
         if (chunk.kind === "tool_call") return;
 
         if (chunk.kind === "error") {

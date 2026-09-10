@@ -83,7 +83,7 @@ import {
  *   `AbortSignal` to the port's lifetime.
  */
 
-type ProviderId = "ollama" | "llamacpp" | "openrouter";
+type ProviderId = "ollama" | "llamacpp" | "openrouter" | "hosted";
 
 interface ProviderOption {
   id: ProviderId;

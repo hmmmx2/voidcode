@@ -97,7 +97,7 @@ export interface AgentStreamHandle {
 export function streamAgent(
   host: NonNullable<Window["host"]>,
   request: {
-    provider: "ollama" | "llamacpp" | "openrouter";
+    provider: "ollama" | "llamacpp" | "openrouter" | "hosted";
     model: string;
     content: string | AgentContentBlock[];
     /**

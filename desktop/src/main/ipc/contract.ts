@@ -110,7 +110,7 @@ export const CHANNELS = {
       // cannot reach this either way, since a paper or a model reply is text the renderer
       // displays, not code that can open a channel.
       surface: z.enum(["tutor", "assistant"]),
-      provider: z.enum(["ollama", "llamacpp", "openrouter"]),
+      provider: z.enum(["ollama", "llamacpp", "openrouter", "hosted"]),
       model: z.string().min(1).max(256),
       messages: z
         .array(
@@ -737,7 +737,7 @@ export const CHANNELS = {
   "agent:open": {
     input: z
       .object({
-        provider: z.enum(["ollama", "llamacpp", "openrouter"]),
+        provider: z.enum(["ollama", "llamacpp", "openrouter", "hosted"]),
         model: z.string().min(1).max(200),
         content: z.union([
           z.string().min(1).max(200_000),
@@ -957,7 +957,7 @@ export const CHANNELS = {
   "vision:locate": {
     input: z
       .object({
-        provider: z.enum(["ollama", "llamacpp", "openrouter"]),
+        provider: z.enum(["ollama", "llamacpp", "openrouter", "hosted"]),
         model: z.string().min(1).max(200),
         image: z
           .object({

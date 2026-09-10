@@ -430,11 +430,20 @@ describe("the privacy policy describes this application", () => {
     }
   });
 
-  it("is right that one provider can receive a conversation", () => {
+  it("is right about which providers can receive a conversation", () => {
     /**
-     * Section 3 says a conversation leaves the machine only through OpenRouter, and only with a key.
-     * That is true because it is the sole provider declaring `remote: true`. A second one would make
-     * the section incomplete without changing a word of it, which is exactly the drift to catch.
+     * Section 3 enumerates what leaves the machine, and the count is the thing that rots: a new
+     * provider declaring `remote: true` makes the section incomplete without changing a word of
+     * it. That is exactly the drift this catches, and it caught it — the hosted VoidCode backend
+     * was added and this failed, because the policy still said a conversation could only reach
+     * OpenRouter.
+     *
+     * Two now: OpenRouter, and our own hosted model. The second is the one that matters, because
+     * it is the only path where the text reaches US rather than a company the learner chose, and
+     * the policy has to say so in those words.
+     *
+     * Raising this number is not the fix when it fails again. Updating the policy is; the number
+     * follows.
      */
     const inference = path.join(root, "src/main/inference");
     const remote = fs
@@ -446,8 +455,16 @@ describe("the privacy policy describes this application", () => {
         ...code(readSource(path.join(inference, name), "utf8")).matchAll(/remote:\s*true/g),
       ]);
 
-    expect(remote, "more than one remote provider — section 3 names only OpenRouter").toHaveLength(1);
+    expect(
+      remote,
+      "a provider declaring `remote: true` has been added or removed — section 3 of the privacy "
+        + "policy enumerates what leaves the machine, and it is now wrong. Update the policy, then "
+        + "this count.",
+    ).toHaveLength(2);
     expect(rendered).toContain("OpenRouter");
+    // The hosted path in the learner's own words, not ours: the policy must say the text reaches
+    // us, because that is the fact a local-first user would most want to know had changed.
+    expect(rendered).toContain("to us");
   });
 });
 

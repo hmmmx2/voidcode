@@ -1635,6 +1635,30 @@ async def generate_stream_sglang(
                     }
                     yield f"data: {json.dumps(stream_chunk)}\n\n"
 
+        # THE TERMINAL CHUNK, WHICH THIS PATH NEVER SENT.
+        #
+        # Every content chunk above carries `finish_reason: None`, and this stream then went
+        # straight to the usage event and `[DONE]` -- so a completed answer was indistinguishable,
+        # on the wire, from a connection that dropped mid-generation. The HF path has always sent
+        # one (see `generate_stream`); this one did not.
+        #
+        # Nothing noticed because the web panel keys completion on the `[DONE]` sentinel. A strict
+        # OpenAI client keys on `finish_reason`, which is what the specification says, and the
+        # desktop app reported every successful answer as "closed the connection before finishing".
+        # Worse for an agent: `finishReason` is the only thing that distinguishes "the model
+        # finished" from "the model wants tools run and is waiting", so a loop keyed on it either
+        # stops early or spins.
+        #
+        # Emitted before the usage event so a client that stops at the terminal chunk has already
+        # seen the whole answer, and after the flush above so no content follows it.
+        terminal_chunk = {
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "choices": [{"delta": {}, "index": 0, "finish_reason": "stop"}],
+        }
+        yield f"data: {json.dumps(terminal_chunk)}\n\n"
+
         # Send usage event (matches HF/vLLM path format)
         usage_event = {
             "type": "usage",

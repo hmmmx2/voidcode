@@ -8,7 +8,21 @@
  * without it should be told, not handed prose where JSON was required.
  */
 
-export type ProviderId = "ollama" | "llamacpp" | "openrouter";
+/**
+ * `hosted` is the VoidCode platform API, and it is the odd one out on purpose.
+ *
+ * The other three are model endpoints: this app opens a socket to something that generates
+ * tokens and nothing sits in between. `hosted` points at our own server, which meters GPU time
+ * against a credit balance, queues a request when the fleet is busy, and can refuse one that
+ * cannot be paid for. It is the only provider that costs the learner money and the only one that
+ * can make them wait behind somebody else.
+ *
+ * Added ALONGSIDE the local providers rather than replacing them. The app's local-first promise
+ * (spec 2.7) is not a default to be flipped: a learner with Ollama installed should keep working
+ * offline, for free, exactly as before, and reach for the hosted backend only when they want the
+ * larger model.
+ */
+export type ProviderId = "ollama" | "llamacpp" | "openrouter" | "hosted";
 
 export interface ProviderCapabilities {
   /** Tool/function calling. */
@@ -161,7 +175,23 @@ export type ChatChunk =
       promptTokens?: number;
       completionTokens?: number;
     }
-  | { kind: "error"; message: string; retryable: boolean };
+  | { kind: "error"; message: string; retryable: boolean }
+  /**
+   * The request is waiting for a GPU slot on the hosted backend.
+   *
+   * Its own kind rather than a `token`, because it is not part of the answer and must never
+   * reach the transcript: a learner scrolling back should not find "you are third in line"
+   * embedded in what the tutor told them.
+   *
+   * Only `hosted` ever emits this. A local provider has no queue -- there is one process on one
+   * machine serving one person -- so every other provider's stream is unchanged, and a surface
+   * that does not render this kind simply never sees one.
+   *
+   * `position` counts from 1, so 1 means next. `ahead` is `position - 1`, carried rather than
+   * derived so the wording can say "two ahead of you" without every renderer doing the
+   * subtraction and one of them getting it wrong.
+   */
+  | { kind: "queued"; position: number; ahead: number; backendState: string };
 
 
 export interface ModelInfo {

@@ -37,6 +37,29 @@ function providers(): InferenceProvider[] {
   return realProviders().map((p) => scripted.get(p.id) ?? p);
 }
 
+
+/**
+ * Who the hosted backend is told is asking.
+ *
+ * TEMPORARY, AND MARKED SO RATHER THAN QUIETLY REASONABLE. There is no sign-in in this app yet:
+ * the data layer is `app://api` answered in-process, and `client.ts` records that the identity
+ * header was removed precisely because there was no server to assert an identity to. Now there
+ * is one, and it bills people.
+ *
+ * So this reads a user id from the environment for development and sends nothing otherwise,
+ * which makes the hosted provider unusable against an API that enforces identity — deliberately.
+ * An app that invented a plausible-looking id would let a learner spend somebody else's credit,
+ * and a client that held the server's shared HMAC secret would ship that secret to every
+ * installation. Neither is a thing to do by accident on the way to a demo.
+ *
+ * The next change is real sign-in: a token minted by the API, kept in `secrets.ts` beside the
+ * OpenRouter key, sent as a bearer. This function is where that lands.
+ */
+async function hostedIdentity(): Promise<Record<string, string>> {
+  const userId = process.env.VOIDCODE_USER_ID;
+  return userId === undefined || userId === "" ? {} : { "x-user-id": userId };
+}
+
 function realProviders(): InferenceProvider[] {
   return [
     new OllamaProvider(),
@@ -47,6 +70,25 @@ function realProviders(): InferenceProvider[] {
       // connect-only — never installed or managed by us (spec §2.7).
       baseUrl: "http://127.0.0.1:8080/v1",
       capabilities: { tools: false, grammar: true, remote: false },
+    }),
+    new OpenAICompatibleProvider({
+      id: "hosted",
+      label: "VoidCode",
+      // The platform API, not a model server. Overridable so a developer can point at a local
+      // instance without a rebuild; the default is what a packaged app ships with.
+      baseUrl: process.env.VOIDCODE_API_URL ?? "http://127.0.0.1:8020/v1",
+      // `remote: true` IS THE CONSENT DECISION, not a description.
+      //
+      // It drives the cloud-active indicator and the upload-consent prompt. Text sent here
+      // leaves the machine and reaches our server, which is exactly the thing a learner who
+      // chose a local-first app would want to be asked about — and the fact that the server is
+      // ours rather than a third party's does not make the question go away.
+      //
+      // `tools` and `grammar` are false because the tutor endpoint offers neither: it serves one
+      // chat completion with a curriculum system prompt, and claiming otherwise would let the
+      // paper pipeline pick this provider and get prose where it required JSON.
+      capabilities: { tools: false, grammar: false, remote: true },
+      extraHeaders: hostedIdentity,
     }),
     new OpenAICompatibleProvider({
       id: "openrouter",
@@ -99,6 +141,8 @@ export function destinationFor(id: ProviderId): string {
       return "127.0.0.1:11434";
     case "llamacpp":
       return "127.0.0.1:8080";
+    case "hosted":
+      return new URL(process.env.VOIDCODE_API_URL ?? "http://127.0.0.1:8020/v1").host;
     case "openrouter":
       return "openrouter.ai";
   }

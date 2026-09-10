@@ -71,7 +71,14 @@ describe("the two ChatChunk declarations", () => {
     // how an exhausted thinking budget became indistinguishable from a silent model — the
     // assessor stored an empty `unknown` verdict, which `verdict.ts` documents as benign.
     expect(chunkKinds(MAIN)).toContain("reasoning");
-    expect(chunkKinds(MAIN)).toEqual(["done", "error", "reasoning", "token", "tool_call"]);
+    // `queued` reports a wait for a GPU slot on the hosted backend. Pinned because it is the one
+    // kind that carries no answer text: a renderer that dropped it would show a learner an empty
+    // panel for up to two minutes with nothing saying why, which is indistinguishable from the app
+    // having hung.
+    expect(chunkKinds(MAIN)).toContain("queued");
+    expect(chunkKinds(MAIN)).toEqual([
+      "done", "error", "queued", "reasoning", "token", "tool_call",
+    ]);
   });
 
   it("both carry finishReason on the done variant", () => {

@@ -203,7 +203,7 @@ interface VoidCodeHost {
      * `content` mirrors `chat.open`'s — a string, or blocks including images.
      */
     open(input: {
-      provider: "ollama" | "llamacpp" | "openrouter";
+      provider: "ollama" | "llamacpp" | "openrouter" | "hosted";
       model: string;
       content:
         | string
@@ -350,7 +350,7 @@ interface VoidCodeHost {
    */
   vision?: {
     locate(input: {
-      provider: "ollama" | "llamacpp" | "openrouter";
+      provider: "ollama" | "llamacpp" | "openrouter" | "hosted";
       model: string;
       image: { data: string; mediaType: "image/png" | "image/jpeg" | "image/webp" };
     }): Promise<{
@@ -401,7 +401,7 @@ interface VoidCodeHost {
        * from a closed set — it never supplies prompt text, and it grants no capability.
        */
       surface: "tutor" | "assistant";
-      provider: "ollama" | "llamacpp" | "openrouter";
+      provider: "ollama" | "llamacpp" | "openrouter" | "hosted";
       model: string;
       /**
        * Content is a string, or blocks for a vision model.
