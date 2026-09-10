@@ -67,7 +67,7 @@ from pydantic import BaseModel, Field
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
 from . import config, identity, knowledge_cache, metering, multimodal, ratelimit
 from .database import AsyncSessionLocal
-from .services import gpu_sweep_service, gpu_wallet_service
+from .services import gpu_sweep_service, gpu_wallet_service, queue_service
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
@@ -1673,7 +1673,7 @@ async def _semaphore_wrapped(
         async for chunk in gen:
             yield chunk
     finally:
-        _release_slot(meter, consumed=True)
+        _release_slot(meter, consumed=True, lease=slot_lease)
 
 
 async def _begin_metering(
@@ -1744,7 +1744,12 @@ async def _begin_metering(
         ) from None
 
 
-def _release_slot(meter: "metering.Meter | None", *, consumed: bool) -> None:
+def _release_slot(
+    meter: "metering.Meter | None",
+    *,
+    consumed: bool,
+    lease: "queue_service.SlotLease | None" = None,
+) -> None:
     """Release the permit and finish the meter, together, at every site that does either.
 
     Six call sites in this file route through here (1703, 2002, 2005, 2146, 2218, 2293 at the time
@@ -1760,6 +1765,8 @@ def _release_slot(meter: "metering.Meter | None", *, consumed: bool) -> None:
     configuration refusal -- so the hold is released without a charge.
     """
     metering.release_slot(_inference_semaphore, meter, consumed=consumed)
+    if lease is not None:
+        lease.release_in_background(AsyncSessionLocal)
 
 
 # --- API Endpoints ---
@@ -1927,23 +1934,6 @@ async def create_chat_completion(
     if not USE_SGLANG and not USE_VLLM and model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    # Concurrency gate — non-blocking; return 503 immediately if at capacity so
-    # students get fast feedback instead of silently queuing behind a full server.
-    if _inference_semaphore.locked():
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"Server at capacity ({_MAX_CONCURRENT_REQUESTS} concurrent requests). "
-                "Please retry in a few seconds."
-            ),
-        )
-    await _inference_semaphore.acquire()
-
-    # _semaphore_held_by_wrapper: set to True when we return a StreamingResponse —
-    # _semaphore_wrapped() releases the permit after the stream ends.
-    # For non-streaming paths the inner try/finally releases it.
-    _semaphore_held_by_wrapper = False
-
     # A UUID, not a millisecond timestamp.
     #
     # This was `f"chatcmpl-{int(time.time() * 1000)}"`, which is not unique: two requests in the
@@ -1955,6 +1945,75 @@ async def create_chat_completion(
     # Format is preserved -- `chatcmpl-` prefix, opaque suffix -- because clients treat it as
     # opaque and the OpenAI shape says nothing about how the suffix is built.
     request_id = f"chatcmpl-{uuid.uuid4().hex}"
+
+    # ASSIGNED BEFORE THE CAPACITY GATE, not after. The queue ticket and the reservation must carry
+    # the SAME id: that is the only thing tying "this request waited 40s" to "this request was
+    # charged 12 credits", and a queue ticket with an id nothing else uses answers no question.
+
+    # ── Capacity ─────────────────────────────────────────────────────────────
+    #
+    # TWO LIMITS, ASKING DIFFERENT QUESTIONS. `_inference_semaphore` bounds concurrency in THIS
+    # PROCESS -- on the HuggingFace path `model.generate()` runs in a thread and more than two at
+    # once risks OOM here. The fleet-wide budget is `gpu_slots`, because the HPA runs two to four
+    # replicas and a per-process count says nothing about what the backend is being asked to carry.
+    #
+    # A NON-STREAMING REQUEST IS NEVER QUEUED. It has no channel to say "you are third", and
+    # `nginx.conf`'s 300s read timeout is a hard total for it rather than a gap between chunks, so
+    # waiting spends a budget the caller cannot see. 429 with `Retry-After` is the honest answer;
+    # the old 503 said the server was broken, which it is not.
+    slot_lease = None
+    if config.GPU_QUEUE_ENABLED:
+        if not request.stream:
+            async with AsyncSessionLocal() as _db:
+                if await queue_service.slots_in_use(_db) >= await queue_service.capacity(_db):
+                    raise HTTPException(
+                        status_code=429,
+                        detail="Every serving slot is busy. Please retry in a few seconds.",
+                        headers={"Retry-After": "5"},
+                    )
+        else:
+            _queued_at = time.monotonic()
+            try:
+                slot_lease = await queue_service.acquire_lease(
+                    AsyncSessionLocal,
+                    caller.user_id,
+                    request_id,
+                    max_wait_seconds=config.GPU_QUEUE_MAX_WAIT_SECONDS,
+                    max_depth=config.GPU_QUEUE_MAX_DEPTH,
+                    is_disconnected=http_request.is_disconnected,
+                )
+            except queue_service.QueueFull as exc:
+                metrics.record_queue_abandoned("full")
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many requests are waiting. Please retry shortly.",
+                    headers={"Retry-After": "10"},
+                ) from exc
+            except queue_service.QueueTimeout as exc:
+                metrics.record_queue_abandoned("timeout")
+                raise HTTPException(
+                    status_code=429,
+                    detail="No serving slot became free in time. Please retry.",
+                    headers={"Retry-After": "15"},
+                ) from exc
+            metrics.observe_queue_wait(time.monotonic() - _queued_at)
+    else:
+        # Unchanged behaviour while the switch is off: fast feedback rather than silent queuing.
+        if _inference_semaphore.locked():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Server at capacity ({_MAX_CONCURRENT_REQUESTS} concurrent requests). "
+                    "Please retry in a few seconds."
+                ),
+            )
+    await _inference_semaphore.acquire()
+
+    # _semaphore_held_by_wrapper: set to True when we return a StreamingResponse —
+    # _semaphore_wrapped() releases the permit after the stream ends.
+    # For non-streaming paths the inner try/finally releases it.
+    _semaphore_held_by_wrapper = False
+
 
     # The clock starts HERE, after acquire() returned, so a request never pays for the time it
     # spent waiting for a slot. Queue wait is a throughput problem, not a learner's cost.
@@ -1974,10 +2033,10 @@ async def create_chat_completion(
     except HTTPException:
         # Already the right status -- 401 for an unusable identity, 402 for insufficient credit.
         # Nothing was consumed, so void rather than settle.
-        _release_slot(meter, consumed=False)
+        _release_slot(meter, consumed=False, lease=slot_lease)
         raise
     except Exception as _prep_err:
-        _release_slot(meter, consumed=False)
+        _release_slot(meter, consumed=False, lease=slot_lease)
         logger.exception(f"[{request_id}] prepare_messages_hybrid failed: {_prep_err}")
         raise HTTPException(status_code=500, detail=f"Request preparation failed: {_prep_err!s}") from _prep_err
 
@@ -2118,7 +2177,7 @@ async def create_chat_completion(
     if USE_VLLM:
         # Not using _semaphore_wrapped; release manually. Nothing reached the model, so the hold
         # is voided rather than settled.
-        _release_slot(meter, consumed=False)
+        _release_slot(meter, consumed=False, lease=slot_lease)
         raise HTTPException(
             status_code=400,
             detail=(
@@ -2190,7 +2249,7 @@ async def create_chat_completion(
                 ),
             )
         finally:
-            _release_slot(meter, consumed=True)
+            _release_slot(meter, consumed=True, lease=slot_lease)
 
     try:
         start_time = time.time()
@@ -2265,7 +2324,7 @@ async def create_chat_completion(
             # came back. Charging for a failed generation is uncomfortable but it is the honest
             # reading of occupancy, and the alternative — free retries on any error — is the one
             # that can be driven deliberately.
-            _release_slot(meter, consumed=True)
+            _release_slot(meter, consumed=True, lease=slot_lease)
 
 
 # --- Main ---

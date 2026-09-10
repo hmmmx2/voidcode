@@ -183,6 +183,30 @@ MAX_CONCURRENT_REQUESTS = int(
     os.getenv("MAX_CONCURRENT_REQUESTS", "0")
 ) or (16 if USE_SGLANG else (8 if USE_VLLM else 2))
 
+# ── GPU serving queue ────────────────────────────────────────────
+#
+# OFF BY DEFAULT, like the two metering switches above and for the same reason: this changes the
+# behaviour of the most expensive endpoint in the product, and the safe rollout is to deploy the
+# code, watch the tables, and then flip a flag without a deploy.
+#
+# With it off, `/v1/chat/completions` behaves exactly as before -- a 503 the instant the in-process
+# semaphore is contended. With it on, a request waits for a fleet-wide slot instead, which is what
+# makes the concurrency limit mean something across replicas rather than per process.
+GPU_QUEUE_ENABLED = _flag("GPU_QUEUE_ENABLED", default=False)
+
+# How long a streaming request will wait for a slot before giving up.
+#
+# BOUNDED BY WHAT THE PROXIES WILL TOLERATE, not by patience. `apps/web/.../api/proxy` sets no
+# timeout, so Node's default headers budget applies, and `nginx.conf` allows 300s between reads.
+# Response headers are not sent until this wait finishes, so the wait plus prompt preparation must
+# fit inside that -- 120s leaves a wide margin and is already longer than anyone will sit still for.
+GPU_QUEUE_MAX_WAIT_SECONDS = float(os.getenv("GPU_QUEUE_MAX_WAIT_SECONDS", "120"))
+
+# Refuse at the door past this depth rather than admitting to a queue that cannot be served inside
+# the wait ceiling. Telling somebody they are 400th is a worse answer than asking them to retry,
+# and they will wait for it.
+GPU_QUEUE_MAX_DEPTH = int(os.getenv("GPU_QUEUE_MAX_DEPTH", "50"))
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the

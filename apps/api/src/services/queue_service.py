@@ -333,3 +333,95 @@ async def renew_forever(
                     slot_id, ticket_id,
                 )
                 return
+
+
+# ── Holding a slot for the life of one request ──────────────────────────────────────────────
+
+
+class SlotLease:
+    """A claimed slot plus the task keeping it alive. One per in-flight request.
+
+    Exists so the endpoint can pass ONE object through its six release sites instead of two ids and
+    a task handle. That matters more than it looks: `main.py` already learned that a permit released
+    at a site that forgot to settle the meter strands a learner's credit, and the fix was to make
+    the pair impossible to separate. This is the same shape for the same reason.
+    """
+
+    __slots__ = ("ticket_id", "slot_id", "_renewer", "_released")
+
+    def __init__(self, ticket_id: uuid.UUID, slot_id: int, renewer: asyncio.Task | None):
+        self.ticket_id = ticket_id
+        self.slot_id = slot_id
+        self._renewer = renewer
+        self._released = False
+
+    def release_in_background(self, sessionmaker: async_sessionmaker[AsyncSession]) -> None:
+        """Give the slot back without blocking the caller.
+
+        FIRE AND FORGET, because every call site is a `finally` that may be running during
+        cancellation, where awaiting is not safe. This mirrors `metering.Meter.finish()`, which
+        solved the same problem on the same code path.
+
+        Idempotent: a second call does nothing. The guarded UPDATE underneath would already refuse
+        to free somebody else's slot, but a repeated release should not even reach the database, and
+        it should not cancel a renewer twice.
+        """
+        if self._released:
+            return
+        self._released = True
+
+        if self._renewer is not None:
+            self._renewer.cancel()
+
+        async def _release() -> None:
+            try:
+                async with sessionmaker() as db:
+                    await release(db, self.slot_id, self.ticket_id)
+                    await forget(db, self.ticket_id)
+            except Exception as exc:
+                # The lease expiring is the backstop, which is why this can be swallowed: a slot
+                # never freed here becomes claimable on its own within LEASE_SECONDS.
+                logger.warning("could not release gpu slot %s: %s", self.slot_id, exc)
+
+        try:
+            task = asyncio.get_running_loop().create_task(_release())
+            _release_tasks.add(task)
+            task.add_done_callback(_release_tasks.discard)
+        except RuntimeError:
+            logger.error(
+                "no running loop to release gpu slot %s; the lease will expire in %ds",
+                self.slot_id, LEASE_SECONDS,
+            )
+
+
+#: Strong references, so a release task is not garbage-collected mid-flight. Same reason
+#: `metering._settle_tasks` exists.
+_release_tasks: set[asyncio.Task] = set()
+
+
+async def acquire_lease(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+    request_id: str,
+    *,
+    max_wait_seconds: float,
+    max_depth: int,
+    is_disconnected=None,
+) -> SlotLease:
+    """Queue for a slot and return a lease that renews itself until released.
+
+    The renewal is a separate task and the generation is NOT. `main.py`'s
+    `_reasoning_visible_to_caller` is a ContextVar, and a ContextVar set in one task is invisible in
+    another -- splitting the generation across tasks would silently change what a learner is shown.
+    Renewal touches none of that, so it is the only part that moves.
+    """
+    ticket_id, slot_id = await wait_for_slot(
+        sessionmaker, user_id, request_id,
+        max_wait_seconds=max_wait_seconds,
+        max_depth=max_depth,
+        is_disconnected=is_disconnected,
+    )
+    renewer = asyncio.get_running_loop().create_task(
+        renew_forever(sessionmaker, slot_id, ticket_id)
+    )
+    return SlotLease(ticket_id, slot_id, renewer)
