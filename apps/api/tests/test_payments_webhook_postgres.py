@@ -290,9 +290,18 @@ class TestNothingElseCredits:
 
 
 class TestNoRouteGrantsWithoutASignature:
-    def test_the_webhook_is_the_only_route_that_can_add_credit(self):
+    def test_only_the_webhook_and_the_voucher_redeem_can_add_credit(self):
         """Structural, because a future 'confirm purchase' endpoint reading a redirect parameter is
         exactly the mistake this design exists to prevent — and it would look reasonable in review.
+
+        This asserted ONE granting route until vouchers landed. The list is spelled out rather than
+        counted so that adding a third is a deliberate edit to this test with a reason attached,
+        not a number quietly incremented.
+
+        Why `redeem_voucher` is allowed here: the amount comes from the voucher row rather than
+        from the request, the wallet is the resolved caller's rather than one the body names, and
+        the claim is a guarded UPDATE so a replay is refused by the database. It takes nobody's word
+        for anything, which is the property this test is really about.
         """
         import ast
         import pathlib
@@ -304,9 +313,13 @@ class TestNoRouteGrantsWithoutASignature:
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 body = ast.get_source_segment(source, node) or ""
-                if "gpu_wallet_service.grant(" in body:
+                # `voucher_service.redeem()` grants indirectly, so match the service call
+                # too — matching only the direct call would let a route launder a grant
+                # through any helper and pass this test.
+                if "gpu_wallet_service.grant(" in body or "voucher_service.redeem(" in body:
                     granting.append(node.name)
 
-        assert granting == ["payment_webhook"], (
-            f"these routes can add credit: {granting}. Only the signature-verified webhook may."
+        assert sorted(granting) == ["payment_webhook", "redeem_voucher"], (
+            f"these routes can add credit: {granting}. Only the signature-verified webhook and the "
+            "voucher redemption may — and a new one needs a reason written into this test."
         )

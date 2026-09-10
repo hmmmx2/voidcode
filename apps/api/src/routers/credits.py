@@ -1,12 +1,26 @@
-"""Reading a credit balance and its history, and buying more.
+"""Reading a credit balance and its history, buying more, and redeeming a voucher.
 
-THE ONLY WAY CREDIT ENTERS OVER HTTP IS A VERIFIED WEBHOOK
+TWO ROUTES ADD CREDIT, AND NEITHER TAKES ANYONE'S WORD FOR THE AMOUNT
 
-`/checkout` starts a purchase and grants nothing. `/webhook` is the sole route that adds credit, and
-only for a body carrying a valid provider signature. There is deliberately no admin grant endpoint:
-`users.role` exists and **nothing in `src/` reads it**, so an admin route would mean inventing an
-authorization primitive as a side effect of a payments change, which is how authorization bugs ship.
-Operator grants stay in a script until that primitive is designed on its own terms.
+`/checkout` starts a purchase and grants nothing. The two that do grant are:
+
+  * `/webhook` -- for a body carrying a valid provider signature. The signature is the whole
+    authentication, and the amount comes from the pack the metadata names, never from the money the
+    body claims was paid.
+  * `/vouchers/redeem` -- for a code the caller already holds. The amount comes from the voucher
+    row, never from the request, and the claim is a guarded single-statement UPDATE so a second
+    redemption of one code is refused by the database rather than by application logic. See
+    `services/voucher_service.py`, which explains at length why it does NOT copy
+    `token_service.redeem()`.
+
+Both grant through `gpu_wallet_service.grant()` with an idempotency key that is unique in two
+tables. Neither is reachable without an authenticated caller.
+
+THERE IS STILL DELIBERATELY NO ADMIN GRANT ENDPOINT. `users.role` exists and **nothing in `src/`
+reads it for authorization**, so an admin route would mean inventing an authorization primitive as a
+side effect of a payments change, which is how authorization bugs ship. Vouchers are minted by
+`scripts/mint_voucher.py` for exactly this reason: redemption is a user action and needs no new
+primitive, while issuance stays off HTTP entirely.
 
 THE SUCCESS REDIRECT GRANTS NOTHING, AND THAT IS THE POINT
 
@@ -27,7 +41,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import config, identity, ratelimit
 from ..database import get_db
 from ..models.gpu_billing import MICRO_PER_CREDIT, GpuLedger, GpuReservation, GpuWallet
-from ..services import credit_packs, gpu_pricing, gpu_wallet_service, payments
+from ..services import (
+    credit_packs,
+    gpu_pricing,
+    gpu_wallet_service,
+    payments,
+    voucher_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +257,55 @@ async def start_checkout(
         ) from exc
 
     return {"redirectUrl": session.redirect_url, "reference": session.provider_reference}
+
+
+
+class RedeemRequest(BaseModel):
+    code: str
+
+
+@router.post("/vouchers/redeem")
+async def redeem_voucher(
+    body: RedeemRequest,
+    http_request: Request,
+    caller: identity.Caller = Depends(identity.resolve_caller),
+    db: AsyncSession = Depends(get_db),
+):
+    """Redeem a voucher code into the caller's own wallet.
+
+    RATE LIMITED HARDER THAN ANYTHING ELSE HERE, and unlike the webhook it is limited at all. A
+    voucher code is a guessable-shaped secret and every outstanding code shares this one endpoint,
+    so an unbounded version is a brute-force oracle against the whole set at once. The webhook can
+    afford to be unlimited because a forged signature is rejected before any database work; a
+    voucher guess cannot be rejected without a lookup.
+
+    The wallet credited is the CALLER'S, taken from the resolved identity. There is no user id in
+    the request body -- a redeem that let the caller name a wallet would let anyone move a voucher
+    into an account they control after learning the code.
+    """
+    await ratelimit.check_ip(ratelimit.VOUCHER, http_request)
+
+    if caller.is_anonymous:
+        raise HTTPException(status_code=401, detail="Sign in before redeeming a voucher.")
+    if not caller.verified:
+        raise HTTPException(status_code=401, detail="This request could not be authenticated.")
+
+    code = (body.code or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Enter a voucher code.")
+
+    try:
+        amount_micro = await voucher_service.redeem(db, code, caller.user_id)
+    except voucher_service.VoucherError as exc:
+        # 400 rather than 404: the message already says which refusal it was, and a 404 would
+        # additionally confirm to a prober that the code does not exist.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "credited": True,
+        "amountMicro": amount_micro,
+        "credits": amount_micro // MICRO_PER_CREDIT,
+    }
 
 
 @router.post("/webhook")

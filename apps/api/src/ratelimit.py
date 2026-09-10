@@ -69,6 +69,14 @@ EXECUTE = Limit(max_requests=60, window_seconds=60, name="execute")
 #: Generation is the most expensive endpoint in the product by a wide margin — a GPU for seconds.
 CHAT = Limit(max_requests=30, window_seconds=60, name="chat")
 
+#: Redeeming a credit voucher. Far tighter than anything else here, and tighter than REGISTER.
+#:
+#: A voucher code is a secret with a guessable shape, and every outstanding code shares one endpoint.
+#: An attacker does not need to guess a SPECIFIC code -- any hit pays -- so the thing to bound is
+#: total attempts against the whole outstanding set, not attempts per code. Five an hour makes that
+#: arithmetic hopeless while leaving room for somebody mistyping a code off a piece of paper.
+VOUCHER = Limit(max_requests=5, window_seconds=3600, name="voucher")
+
 
 def client_ip(request: Request) -> str:
     """The caller's address, honouring exactly as many proxy hops as we actually run.
