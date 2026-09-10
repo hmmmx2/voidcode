@@ -55,9 +55,18 @@ class CreditPack:
     #: False retires a pack from sale without deleting it, so past purchases still resolve.
     on_sale: bool = True
 
+    #: How each currency is written where the buyer lives. Not `currency.upper()`: "MYR 20.00" is
+    #: how a bank statement reads, and "RM20.00" is how a price is written on anything a Malaysian
+    #: is asked to buy. Getting this wrong makes a real product look like an export of a database.
+    _SYMBOLS = {"myr": "RM", "usd": "$", "sgd": "S$"}
+
     @property
     def price_display(self) -> str:
-        return f"{self.currency} {self.price_minor / 100:.2f}"
+        symbol = self._SYMBOLS.get(self.currency)
+        if symbol is None:
+            # An unknown currency prints its ISO code rather than guessing a symbol wrong.
+            return f"{self.currency.upper()} {self.price_minor / 100:.2f}"
+        return f"{symbol}{self.price_minor / 100:.2f}"
 
 
 #: Append-only, newest last. RM-denominated: the product is aimed at Malaysia.
@@ -74,7 +83,7 @@ PACKS: tuple[CreditPack, ...] = (
         price_minor=2000,
         currency="myr",
         credits_micro=1200 * MICRO_PER_CREDIT,
-        label="Starter — RM20",
+        label="Starter",
     ),
     CreditPack(
         code="my-regular-50",
@@ -82,7 +91,7 @@ PACKS: tuple[CreditPack, ...] = (
         price_minor=5000,
         currency="myr",
         credits_micro=3300 * MICRO_PER_CREDIT,
-        label="Regular — RM50",
+        label="Regular",
     ),
     CreditPack(
         code="my-heavy-100",
@@ -90,7 +99,7 @@ PACKS: tuple[CreditPack, ...] = (
         price_minor=10000,
         currency="myr",
         credits_micro=7000 * MICRO_PER_CREDIT,
-        label="Heavy — RM100",
+        label="Heavy",
     ),
 )
 

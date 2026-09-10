@@ -14,6 +14,7 @@ interface SidebarItem {
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
     { label: "Profile", href: "/profile" },
+    { label: "Credits", href: "/credits" },
     { label: "Terms of Use", href: "/terms" },
     { label: "Privacy Policy", href: "/privacy" },
     {
