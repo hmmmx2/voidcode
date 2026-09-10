@@ -1,25 +1,35 @@
-"""Reading a credit balance and its history. Nothing here moves money.
+"""Reading a credit balance and its history, and buying more.
 
-WHY THERE IS NO TOP-UP OR GRANT ENDPOINT
+THE ONLY WAY CREDIT ENTERS OVER HTTP IS A VERIFIED WEBHOOK
 
-Adding credit needs an authorization primitive this codebase does not have. `users.role` is an enum
-of student/instructor/admin and **nothing in `src/` reads it** — there is no `require_admin`, and
-`identity.current_user_id` never touches the database, so an admin check would be the first identity
-dependency that does. Inventing that primitive as a side effect of a billing change is how
-authorization bugs get shipped. Grants happen from a script until it is designed on its own terms.
+`/checkout` starts a purchase and grants nothing. `/webhook` is the sole route that adds credit, and
+only for a body carrying a valid provider signature. There is deliberately no admin grant endpoint:
+`users.role` exists and **nothing in `src/` reads it**, so an admin route would mean inventing an
+authorization primitive as a side effect of a payments change, which is how authorization bugs ship.
+Operator grants stay in a script until that primitive is designed on its own terms.
 
-So this router is read-only, and the write path has no HTTP surface at all.
+THE SUCCESS REDIRECT GRANTS NOTHING, AND THAT IS THE POINT
+
+A buyer returning from the provider lands on a page that reads their balance like any other. It is a
+URL their browser was sent to: it can be visited directly, replayed, or never visited at all because
+they closed the tab. Crediting there would hand out free credit AND lose real payments. The webhook
+is the only source of truth, and it arrives whether or not anyone comes back.
 """
 
+import logging
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import identity
+from .. import config, identity, ratelimit
 from ..database import get_db
 from ..models.gpu_billing import MICRO_PER_CREDIT, GpuLedger, GpuReservation, GpuWallet
+from ..services import credit_packs, gpu_wallet_service, payments
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/credits", tags=["credits"])
 
@@ -135,3 +145,136 @@ async def read_usage(
             for r in rows
         ]
     }
+
+
+# ── Buying credit ────────────────────────────────────────────────────────────
+
+
+class CheckoutRequest(BaseModel):
+    pack_code: str
+
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/packs")
+async def list_packs():
+    """What is on sale. Retired packs are excluded here but still honoured by the webhook."""
+    return {
+        "packs": [
+            {
+                "code": pack.code,
+                "label": pack.label,
+                "priceMinor": pack.price_minor,
+                "priceDisplay": pack.price_display,
+                "currency": pack.currency,
+                "credits": pack.credits_micro // MICRO_PER_CREDIT,
+            }
+            for pack in credit_packs.packs_on_sale()
+        ]
+    }
+
+
+@router.post("/checkout")
+async def start_checkout(
+    body: CheckoutRequest,
+    http_request: Request,
+    caller: identity.Caller = Depends(identity.resolve_caller),
+):
+    """Start a purchase. Grants nothing; returns where to send the buyer.
+
+    Rate limited like the other write paths: creating checkout sessions is cheap for us and free for
+    an abuser, and an unbounded loop of them fills the provider's dashboard with junk sessions.
+    """
+    await ratelimit.check_ip(ratelimit.CHAT, http_request)
+
+    if not config.PAYMENTS_ENABLED:
+        raise HTTPException(status_code=503, detail="Purchases are not available yet.")
+
+    # Both checks, for the reason `_begin_metering` needs both: anonymous is `verified=True` because
+    # there is no id to forge, so `verified` alone would let an unauthenticated visitor buy credit
+    # into the shared anonymous wallet, where anybody could then spend it.
+    if caller.is_anonymous:
+        raise HTTPException(status_code=401, detail="Sign in before buying credit.")
+    if not caller.verified:
+        raise HTTPException(status_code=401, detail="This request could not be authenticated.")
+
+    pack = credit_packs.pack_by_code(body.pack_code)
+    if pack is None or not pack.on_sale:
+        raise HTTPException(status_code=404, detail="No such credit pack.")
+
+    try:
+        session = await payments.create_checkout(
+            pack=pack,
+            user_id=caller.user_id,
+            idempotency_key=f"checkout:{caller.user_id}:{pack.code}:{uuid.uuid4().hex[:8]}",
+        )
+    except payments.PaymentError as exc:
+        logger.error("checkout could not be created for %s: %s", caller.user_id, exc)
+        raise HTTPException(
+            status_code=502, detail="The payment provider is unavailable. Please try again."
+        ) from exc
+
+    return {"redirectUrl": session.redirect_url, "reference": session.provider_reference}
+
+
+@router.post("/webhook")
+async def payment_webhook(
+    request: Request,
+    stripe_signature: str = Header(default="", alias="Stripe-Signature"),
+    db: AsyncSession = Depends(get_db),
+):
+    """The only route that adds credit. Session-less; the signature is the whole authentication.
+
+    NOT RATE LIMITED, DELIBERATELY. `ratelimit.py` fails open when Redis is down, and worse, a 429
+    here makes the provider retry with backoff and eventually give up -- turning a traffic spike
+    into money taken with no credit granted. The signature already bounds who can reach the
+    expensive path, and an unsigned body is rejected before any database work.
+
+    RAW BODY. The signature covers the exact bytes sent, so this reads `await request.body()`
+    rather than a parsed model. A Pydantic body would re-serialise and break the signature for
+    correct requests, which is the worst way to find out.
+    """
+    payload = await request.body()
+
+    try:
+        event = payments.verify_and_parse(payload, stripe_signature)
+    except payments.SignatureInvalid as exc:
+        # 400, not 401: there are no credentials to retry with. A signature that does not match
+        # means the body was not written by the provider.
+        logger.warning("rejected a webhook: %s", exc)
+        raise HTTPException(status_code=400, detail="Invalid signature.") from exc
+    except payments.PaymentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if event is None:
+        # Verified, but not a completed payment. 200 so the provider stops retrying it.
+        return {"received": True, "credited": False}
+
+    pack = credit_packs.pack_by_code(event.pack_code)
+    if pack is None:
+        # Money taken and nothing here can say how much credit it bought. Loud, and NOT a 4xx: a
+        # retry costs nothing and buys time to restore the missing pack row.
+        logger.error(
+            "PAID BUT UNGRANTABLE: event=%s pack_code=%r is unknown. The buyer has been charged "
+            "%s %s and has no credit. Restore the pack row and let the provider retry.",
+            event.event_id, event.pack_code, event.amount_minor, event.currency,
+        )
+        raise HTTPException(status_code=500, detail="Unknown pack; retry.")
+
+    # THE PACK DECIDES THE CREDIT, NOT THE MONEY. `event.amount_minor` is logged for reconciliation
+    # and never divided by anything.
+    granted = await gpu_wallet_service.grant(
+        db,
+        event.user_id,
+        amount_micro=pack.credits_micro,
+        # The provider's event id. Every provider redelivers on retry by design, so this is what
+        # makes a second delivery a no-op rather than a second grant.
+        idempotency_key=f"purchase:{event.event_id}",
+    )
+
+    logger.info(
+        "purchase %s: user=%s pack=%s paid=%s %s credited=%s duplicate=%s",
+        event.event_id, event.user_id, pack.code, event.amount_minor, event.currency,
+        pack.credits_micro, not granted,
+    )
+    return {"received": True, "credited": granted}

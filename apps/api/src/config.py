@@ -115,6 +115,22 @@ ENABLE_PASSWORD_AUTH = _flag("ENABLE_PASSWORD_AUTH", default=True)
 GPU_SWEEP_INTERVAL_SECONDS = int(os.getenv("GPU_SWEEP_INTERVAL_SECONDS", "300"))
 GPU_SWEEP_MAX_AGE_SECONDS = int(os.getenv("GPU_SWEEP_MAX_AGE_SECONDS", "900"))
 
+# ── Payments ─────────────────────────────────────────────────────
+#
+# Both secrets are read from the environment and never from the database or a request. They are the
+# two values that, if leaked, let someone charge your account or forge a credit grant, so they are
+# handled the way `INTERNAL_API_SECRET` is: env only, never logged, never returned by any endpoint.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+
+# Distinct from the secret key, and NOT interchangeable. This one verifies that a webhook body was
+# written by Stripe; the secret key authenticates calls going the other way. Stripe issues it per
+# endpoint, and it rotates independently.
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+# Master switch. Off means /v1/credits/checkout 503s rather than half-working, which is what a
+# missing key would otherwise produce at the worst moment -- mid-purchase.
+PAYMENTS_ENABLED = _flag("PAYMENTS_ENABLED", default=False)
+
 # ── GPU credit metering ──────────────────────────────────────────
 #
 # Two switches, not one, and the split is the whole rollout plan.
@@ -250,6 +266,19 @@ def assert_production_config() -> None:
     #
     # Not production-only, deliberately. A development instance that charges a spoofable identity is
     # how the combination gets discovered in production instead of here.
+    if PAYMENTS_ENABLED and not (STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET):
+        missing = [
+            name for name, value in (
+                ("STRIPE_SECRET_KEY", STRIPE_SECRET_KEY),
+                ("STRIPE_WEBHOOK_SECRET", STRIPE_WEBHOOK_SECRET),
+            ) if not value
+        ]
+        raise ConfigError(
+            f"PAYMENTS_ENABLED is on but {' and '.join(missing)} is empty. Checkout would fail "
+            "after the learner has decided to buy, which is the worst place to discover it. "
+            "Both are set in the environment, never in the database."
+        )
+
     if GPU_BILLING_ENFORCE and not INTERNAL_AUTH_ENFORCE:
         raise ConfigError(
             "GPU_BILLING_ENFORCE is on while INTERNAL_AUTH_ENFORCE is off. Credit would be spent "
