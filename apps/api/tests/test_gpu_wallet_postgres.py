@@ -351,3 +351,58 @@ class TestConcurrency:
         row = await _wallet_row(sessionmaker_np, funded)
         assert row.reserved_micro == hold * 3
         assert row.reserved_micro <= row.balance_micro
+
+
+class TestTheFloorPrice:
+    """Section 4.3 of the billing spec: "A one-token reply still occupied the GPU and still cost you."
+
+    The floor exists because occupancy is not the whole cost. Scheduling, prompt processing and a
+    share of the idle hour between questions are all real and none of them appear on the slot clock.
+    Applying the floor only at the hold refuses a learner who cannot afford it without ever
+    collecting it — which was the state this test was written against.
+    """
+
+    async def test_a_trivial_request_is_charged_the_floor_not_its_measured_cost(
+        self, sessionmaker_np, funded
+    ):
+        await _grant(sessionmaker_np, funded, 100_000)
+        reservation = await _reserve(sessionmaker_np, funded, 50_000)
+
+        floor = 1_000
+        async with sessionmaker_np() as db:
+            # 40 ms at 1000 micro/slot-second measures 40 micro — far below the floor.
+            assert await wallet.settle(db, reservation.id, slot_ms=40, floor_micro=floor) is True
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        assert row.balance_micro == 100_000 - floor, (
+            "a 40ms reply was charged its measured cost rather than the floor"
+        )
+
+    async def test_a_substantial_request_is_charged_its_measured_cost_not_the_floor(
+        self, sessionmaker_np, funded
+    ):
+        """The floor is a minimum, not a fee. Anything above it charges what it measured."""
+        await _grant(sessionmaker_np, funded, 100_000)
+        reservation = await _reserve(sessionmaker_np, funded, 50_000)
+
+        async with sessionmaker_np() as db:
+            # 30 seconds at 1000 micro/slot-second = 30_000 micro, well above a 1_000 floor.
+            assert await wallet.settle(db, reservation.id, slot_ms=30_000, floor_micro=1_000) is True
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        assert row.balance_micro == 100_000 - 30_000
+
+    async def test_the_floor_never_exceeds_the_authorised_hold(self, sessionmaker_np, funded):
+        """Floor first, clamp second.
+
+        A learner must never be charged more than was authorised before their request ran, even if
+        someone later raises the floor above an in-flight hold.
+        """
+        await _grant(sessionmaker_np, funded, 100_000)
+        reservation = await _reserve(sessionmaker_np, funded, 500)
+
+        async with sessionmaker_np() as db:
+            assert await wallet.settle(db, reservation.id, slot_ms=10, floor_micro=9_999) is True
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        assert row.balance_micro == 100_000 - 500, "the floor was charged above the hold"

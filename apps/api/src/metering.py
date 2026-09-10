@@ -57,6 +57,9 @@ class Meter:
     reservation_id: uuid.UUID
     user_id: uuid.UUID
     hold_micro: int
+    #: Carried from `begin` so the settle can apply it. A floor enforced only at the hold refuses a
+    #: learner who cannot afford it without ever collecting it.
+    floor_micro: int = 0
     #: `time.monotonic()`, not wall clock: a clock adjustment mid-request must not change a charge.
     started_at: float = field(default_factory=time.monotonic)
     #: Set by the non-streaming paths, which already time the backend call. Audit only.
@@ -99,7 +102,8 @@ class Meter:
             async with AsyncSessionLocal() as db:
                 if consumed:
                     await gpu_wallet_service.settle(
-                        db, self.reservation_id, slot_ms=slot_ms, backend_ms=self.backend_ms
+                        db, self.reservation_id, slot_ms=slot_ms, backend_ms=self.backend_ms,
+                        floor_micro=self.floor_micro,
                     )
                 else:
                     await gpu_wallet_service.void(db, self.reservation_id)
@@ -141,7 +145,8 @@ async def begin(
         rate_micro_per_slot_second=row.rate_micro_per_slot_second,
     )
     return Meter(
-        reservation_id=reservation.id, user_id=user_id, hold_micro=hold_micro
+        reservation_id=reservation.id, user_id=user_id, hold_micro=hold_micro,
+        floor_micro=floor_micro,
     )
 
 

@@ -217,8 +217,19 @@ async def settle(
     *,
     slot_ms: int,
     backend_ms: int | None = None,
+    floor_micro: int = 0,
 ) -> bool:
-    """Charge for measured occupancy, clamped to the hold.
+    """Charge for measured occupancy, floored and then clamped to the hold.
+
+    THE FLOOR IS APPLIED HERE, NOT ONLY AT THE HOLD, and the difference is the whole point of having
+    one. Every request carries fixed cost the occupancy clock does not see: scheduling, prompt
+    processing, and a share of the hour the pod sits idle between questions. A forty-millisecond
+    reply measured 240 micro-credits and would have been charged that -- a rounding error against a
+    pod billed by the minute. A flood of trivial requests would then run the card at a loss while
+    every settle was arithmetically correct.
+
+    Applying it at the hold alone only refuses a learner who cannot afford the floor; it does not
+    collect it.
 
     The clamp is not the guarantee — `ck_gpu_reservations_settled_le_hold` is. This is the belt to
     that constraint's braces, and it exists so the common case does not depend on an aborted
@@ -230,6 +241,10 @@ async def settle(
         return False
 
     charge = ceil_div(slot_ms * reservation.rate_micro_per_slot_second, 1000)
+    # Floor first, clamp second. The other order could charge above an authorised hold whenever the
+    # floor exceeded it -- which cannot happen while `hold_micro_for` applies the same floor, but
+    # ordering the operations so it is impossible costs nothing and does not depend on that.
+    charge = max(charge, floor_micro)
     if charge > reservation.hold_micro:
         logger.warning(
             "gpu settle clamped: reservation=%s slot_ms=%s uncapped=%s hold=%s",
