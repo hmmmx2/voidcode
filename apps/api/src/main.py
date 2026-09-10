@@ -67,7 +67,12 @@ from pydantic import BaseModel, Field
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
 from . import config, identity, knowledge_cache, metering, multimodal, ratelimit
 from .database import AsyncSessionLocal
-from .services import gpu_sweep_service, gpu_wallet_service, queue_service
+from .services import (
+    backend_registry,
+    gpu_sweep_service,
+    gpu_wallet_service,
+    queue_service,
+)
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
@@ -133,7 +138,9 @@ _inference_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
 # SGLang path: _sglang_client (AsyncOpenAI) — no model/tokenizer in this process
 model = None
 tokenizer = None
-_sglang_client = None  # openai.AsyncOpenAI pointing at sglang-server
+# The SGLang client is NOT a module global any more. It lives in `services/backend_registry`
+# and is resolved per call by `_backend_client()`, because a client with the address baked in
+# cannot notice a backend that moved -- and could not tell `/health` whether one was there.
 executor = ThreadPoolExecutor(max_workers=2)
 
 
@@ -379,13 +386,20 @@ async def lifespan(app: FastAPI):
         # RadixAttention on sglang-server caches shared system prompt KV.
         import httpx as _httpx
         import openai as _openai
-        global _sglang_client
         logger.info(f"USE_SGLANG=true — connecting to SGLang at {SGLANG_BASE_URL}")
-        _sglang_client = _openai.AsyncOpenAI(
-            base_url=SGLANG_BASE_URL,
-            api_key="none",  # SGLang does not require authentication
-            timeout=SGLANG_TIMEOUT_SECONDS,
-        )
+
+        # Built through the registry rather than assigned directly, so the address is a value that
+        # can change rather than one baked into a client at startup. Nothing changes it yet; that
+        # is what makes spin-down possible later, and what makes `/health` able to tell the truth
+        # now. See `services/backend_registry.py`.
+        def _make_client(base_url: str):
+            return _openai.AsyncOpenAI(
+                base_url=base_url,
+                api_key="none",  # SGLang does not require authentication
+                timeout=SGLANG_TIMEOUT_SECONDS,
+            )
+
+        backend_registry.configure(SGLANG_BASE_URL, _make_client)
         # Wait for SGLang server to be ready (model load + CUDA kernel compile
         # takes ~60-120s on cold start — we poll every 10s for up to 5 minutes)
         # `/v1/models` is exposed by BOTH SGLang and Ollama's OpenAI-compatible endpoint, whereas
@@ -417,7 +431,7 @@ async def lifespan(app: FastAPI):
         logger.info("Priming SGLang RadixAttention KV cache (6 modes)...")
         for _wm in ("teaching", "debug", "followup", "explain", "general", "empathy"):
             try:
-                await _sglang_client.chat.completions.create(
+                await _backend_client().chat.completions.create(
                     model=SGLANG_MODEL_NAME,
                     messages=[
                         {"role": "system", "content": get_system_prompt(_wm, pe_mode=True)},
@@ -1345,10 +1359,10 @@ async def _localise_bugs(user_message: str, request_id: str = "-") -> list[dict]
     Returns None on any failure, and the caller falls back to single-stage. Availability beats
     architecture: a learner waiting on a 500 is worse than a learner getting a level-2 opener.
     """
-    if _sglang_client is None:
+    if _backend_client() is None:
         return None
     try:
-        completion = await _sglang_client.chat.completions.create(
+        completion = await _backend_client().chat.completions.create(
             model=SGLANG_MODEL_NAME,
             messages=[{"role": "system", "content": PE_DEBUG_LOCALISE_PROMPT},
                       {"role": "user", "content": user_message}],
@@ -1483,7 +1497,7 @@ async def generate_stream_sglang(
     )
 
     try:
-        response = await _sglang_client.chat.completions.create(
+        response = await _backend_client().chat.completions.create(
             model=SGLANG_MODEL_NAME,
             messages=messages,
             max_tokens=max_new_tokens,
@@ -1634,10 +1648,33 @@ async def generate_stream_sglang(
 
 # --- Helpers ---
 
-def _is_model_ready() -> bool:
-    """Return True if the LLM inference backend is initialised and ready."""
+
+def _backend_client():
+    """The client for the address in force right now.
+
+    A function rather than the module global it replaces: the global was assigned once in the
+    lifespan with the base URL baked in, so a backend that moved was invisible until the process
+    restarted. Resolving per call costs a dictionary lookup and removes that entire class of
+    problem.
+    """
+    return backend_registry.current_client()
+
+
+async def _is_model_ready() -> bool:
+    """Return True if the LLM inference backend is initialised AND answering.
+
+    THIS USED TO RETURN `_sglang_client is not None`, which is a statement about whether a Python
+    object was constructed at startup -- not about whether anything is listening. Point the config
+    at a dead address and `/health` reported `model_loaded: true`, to a readiness probe, to a load
+    balancer, and to whoever was trying to work out why every request was failing.
+
+    A health endpoint that cannot report ill-health is worse than no health endpoint, because
+    everything downstream is built on trusting it. It is async now because finding out requires
+    asking; the probe is cached for a few seconds so a burst of health checks is one request rather
+    than one per check per replica.
+    """
     if USE_SGLANG:
-        return _sglang_client is not None
+        return await backend_registry.probe() == backend_registry.READY
     if USE_VLLM:
         try:
             from .vllm_engine import get_engine
@@ -1868,7 +1905,10 @@ async def health_check():
         "status": status,
         "version": "5.2",
         "architecture": arch_label,
-        "model_loaded": _is_model_ready(),
+        "model_loaded": await _is_model_ready(),
+        # Distinguishes "deliberately down and coming back" from "down". Identical from outside
+        # otherwise, and they call for opposite reactions: one is a wait, the other is a page.
+        "backendState": await backend_registry.probe() if USE_SGLANG else None,
         "judge0_available": judge0_available,
         "database_connected": db_connected,
         "redis_connected": redis_connected,
@@ -2203,7 +2243,7 @@ async def create_chat_completion(
                 else gen_cfg.get("top_p", 0.95)
             )
             start_time = time.time()
-            completion = await _sglang_client.chat.completions.create(
+            completion = await _backend_client().chat.completions.create(
                 model=SGLANG_MODEL_NAME,
                 messages=messages,
                 max_tokens=actual_max_tokens,
