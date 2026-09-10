@@ -21,6 +21,18 @@ started pods would be a second such place, running unattended, outside every gua
 first. While the pod is stopped this waits and does nothing, which is correct: a learner's request
 wakes it through the API, and this notices and rebuilds the forward.
 
+IT CAN START THE MODEL SERVER INSIDE THE POD, AND THAT IS A DIFFERENT THING
+
+Restoring the tunnel is only half a wake. The pod runs RunPod's stock `runpod-torch-v240` template,
+whose start command brings up sshd and nothing else, so after a stop the forward reconnects and the
+port behind it answers nothing. With `--serve-script`, this uploads that script and runs it once the
+tunnel is up and the backend is not answering.
+
+Renting a machine and running a process on a machine you already rent are different powers, which is
+why one lives here and the other does not. Still OFF by default: the script kills every process
+holding the GPU before it starts, so pointing this at a pod doing something else would end that
+work.
+
 USAGE
 
     python -m scripts.tunnel_supervisor
@@ -29,10 +41,15 @@ Run it from `apps/api` with the API's environment loaded, the same as any other 
 needs `RUNPOD_API_KEY`, `RUNPOD_POD_ID` and `POD_CONTROL_ENABLED=true` -- the same arming as pod
 control, because it reads the pod through the same client.
 
-    --local-port   the port the API connects to        (default: from SGLANG_BASE_URL)
-    --remote-port  the port SGLang listens on, in the pod (default: 8080)
-    --interval     seconds between checks              (default: 15)
-    --once         check once and exit, for a smoke test
+    --local-port    the port the API connects to        (default: from SGLANG_BASE_URL)
+    --remote-port   the port the model server listens on, in the pod (default: 8080)
+    --interval      seconds between checks             (default: 15)
+    --once          check once and exit, for a smoke test
+    --serve-script  local script to upload and run when the backend is not answering.
+                    OFF unless given. `scripts/pod_serve_rl.sh` is the one this pod uses.
+    --serve-cooldown  seconds to let a launch finish before trying again (default: 900).
+                    A 30B takes minutes to load and the script kills the GPU first, so a
+                    shorter value here relaunches into its own load and never converges.
 
 Ctrl-C stops it and takes the tunnel with it.
 """
@@ -46,6 +63,9 @@ import logging
 import socket
 import subprocess
 import sys
+import time
+import urllib.request
+from pathlib import Path
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
@@ -76,6 +96,69 @@ def forwarding(port: int, host: str = "127.0.0.1", timeout: float = 2.0) -> bool
         with socket.create_connection((host, port), timeout=timeout):
             return True
     return False
+
+
+def backend_ready(port: int, timeout: float = 5.0) -> bool:
+    """Does the MODEL API answer, not merely the socket?
+
+    `forwarding()` cannot tell these apart: `ssh -L` binds the local port as soon as it connects,
+    so a TCP connect succeeds whether or not anything is listening inside the pod. Only a real
+    request distinguishes "the tunnel is up" from "the model is serving", and after a spin-down
+    those two states are exactly what need distinguishing.
+    """
+    request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/models")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def launch_serve(endpoint: tunnel.Endpoint, script: Path) -> bool:
+    """Upload the serve script and run it, detached. Returns whether the launch was accepted.
+
+    The script is sent from the repository rather than assumed to be on the pod, so what runs is
+    what is version-controlled and reviewable -- `pod_serve_rl.sh` carries a GPU-occupancy kill and
+    a `setsid nohup` that took a debugging session each to get right, and reproducing them inline
+    here would be copying them badly.
+
+    Returning means "the launch was accepted", never "the model is up". Loading a 30B takes
+    minutes; readiness is decided later by `backend_ready`, which asks the model API.
+    """
+    body = script.read_text(encoding="utf-8")
+    remote = f"/workspace/{script.name}"
+    base = [
+        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=20", "-p", str(endpoint.port), f"root@{endpoint.host}",
+    ]
+    try:
+        # Text mode with newline="" would keep CRLF, and bash rejects a script with carriage
+        # returns in a way that reads as a syntax error in the script itself.
+        upload = subprocess.run(
+            [*base, f"cat > {remote} && chmod +x {remote}"],
+            input=body.replace("\r\n", "\n").encode("utf-8"),
+            capture_output=True, timeout=60, check=False,
+        )
+        if upload.returncode != 0:
+            logger.error("could not upload %s: %s", script.name,
+                         upload.stderr.decode("utf-8", "replace").strip()[:300])
+            return False
+
+        # `bash <script>` returns as soon as the script backgrounds the engine; the script itself
+        # owns detaching it, so this does not wait for a model load.
+        run = subprocess.run(
+            [*base, f"bash {remote}"], capture_output=True, timeout=180, check=False,
+        )
+        if run.returncode != 0:
+            logger.error("serve script failed: %s",
+                         run.stderr.decode("utf-8", "replace").strip()[:300])
+            return False
+    except subprocess.TimeoutExpired:
+        logger.error("timed out launching the serve script")
+        return False
+
+    logger.info("serve script launched; the model will take minutes to load")
+    return True
 
 
 class Forward:
@@ -116,8 +199,17 @@ class Forward:
         self.endpoint = endpoint
 
 
-async def check(forward: Forward, local_port: int, remote_port: int) -> str:
+async def check(
+    forward: Forward,
+    local_port: int,
+    remote_port: int,
+    *,
+    serve_script: Path | None = None,
+    serve_cooldown: float = 900.0,
+    state: dict | None = None,
+) -> str:
     """One pass. Returns the action taken, for the caller to log or assert on."""
+    state = state if state is not None else {}
     try:
         description = await runpod_client.describe()
     except runpod_client.PodControlError as exc:
@@ -131,7 +223,7 @@ async def check(forward: Forward, local_port: int, remote_port: int) -> str:
     plan = tunnel.plan_from(description, forward.endpoint, healthy=healthy)
 
     if plan.action == "keep":
-        return "keep"
+        return _maybe_serve(forward, local_port, serve_script, serve_cooldown, state)
 
     if plan.action == "wait":
         if forward.alive():
@@ -181,13 +273,58 @@ async def check(forward: Forward, local_port: int, remote_port: int) -> str:
     return "failed"
 
 
+def _maybe_serve(
+    forward: Forward,
+    local_port: int,
+    serve_script: Path | None,
+    cooldown: float,
+    state: dict,
+) -> str:
+    """With the tunnel healthy, decide whether the pod still needs its model server started."""
+    ready = backend_ready(local_port)
+    launched_at = state.get("launched_at")
+    plan = tunnel.serve_plan(
+        enabled=serve_script is not None,
+        tunnel_up=True,
+        backend_ready=ready,
+        launched_ago=None if launched_at is None else time.monotonic() - launched_at,
+        cooldown=cooldown,
+    )
+
+    if plan.action == "none":
+        if ready:
+            # Clears the cooldown so a LATER failure can relaunch immediately rather than waiting
+            # out a timer belonging to a launch that already succeeded.
+            state.pop("launched_at", None)
+        return "keep"
+    if plan.action == "wait":
+        logger.info("not relaunching: %s", plan.reason)
+        return "loading"
+
+    logger.warning("the tunnel is up but the backend is not answering; starting the model server")
+    assert serve_script is not None and forward.endpoint is not None
+    if launch_serve(forward.endpoint, serve_script):
+        state["launched_at"] = time.monotonic()
+        return "launched"
+    return "failed"
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-port", type=int, default=_default_local_port())
     parser.add_argument("--remote-port", type=int, default=8080)
     parser.add_argument("--interval", type=float, default=15.0)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument(
+        "--serve-script", type=Path, default=None,
+        help="local script to upload and run when the backend is not answering; OFF unless "
+             "given, because it kills every process holding the pod's GPU")
+    parser.add_argument("--serve-cooldown", type=float, default=900.0)
     args = parser.parse_args()
+
+    if args.serve_script is not None and not args.serve_script.is_file():
+        logger.error("no such serve script: %s", args.serve_script)
+        return 2
 
     if not runpod_client.is_armed():
         logger.error(
@@ -199,10 +336,18 @@ async def main() -> int:
         "supervising 127.0.0.1:%d -> pod:%d, checking every %.0fs. This never starts or stops the "
         "pod; spin-down owns that.", args.local_port, args.remote_port, args.interval)
 
+    if args.serve_script is not None:
+        logger.info(
+            "will start the model server with %s when the backend stops answering, at most "
+            "once every %.0fs", args.serve_script, args.serve_cooldown)
+
     forward = Forward()
+    state: dict = {}
     try:
         while True:
-            await check(forward, args.local_port, args.remote_port)
+            await check(forward, args.local_port, args.remote_port,
+                        serve_script=args.serve_script,
+                        serve_cooldown=args.serve_cooldown, state=state)
             if args.once:
                 return 0
             await asyncio.sleep(args.interval)

@@ -130,3 +130,51 @@ def plan_from(description: dict, current: Endpoint | None, *, healthy: bool) -> 
         return Plan("connect", endpoint, "the forward is not carrying traffic")
 
     return Plan("keep", endpoint, "the forward is healthy")
+
+
+@dataclass(frozen=True)
+class ServePlan:
+    """Whether to (re)launch the model server inside the pod, and why."""
+
+    action: str  # "launch" | "wait" | "none"
+    reason: str
+
+
+def serve_plan(
+    *,
+    enabled: bool,
+    tunnel_up: bool,
+    backend_ready: bool,
+    launched_ago: float | None,
+    cooldown: float,
+) -> ServePlan:
+    """Decide whether the pod needs its model server started.
+
+    WHY THIS IS NEEDED AT ALL: the pod runs RunPod's stock `runpod-torch-v240` template, whose start
+    command brings up sshd and nothing else. After a spin-down the tunnel reconnects and the port
+    behind it answers nothing, because the server was started by hand. So a wake that restores the
+    tunnel is only half a wake.
+
+    THE COOLDOWN IS THE WHOLE SAFETY PROPERTY. `pod_serve_rl.sh` kills every process holding the GPU
+    before it starts -- correctly, because vLLM's EngineCore is a child and killing the parent
+    leaves the card occupied. But that means launching it while a previous launch is still loading
+    KILLS THE LOAD. A 30B takes minutes to come up; a supervisor checking every 15s without a
+    cooldown would kill and relaunch a hundred times and the model would never finish, while the log
+    filled with what looks like diligent recovery.
+
+    `backend_ready` must be a real request to the model API, not a socket check: `ssh -L` binds the
+    local port on connect, so a TCP connect succeeds whether or not anything listens inside the pod.
+    """
+    if not enabled:
+        return ServePlan("none", "starting the model server is not enabled")
+    if not tunnel_up:
+        return ServePlan("none", "there is no tunnel to reach the backend through")
+    if backend_ready:
+        return ServePlan("none", "the backend is answering")
+    if launched_ago is not None and launched_ago < cooldown:
+        return ServePlan(
+            "wait",
+            f"launched {launched_ago:.0f}s ago and the model needs up to {cooldown:.0f}s to load; "
+            "relaunching now would kill the load in progress",
+        )
+    return ServePlan("launch", "the tunnel is up and the backend is not answering")

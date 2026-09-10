@@ -15,7 +15,7 @@ pod is stopped, wait" does not, and those are the rules that go wrong. They live
 from __future__ import annotations
 
 import pytest
-from src.services.tunnel import Endpoint, endpoint_from, plan_from
+from src.services.tunnel import Endpoint, endpoint_from, plan_from, serve_plan
 
 RUNNING_POD = {
     "desiredStatus": "RUNNING",
@@ -158,3 +158,59 @@ class TestWhatTheSupervisorCannotSee:
             assert plan.action in {"keep", "connect", "wait"}
             assert "sglang" not in plan.reason.lower()
             assert "ready" not in plan.reason.lower()
+
+
+class TestStartingTheModelServer:
+    """Restoring the tunnel is only half a wake.
+
+    The pod runs RunPod's stock `runpod-torch-v240` template, whose start command brings up sshd
+    and nothing else, so after a spin-down the forward reconnects and the port behind it answers
+    nothing. The supervisor can run `pod_serve_rl.sh` to fix that — and the way it can go wrong is
+    much worse than not doing it at all.
+    """
+
+    def test_it_launches_when_the_tunnel_is_up_and_nothing_answers(self):
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                          launched_ago=None, cooldown=900)
+        assert plan.action == "launch"
+
+    def test_a_launch_in_progress_is_never_relaunched(self):
+        """THE ONE THAT MATTERS, and the failure is self-inflicted and total.
+
+        `pod_serve_rl.sh` kills every process holding the GPU before it starts — correctly, since
+        vLLM's EngineCore is a child and killing the parent leaves the card occupied. So relaunching
+        during a load KILLS THE LOAD. A 30B takes minutes; a supervisor checking every 15s without
+        this rule would kill and relaunch a hundred times, never converge, and fill the log with
+        what reads as diligent recovery.
+        """
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                          launched_ago=30, cooldown=900)
+        assert plan.action == "wait"
+        assert "kill the load" in plan.reason
+
+    def test_it_gives_up_waiting_once_the_cooldown_passes(self):
+        """A launch that failed silently must eventually be retried, or one bad start is forever."""
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                          launched_ago=901, cooldown=900)
+        assert plan.action == "launch"
+
+    def test_a_healthy_backend_is_left_alone(self):
+        """Running the script against a working server would kill the GPU and reload for minutes."""
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=True,
+                          launched_ago=None, cooldown=900)
+        assert plan.action == "none"
+
+    def test_it_does_nothing_without_a_tunnel(self):
+        """`backend_ready` cannot mean anything with no route to the backend, so a False there is
+        about the tunnel rather than the model."""
+        plan = serve_plan(enabled=True, tunnel_up=False, backend_ready=False,
+                          launched_ago=None, cooldown=900)
+        assert plan.action == "none"
+
+    def test_it_is_off_unless_asked_for(self):
+        """Off by default because it kills every process holding the pod's GPU. Pointed at a pod
+        doing something else — a training run, say — it would end that work."""
+        plan = serve_plan(enabled=False, tunnel_up=True, backend_ready=False,
+                          launched_ago=None, cooldown=900)
+        assert plan.action == "none"
+        assert "not enabled" in plan.reason
