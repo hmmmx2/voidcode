@@ -1857,6 +1857,30 @@ async def prometheus_metrics():
     # Read the live counter out of identity.py rather than mirroring it. Two counters for one fact
     # drift, and the one on the dashboard would be the one nobody updated.
     metrics.set_enforcement(config.INTERNAL_AUTH_ENFORCE)
+
+    # THE QUEUE GAUGES ARE SAMPLED HERE, AT SCRAPE TIME, AND THEY WERE NOT BEFORE.
+    #
+    # They were declared with a setter and nothing called it, so both read 0.0 for the life of the
+    # process -- which is worse than not having them: a dashboard would show an empty queue and an
+    # idle fleet during a pile-up, and the graph would look like the thing was working.
+    #
+    # A gauge describing current state belongs at the scrape rather than on the request path.
+    # Setting it from the queue loop would mean it only updated while somebody was waiting, so it
+    # would freeze at the last value once the queue drained and read as a permanent backlog.
+    #
+    # Wrapped, because instrumentation must never be the reason a request fails -- and this one is
+    # the endpoint that reports whether anything is wrong. A database that is down leaves the
+    # gauges at their previous values, which is the least misleading option available.
+    if config.GPU_QUEUE_ENABLED:
+        try:
+            async with AsyncSessionLocal() as db:
+                metrics.set_queue_gauges(
+                    depth=await queue_service.waiting_count(db),
+                    slots_in_use=await queue_service.slots_in_use(db),
+                )
+        except Exception as exc:
+            logger.debug("could not sample the queue gauges: %s", exc)
+
     body, content_type = metrics.render()
     return Response(content=body, media_type=content_type)
 

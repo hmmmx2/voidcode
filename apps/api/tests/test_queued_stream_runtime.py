@@ -361,3 +361,61 @@ class TestTheFastPathIsUnaffected:
 
         async with sessionmaker_np() as db:
             assert await queue_service.waiting_count(db) == 0
+
+
+class TestTheQueueGaugesAreActuallySampled:
+    """Declared, given a setter, and never called -- for one whole commit.
+
+    `voidcode_gpu_queue_depth` and `voidcode_gpu_slots_in_use` were defined with a `set_queue_gauges`
+    helper that nothing invoked, so both reported 0.0 for the life of the process. That is worse
+    than not having them: a dashboard would show an empty queue and an idle fleet during a pile-up,
+    and the graph would look like the system was working.
+
+    Found by scraping `/metrics` on a running instance, not by any test -- which is why there is now
+    a test.
+    """
+
+    async def test_scraping_reports_the_real_depth_and_occupancy(
+        self, sessionmaker_np, monkeypatch
+    ):
+        from src import metrics
+
+        monkeypatch.setattr(config, "GPU_QUEUE_ENABLED", True)
+
+        held = await _fill_every_slot(sessionmaker_np)
+        caller = _Caller()
+        async with sessionmaker_np() as db:
+            await queue_service.enqueue(db, caller.user_id, "chatcmpl-g1", max_depth=50)
+            await queue_service.enqueue(db, caller.user_id, "chatcmpl-g2", max_depth=50)
+
+        await main.prometheus_metrics()
+
+        body, _ = metrics.render()
+        text = body.decode()
+        depth = next(
+            float(line.split()[1]) for line in text.splitlines()
+            if line.startswith("voidcode_gpu_queue_depth ")
+        )
+        in_use = next(
+            float(line.split()[1]) for line in text.splitlines()
+            if line.startswith("voidcode_gpu_slots_in_use ")
+        )
+        assert depth == 2.0, f"queue depth scraped as {depth} with two tickets waiting"
+        assert in_use == float(len(held)), (
+            f"occupancy scraped as {in_use} with {len(held)} slots held"
+        )
+
+    async def test_a_database_failure_does_not_break_the_metrics_endpoint(self, monkeypatch):
+        """The endpoint that reports trouble must not become a source of it.
+
+        A scrape that 500s when the database is unreachable takes the dashboard down at exactly the
+        moment somebody is looking at it to find out why.
+        """
+        monkeypatch.setattr(config, "GPU_QUEUE_ENABLED", True)
+
+        def exploding_session():
+            raise RuntimeError("database is gone")
+
+        monkeypatch.setattr(main, "AsyncSessionLocal", exploding_session)
+        response = await main.prometheus_metrics()
+        assert response.status_code == 200
