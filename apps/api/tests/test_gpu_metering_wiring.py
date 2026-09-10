@@ -325,29 +325,49 @@ class TestTheQueuedPathAddsNoSecondWrapper:
 class TestTheInterviewGradingPathIsNotFreeGpu:
     """The bypass that no endpoint-level guard can see.
 
-    `interviews.assess_answer` reaches `generate_response` directly rather than through
+    `interviews.assess_answer` reaches the generation layer directly rather than through
     `/v1/chat/completions`, and it must — `prepare_messages_hybrid` replaces the system prompt,
     which is what produced hallucinated feedback and is documented at that call site. But going
     around the endpoint went around the semaphore and the meter too, so grading ran unthrottled on
     the same card and cost nothing.
+
+    THE NAME IS READ FROM THE IMPORT, not hardcoded. It has already changed once:
+    `generate_response` is the HuggingFace path and reaches for a `tokenizer` that does not exist
+    under `USE_SGLANG`, so grading 503'd on every attempt until it moved to `generate_once`.
+    Pinning a literal here means the next such move makes this test pass by finding nothing,
+    which is the failure mode its own comment below warns about.
     """
 
     INTERVIEWS = Path(__file__).resolve().parents[1] / "src" / "routers" / "interviews.py"
 
-    def test_generate_response_is_only_called_inside_a_metered_slot(self):
+    @staticmethod
+    def _generator_name(tree) -> str:
+        """Whatever this router imports from `main` to generate with."""
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or "main" not in (node.module or ""):
+                continue
+            for alias in node.names:
+                if alias.name.startswith("generate_"):
+                    return alias.name
+        raise AssertionError(
+            "this router imports nothing named generate_* from main — if grading now reaches "
+            "the model another way, point this test at it rather than deleting it")
+
+    def test_the_generation_call_is_only_made_inside_a_metered_slot(self):
         source = self.INTERVIEWS.read_text(encoding="utf-8")
         tree = ast.parse(source)
+        name = self._generator_name(tree)
 
-        # Every REFERENCE, not every call. `generate_response` is handed to `asyncio.to_thread`
+        # Every REFERENCE, not every call. The HuggingFace form is handed to `asyncio.to_thread`
         # rather than called directly, so looking for `ast.Call` finds nothing and the test passes
         # while proving nothing — which is exactly what the first version of it did.
         calls = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.Name)
-            and node.id == "generate_response"
+            and node.id == name
             and isinstance(node.ctx, ast.Load)
         ]
-        assert calls, "generate_response is no longer used here — rewrite this test, do not drop it"
+        assert calls, f"{name} is no longer used here — rewrite this test, do not drop it"
 
         slots = [
             node for node in ast.walk(tree)
@@ -368,18 +388,19 @@ class TestTheInterviewGradingPathIsNotFreeGpu:
             node.lineno
             for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom)
-            and any(a.name == "generate_response" for a in node.names)
+            and any(a.name == name for a in node.names)
         }
         uncovered = sorted({c.lineno for c in calls} - covered - import_lines)
         assert uncovered == [], (
-            f"generate_response used outside a metered slot at line(s) {uncovered}"
+            f"{name} used outside a metered slot at line(s) {uncovered}"
         )
 
     def test_it_takes_a_permit_not_only_a_meter(self):
         """The out-of-memory half of the bug, which billing being off does not excuse.
 
-        Without the permit this runs `model.generate()` alongside up to MAX_CONCURRENT_REQUESTS
-        chat generations, outside the gate that exists to stop that exhausting VRAM.
+        Without the permit this runs alongside up to MAX_CONCURRENT_REQUESTS chat generations,
+        outside the gate that exists to stop that exhausting VRAM on the HuggingFace path and
+        overrunning the fleet-wide budget on the delegated one.
         """
         source = self.INTERVIEWS.read_text(encoding="utf-8")
         assert "_inference_semaphore" in source, (

@@ -1053,6 +1053,74 @@ def prepare_messages_hybrid(messages: list[ChatMessage]) -> tuple[list[dict], st
     return messages_dict, mode
 
 
+async def generate_once(
+    messages: list[dict],
+    mode: str,
+    max_tokens: int,
+    temperature: float | None = None,
+    top_p: float = 0.9,
+    repetition_penalty: float = 1.05,
+) -> tuple[str, int, int, dict | None]:
+    """One completion from whatever backend is configured, with `messages` taken VERBATIM.
+
+    WHY THIS EXISTS: `generate_response` BELOW IS THE HUGGINGFACE PATH AND ONLY THAT.
+
+    It reaches for `tokenizer` and `model` directly, and under `USE_SGLANG=true` the lifespan never
+    loads either -- there is no local model, that is the point of delegating inference. Its one
+    non-chat caller is interview assessment, which therefore died with
+    `AttributeError: 'NoneType' object has no attribute 'apply_chat_template'` and surfaced as
+    "The tutor is unavailable. Your answer is saved." on every attempt.
+
+    Nothing caught it because the endpoint's own `except Exception` turns any failure into that
+    503, so a total outage of the feature and a genuinely busy backend are the same message, and
+    the chat path -- which every test and every evaluation exercises -- has its own SGLang branch
+    and was fine.
+
+    VERBATIM IS THE CONTRACT, and it is why assessment cannot simply call the chat endpoint.
+    `prepare_messages_hybrid` keyword-detects a mode and REPLACES the system prompt, so the grading
+    instructions never arrived and the model, handed the DEBUG prompt, invented source code to
+    critique -- a candidate who typed "ewfwfe" was told their `random.shuffle` implementation was
+    wrong. `interviews.py` documents that at length. This function takes what it is given.
+
+    Async rather than blocking, because on the SGLang path there is nothing to block on: it is one
+    HTTP request. The HuggingFace path still goes through `asyncio.to_thread`, since `model.generate`
+    holds the GIL for the whole generation and would stall the event loop for every other request.
+    """
+    gen_cfg = get_generation_config(mode)
+    actual_temp = temperature if temperature is not None else gen_cfg["temperature"]
+    actual_max_tokens = min(max_tokens, gen_cfg["max_new_tokens"])
+
+    if USE_SGLANG:
+        completion = await _backend_client().chat.completions.create(
+            model=SGLANG_MODEL_NAME,
+            messages=messages,
+            max_tokens=actual_max_tokens,
+            temperature=actual_temp,
+            top_p=top_p,
+            presence_penalty=gen_cfg.get("presence_penalty", 0.0),
+            stream=False,
+            extra_body=_sglang_extra_body(
+                top_k=gen_cfg.get("top_k", 20),
+                min_p=gen_cfg.get("min_p", 0.0),
+                enable_thinking=gen_cfg.get("enable_thinking", True),
+                thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
+            ),
+        )
+        raw = completion.choices[0].message.content or ""
+        text, _thinking = strip_thinking_tags(raw)
+        usage = completion.usage
+        return (
+            text.strip(),
+            usage.prompt_tokens if usage else 0,
+            usage.completion_tokens if usage else 0,
+            None,
+        )
+
+    return await asyncio.to_thread(
+        generate_response, messages, mode, max_tokens, temperature, top_p, repetition_penalty,
+    )
+
+
 def generate_response(
     messages: list[dict],
     mode: str,

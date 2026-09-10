@@ -23,7 +23,6 @@ Facet counts are computed over the *unfiltered* set on purpose — see the note 
 `_facets`.
 """
 
-import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -484,7 +483,7 @@ async def assess_answer(
 
     # Imported here, not at module scope: `main` imports this router, so a
     # top-level import would be a cycle that breaks app startup.
-    from ..main import generate_response
+    from ..main import generate_once
 
     system = (
         "You are grading one answer to a technical interview question. You are "
@@ -534,15 +533,15 @@ async def assess_answer(
             floor_micro=config.GPU_FLOOR_MICRO,
             enforce=config.GPU_METERING_ENABLED,
         ):
-            text, _pt, _ct, _think = await asyncio.to_thread(
-                generate_response,
+            # `generate_once`, not `generate_response`: the latter is the HuggingFace path and
+            # has no model to reach under USE_SGLANG, which made this endpoint 503 on every
+            # attempt while reporting it as a busy tutor.
+            text, _pt, _ct, _think = await generate_once(
                 [{"role": "system", "content": system},
                  {"role": "user", "content": user}],
                 "explain",
                 700,
-                0.2,
-                0.9,
-                1.05,
+                temperature=0.2,
             )
     except metering.SlotUnavailable:
         logger.warning("Assessment for %s could not get a serving slot", slug)
