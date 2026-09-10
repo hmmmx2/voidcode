@@ -335,11 +335,86 @@ class TestTheCooldownBookkeeping:
 
         Reporting failure there is what made the caller's bug destructive rather than merely noisy.
         """
-        source = (
-            Path(supervisor.__file__).read_text(encoding="utf-8")
-            .split("except subprocess.TimeoutExpired:")[1]
-            .split("logger.info")[0]
+        # Scoped to `launch_serve` by AST. Splitting the file on the `except` line broke the
+        # moment a second timeout handler was added elsewhere, and picked the wrong one silently.
+        import ast
+
+        tree = ast.parse(Path(supervisor.__file__).read_text(encoding="utf-8"))
+        function = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "launch_serve"
         )
-        assert "return True" in source, (
+        handlers = [
+            handler for handler in ast.walk(function)
+            if isinstance(handler, ast.ExceptHandler)
+        ]
+        returns = [
+            node.value.value for handler in handlers
+            for node in ast.walk(handler)
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant)
+        ]
+        assert True in returns, (
             "a timed-out launch reports failure again; the script may be running and the next "
             "check would kill it")
+
+
+class TestLookingInsteadOfGuessing:
+    """The second cold-start drill killed a load the cooldown was supposed to protect.
+
+    A 30B AWQ load runs about fourteen minutes on this pod. The cooldown default was fifteen. On a
+    slower run the timer expired first, the supervisor relaunched into a load sitting at 16 GB of
+    weights, and killed it — doing exactly the damage the cooldown exists to prevent, by being
+    slightly too short.
+
+    There is no good value for that timer. Long enough to be safe is long enough to leave a
+    genuinely failed launch unretried for the whole period; short enough to retry promptly is short
+    enough to kill a slow load. When the tuning has no good answer, the question was wrong: a
+    running server process is not evidence ABOUT elapsed time, it is the thing elapsed time was
+    being used to infer.
+    """
+
+    def test_a_running_server_beats_an_expired_timer(self):
+        """THE DRILL, AS AN ASSERTION. Timer says relaunch; the pod says it is still loading."""
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                          launched_ago=99999, cooldown=900, server_running=True)
+        assert plan.action == "wait"
+        assert "already running" in plan.reason
+
+    def test_no_server_and_an_expired_timer_relaunches(self):
+        """The genuine failure: nothing is loading and the wait is over."""
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                          launched_ago=99999, cooldown=900, server_running=False)
+        assert plan.action == "launch"
+
+    def test_an_unanswerable_probe_falls_back_to_the_timer(self):
+        """None, not False, when ssh fails.
+
+        False would mean "nothing is loading, go ahead" — the worst conclusion to draw from a
+        dropped connection, since it licenses the destructive action on no evidence.
+        """
+        during = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                            launched_ago=30, cooldown=900, server_running=None)
+        after = serve_plan(enabled=True, tunnel_up=True, backend_ready=False,
+                           launched_ago=99999, cooldown=900, server_running=None)
+        assert during.action == "wait"
+        assert after.action == "launch"
+
+    def test_a_running_server_does_not_override_a_healthy_backend(self):
+        """Ordering: if it is answering there is nothing to decide, however many processes exist."""
+        plan = serve_plan(enabled=True, tunnel_up=True, backend_ready=True,
+                          launched_ago=None, cooldown=900, server_running=True)
+        assert plan.action == "none"
+
+    def test_the_fallback_timer_is_no_longer_shorter_than_a_load(self):
+        """The default must comfortably exceed the measured load, since it is the last resort.
+
+        Fourteen minutes measured, so fifteen was not a margin — it was a coin flip.
+        """
+        import re
+
+        source = Path(supervisor.__file__).read_text(encoding="utf-8")
+        default = re.search(r'"--serve-cooldown", type=float, default=([\d.]+)', source)
+        assert default is not None, "the cooldown default moved; check it still exceeds a load"
+        assert float(default.group(1)) >= 1800, (
+            f"fallback cooldown is {default.group(1)}s; a 30B load measured ~840s and the 900s "
+            "default expired mid-load and killed it")

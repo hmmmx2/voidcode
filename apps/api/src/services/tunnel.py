@@ -148,6 +148,7 @@ def serve_plan(
     launched_ago: float | None,
     cooldown: float,
     tunnel_rebuilt: bool = True,
+    server_running: bool | None = None,
 ) -> ServePlan:
     """Decide whether the pod needs its model server started.
 
@@ -165,6 +166,12 @@ def serve_plan(
 
     `backend_ready` must be a real request to the model API, not a socket check: `ssh -L` binds the
     local port on connect, so a TCP connect succeeds whether or not anything listens inside the pod.
+
+    `server_running` is the reliable signal and `launched_ago` is the fallback for when there is
+    nothing to ask. Prefer the observation: a timer long enough to be safe is long enough to leave a
+    genuinely failed launch unretried for that whole period, and one short enough to retry promptly
+    is short enough to kill a slow load. There is no good value, which is the sign that the question
+    was wrong.
 
     `launched_ago` must be set from the ATTEMPT, never from a confirmed success. The cold-start
     drill on 2026-09-10 had the caller record it only when the launch reported success; the launch
@@ -193,6 +200,18 @@ def serve_plan(
         # common case is fixed cheaply, and the model is only touched once a FRESH tunnel has also
         # failed -- which is the only evidence that actually implicates the model.
         return ServePlan("rebuild", "the backend is not answering; rebuilding the tunnel first")
+    if server_running:
+        # OBSERVED, NOT GUESSED, and the second cold-start drill is why this exists.
+        #
+        # The cooldown below is a timer, and a timer has to be tuned against something nobody
+        # measured: a 30B AWQ load runs about fourteen minutes here, the default was fifteen, and
+        # on a slower run the timer expired first. The supervisor relaunched into a load sitting at
+        # 16 GB of weights and killed it -- doing precisely the damage the cooldown exists to
+        # prevent, by being slightly too short.
+        #
+        # A running server process is not evidence about elapsed time, it is the thing the timer
+        # was trying to infer. When it can be checked, it decides.
+        return ServePlan("wait", "a model server process is already running; it is still loading")
     if launched_ago is not None and launched_ago < cooldown:
         return ServePlan(
             "wait",

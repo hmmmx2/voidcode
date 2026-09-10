@@ -114,6 +114,30 @@ def backend_ready(port: int, timeout: float = 5.0) -> bool:
         return False
 
 
+def server_running(endpoint: tunnel.Endpoint, pattern: str) -> bool | None:
+    """Is a model server process alive in the pod? None when the question cannot be asked.
+
+    None rather than False on an ssh failure, and the difference matters: False would mean "nothing
+    is loading, go ahead and launch", which is exactly the wrong conclusion to draw from a dropped
+    connection. Unknown falls back to the cooldown timer.
+
+    The pattern is bracketed by the caller (`[v]llm`) so `pgrep -f` cannot match the shell running
+    it -- a self-match reports a process that is only the question being asked.
+    """
+    command = [
+        "ssh", "-n", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=15", "-p", str(endpoint.port), f"root@{endpoint.host}",
+        f"pgrep -f '{pattern}' > /dev/null && echo running || echo idle",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=30, check=False)
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    return b"running" in result.stdout
+
+
 def launch_serve(endpoint: tunnel.Endpoint, script: Path) -> bool:
     """Upload the serve script and run it, detached. Returns whether the launch was accepted.
 
@@ -216,6 +240,7 @@ async def check(
     serve_script: Path | None = None,
     serve_cooldown: float = 900.0,
     state: dict | None = None,
+    serve_pattern: str = "",
 ) -> str:
     """One pass. Returns the action taken, for the caller to log or assert on."""
     state = state if state is not None else {}
@@ -232,7 +257,8 @@ async def check(
     plan = tunnel.plan_from(description, forward.endpoint, healthy=healthy)
 
     if plan.action == "keep":
-        outcome = _maybe_serve(forward, local_port, serve_script, serve_cooldown, state)
+        outcome = _maybe_serve(forward, local_port, serve_script, serve_cooldown, state,
+                               serve_pattern)
         if outcome != "rebuild":
             return outcome
 
@@ -302,10 +328,17 @@ def _maybe_serve(
     serve_script: Path | None,
     cooldown: float,
     state: dict,
+    serve_pattern: str = "",
 ) -> str:
     """With the tunnel healthy, decide whether the pod still needs its model server started."""
     ready = backend_ready(local_port)
     launched_at = state.get("launched_at")
+    # Only asked when it could change the answer: if the backend is up there is nothing to decide,
+    # and this costs an ssh round trip.
+    running = (
+        None if ready or not serve_pattern or forward.endpoint is None
+        else server_running(forward.endpoint, serve_pattern)
+    )
     plan = tunnel.serve_plan(
         enabled=serve_script is not None,
         tunnel_up=True,
@@ -313,6 +346,7 @@ def _maybe_serve(
         launched_ago=None if launched_at is None else time.monotonic() - launched_at,
         cooldown=cooldown,
         tunnel_rebuilt=state.get("tunnel_rebuilt", False),
+        server_running=running,
     )
 
     if plan.action == "none":
@@ -358,7 +392,17 @@ async def main() -> int:
         "--serve-script", type=Path, default=None,
         help="local script to upload and run when the backend is not answering; OFF unless "
              "given, because it kills every process holding the pod's GPU")
-    parser.add_argument("--serve-cooldown", type=float, default=900.0)
+    parser.add_argument(
+        "--serve-cooldown", type=float, default=2400.0,
+        help="fallback timer, used only when --serve-pattern cannot be checked. Generous on "
+             "purpose: a 30B AWQ load runs about fourteen minutes here and the old 900s default "
+             "expired mid-load and killed it")
+    parser.add_argument(
+        "--serve-pattern", default="",
+        help="pgrep -f pattern matching the model server process in the pod, e.g. "
+             "'[v]llm.entrypoints'. Bracket the first character so pgrep cannot match the shell "
+             "asking the question. Without this the supervisor falls back to the timer, which "
+             "cannot tell a slow load from a failed one")
     args = parser.parse_args()
 
     if args.serve_script is not None and not args.serve_script.is_file():
@@ -386,7 +430,8 @@ async def main() -> int:
         while True:
             await check(forward, args.local_port, args.remote_port,
                         serve_script=args.serve_script,
-                        serve_cooldown=args.serve_cooldown, state=state)
+                        serve_cooldown=args.serve_cooldown, state=state,
+                        serve_pattern=args.serve_pattern)
             if args.once:
                 return 0
             await asyncio.sleep(args.interval)
