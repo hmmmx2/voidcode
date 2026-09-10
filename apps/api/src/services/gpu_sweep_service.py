@@ -41,6 +41,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import AsyncSessionLocal
 from ..models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
 
+from .. import metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,6 +107,11 @@ async def sweep_stale_reservations(db: AsyncSession, *, max_age_seconds: int) ->
         "gpu sweep released %d stranded hold(s) — requests are dying between release and settle",
         len(rows),
     )
+    # The counter this module's own docstring calls "a page, not a revenue line". It named the
+    # metric and the metric did not exist, so the alert it argues for could never have fired.
+    for _ in rows:
+        metrics.record_reservation_swept()
+
     return len(rows)
 
 

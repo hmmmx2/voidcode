@@ -42,6 +42,7 @@ try:
         CollectorRegistry,
         Counter,
         Gauge,
+        Histogram,
         generate_latest,
     )
 
@@ -88,9 +89,54 @@ if _AVAILABLE:
         "1 when signed identity is required, 0 while unsigned requests are still accepted.",
         registry=REGISTRY,
     )
+
+    # ── GPU serving budget ───────────────────────────────────────────────────
+    #
+    # Nothing on the GPU billing or serving path emitted a metric before this. `gpu_sweep_service`
+    # even names `voidcode_gpu_reservations_swept_total` in its own docstring -- "a page, not a
+    # revenue line" -- and the counter did not exist, so the page it argues for could never fire.
+    #
+    # These are the four numbers that say whether the queue is sized right. Depth and wait say
+    # whether anybody is suffering; abandonment says whether they are giving up rather than
+    # waiting; slots-in-use says whether the capacity figure bears any relation to the hardware,
+    # which matters because that figure is currently unmeasured.
+    gpu_reservations_swept = Counter(
+        "voidcode_gpu_reservations_swept_total",
+        "Holds released by the sweep because their settle never ran. Non-zero means requests are "
+        "dying between reserve and settle; the credit is returned either way.",
+        registry=REGISTRY,
+    )
+    gpu_queue_depth = Gauge(
+        "voidcode_gpu_queue_depth",
+        "Requests waiting for a serving slot, fleet-wide.",
+        registry=REGISTRY,
+    )
+    gpu_slots_in_use = Gauge(
+        "voidcode_gpu_slots_in_use",
+        "Serving slots currently held under a live lease, fleet-wide. Compare against capacity: "
+        "sustained saturation is the signal to raise capacity or spin up a second backend.",
+        registry=REGISTRY,
+    )
+    gpu_queue_wait_seconds = Histogram(
+        "voidcode_gpu_queue_wait_seconds",
+        "How long an admitted request waited for a slot.",
+        # Buckets chosen against the wait ceiling rather than a default spread: anything past ~120s
+        # is refused, so buckets beyond that would always be empty and the interesting resolution
+        # is at the low end, where a learner still thinks the page is working.
+        buckets=(0.5, 1, 2, 5, 10, 20, 30, 60, 120),
+        registry=REGISTRY,
+    )
+    gpu_queue_abandoned = Counter(
+        "voidcode_gpu_queue_abandoned_total",
+        "Queued requests that left before being admitted, by why.",
+        ["reason"],
+        registry=REGISTRY,
+    )
 else:  # pragma: no cover
     unverified_identity_requests = ratelimit_not_enforced = None
     recommendations_ranked_by = sandbox_verdicts = enforcement_enabled = None
+    gpu_reservations_swept = gpu_queue_depth = gpu_slots_in_use = None
+    gpu_queue_wait_seconds = gpu_queue_abandoned = None
 
 
 def _bump(metric, labels: dict | None = None) -> None:
@@ -130,6 +176,40 @@ def set_enforcement(enabled: bool) -> None:
     if enforcement_enabled is not None:
         try:
             enforcement_enabled.set(1 if enabled else 0)
+        except Exception as exc:
+            logger.debug("gauge update failed: %s", exc)
+
+
+def record_reservation_swept() -> None:
+    _bump(gpu_reservations_swept)
+
+
+def record_queue_abandoned(reason: str) -> None:
+    """`reason` is a closed set -- timeout, disconnected, full -- so it cannot explode."""
+    _bump(gpu_queue_abandoned, {"reason": (reason or "unknown")[:24]})
+
+
+def observe_queue_wait(seconds: float) -> None:
+    if gpu_queue_wait_seconds is None:
+        return
+    try:
+        gpu_queue_wait_seconds.observe(seconds)
+    except Exception as exc:
+        logger.debug("histogram update failed: %s", exc)
+
+
+def set_queue_gauges(depth: int, slots_in_use: int) -> None:
+    """Set both together, because they are only meaningful read against each other.
+
+    A depth of twenty with slots idle means the queue is broken; a depth of twenty with every slot
+    held means it is working and undersized. Reporting one without the other invites the wrong
+    conclusion.
+    """
+    for gauge, value in ((gpu_queue_depth, depth), (gpu_slots_in_use, slots_in_use)):
+        if gauge is None:
+            continue
+        try:
+            gauge.set(value)
         except Exception as exc:
             logger.debug("gauge update failed: %s", exc)
 
