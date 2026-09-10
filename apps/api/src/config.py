@@ -228,6 +228,22 @@ RUNPOD_POD_ID = os.getenv("RUNPOD_POD_ID", "")
 # PodControlDisabled before a URL is constructed.
 POD_CONTROL_ENABLED = _flag("POD_CONTROL_ENABLED", default=False)
 
+# ── Spin-down ────────────────────────────────────────────────────
+#
+# Off by default, and it needs POD_CONTROL_ENABLED as well -- two switches, because this one can
+# take the backend away from a learner mid-session if the idle predicate is wrong, and that is the
+# most user-visible failure in this subsystem.
+SPINDOWN_ENABLED = _flag("SPINDOWN_ENABLED", default=False)
+
+# How long nothing must have settled before the pod is considered idle. Generous on purpose: the
+# other three clauses of the predicate are instantaneous, so this is the only one protecting a
+# learner who is reading an answer before asking a follow-up. Twenty minutes of A40 is about RM0.77;
+# a cold start is ~10 minutes of wall clock and a learner staring at a spinner.
+SPINDOWN_IDLE_SECONDS = float(os.getenv("SPINDOWN_IDLE_SECONDS", "1200"))
+
+# How often the idle watcher looks. No point being finer than the idle window.
+SPINDOWN_CHECK_SECONDS = float(os.getenv("SPINDOWN_CHECK_SECONDS", "120"))
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the

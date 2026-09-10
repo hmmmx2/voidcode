@@ -175,6 +175,32 @@ be preempted without warning. RunPod's primary docs do not say so; their guides 
 machines "often function like spot instances", and Spot is a separate opt-in pod type. The
 kill-and-resume work covers it either way — a vanished host and a dead rank are the same failure.
 
+**Amended 2026-09-10, scoped to SERVING pods only.** The "terminate, never stop" consequence above
+is correct for a batch training pod between phases and wrong for a pod that serves the product. It
+is left standing rather than rewritten, because the reasoning behind it is right in its own context
+and the amendment is a scope, not a correction.
+
+The arithmetic differs because the alternative to stopping is not "start the next phase in a
+minute", it is "wait for a learner":
+
+| | training pod, between phases | serving pod, idle |
+|---|---|---|
+| what stopping saves | GPU, ~$0.49/hr | GPU, ~$0.49/hr |
+| what stopping costs | +$0.10/GB-mo on the volume | +$0.10/GB-mo on the volume — ~$0.014/hr at 100 GB |
+| what terminating costs | nothing worth keeping | ~10 min GPU + ~18 GB re-download **per wake**, and a new address every time |
+| how often that cost lands | once per phase | once per idle period, which is many times a day |
+
+Paying a hundredth of an hour's GPU to avoid re-downloading eighteen gigabytes several times a day
+is not a close call. And termination's real problem is not the cost: a terminated pod comes back on
+a **different address**, which is a correctness problem rather than a cheaper-or-dearer one.
+
+`apps/api/src/services/runpod_client.py` therefore implements `stop()` and deliberately has **no
+`terminate()` at all**, with a test asserting none appears. Termination destroys a volume, it is not
+needed for the cost case, and the way to make an irreversible operation safe is not to implement it.
+
+Note that stopping does not guarantee the address either — RunPod re-assigns proxy ports on start —
+which is why `services/backend_registry.py` exists and why spin-down could not ship before it.
+
 ---
 
 ## D-002 — Development card vs measurement card — superseded in part by D-009

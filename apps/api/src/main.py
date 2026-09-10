@@ -72,6 +72,7 @@ from .services import (
     gpu_sweep_service,
     gpu_wallet_service,
     queue_service,
+    spindown,
 )
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
@@ -530,10 +531,24 @@ async def lifespan(app: FastAPI):
         )
         logger.info("gpu reservation sweep started")
 
+    # The idle watcher. Both switches, because this one can take the backend away from a learner
+    # mid-session if the idle predicate is ever wrong, and that is the most user-visible failure
+    # available in this subsystem. `watch_loop` returns immediately when disabled rather than
+    # becoming a task that wakes every two minutes to decide it may do nothing.
+    _spindown_task = None
+    if config.SPINDOWN_ENABLED and config.POD_CONTROL_ENABLED:
+        _spindown_task = asyncio.create_task(spindown.watch_loop())
+        logger.info("gpu idle watcher started")
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+
+    if _spindown_task is not None:
+        # Cancelled before anything else: a spin-down decision made during shutdown would be based
+        # on a system that is idle only because it is stopping.
+        _spindown_task.cancel()
 
     # Settles first, then the sweep, then everything else. An in-flight settle finishing now is one
     # the sweep does not have to void later, and `terminationGracePeriodSeconds` is 60, so the
