@@ -135,3 +135,27 @@ export async function startCheckout(packCode: string): Promise<string> {
     }
     return body.redirectUrl;
 }
+
+/**
+ * Redeem a voucher code.
+ *
+ * THE SERVER'S REFUSAL MESSAGE IS SHOWN VERBATIM. It deliberately tells "already redeemed" apart
+ * from "not valid" -- a second click is the commonest way to reach a refusal, and telling somebody
+ * their working code is invalid sends them to support over something that worked. Rewording here
+ * would either lose that distinction or invent one the server did not make.
+ */
+export async function redeemVoucher(code: string): Promise<number> {
+    const response = await fetch(`${API_BASE}/v1/credits/vouchers/redeem`, {
+        method: "POST",
+        headers: { ...makeHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+        throw new CreditsError(
+            await readError(response, "That code could not be redeemed."),
+            response.status,
+        );
+    }
+    const body = await response.json();
+    return typeof body?.credits === "number" ? body.credits : 0;
+}

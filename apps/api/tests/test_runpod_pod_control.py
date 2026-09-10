@@ -107,9 +107,32 @@ class TestItIsInertUnlessExplicitlyTargeted:
         _arm(monkeypatch)
         assert rp.is_armed() is True
 
-    def test_the_default_configuration_is_disarmed(self):
-        """A checkout with no environment set must not be one command from stopping a pod."""
-        assert config.POD_CONTROL_ENABLED is False
+    def test_it_ships_disarmed(self):
+        """A checkout with no environment set must not be one command from stopping a pod.
+
+        ASSERTED AGAINST THE SOURCE, NOT AGAINST THE RUNNING CONFIG, and the difference matters.
+        The first version read `config.POD_CONTROL_ENABLED`, which reflects whatever is in the
+        developer's own `.env` — so the moment somebody legitimately armed pod control on their
+        machine, this failed and told them their safety default was broken when it was not. A test
+        that punishes the intended workflow gets deleted, and takes the real guarantee with it.
+
+        What must hold is that the SHIPPED default is off: a fresh clone, a CI runner and a
+        container with no environment all start disarmed. That is a property of `config.py`, so
+        `config.py` is what is read.
+        """
+        import re
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parents[1] / "src" / "config.py").read_text(
+            encoding="utf-8"
+        )
+        for name in ("POD_CONTROL_ENABLED", "SPINDOWN_ENABLED"):
+            declaration = re.search(rf'{name}\s*=\s*_flag\(\s*"{name}"\s*,\s*default=(\w+)', source)
+            assert declaration is not None, f"{name} is no longer a _flag with an explicit default"
+            assert declaration.group(1) == "False", (
+                f"{name} now ships enabled by default. A clone, a CI runner or a container with no "
+                "environment set would be able to stop a GPU pod."
+            )
 
 
 class TestItCanOnlyEverNameTheConfiguredPod:

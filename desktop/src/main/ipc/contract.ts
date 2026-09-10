@@ -114,6 +114,17 @@ export const CHANNELS = {
    * Start a purchase. Returns nothing useful to the renderer on purpose: main opens the buyer's
    * browser itself, so a compromised renderer cannot use this to navigate a person anywhere.
    */
+  /**
+   * Redeem a voucher code.
+   *
+   * Bounded at 128 characters: a code is 32 characters of base64url, and anything an order of
+   * magnitude larger is a paste accident or someone probing the endpoint. Rejecting it here costs
+   * nothing and keeps it off the rate limiter's budget.
+   */
+  "voidcode:redeem": {
+    input: z.object({ code: z.string().min(1).max(128) }),
+    modes: BOTH,
+  },
   "voidcode:checkout": {
     input: z.object({ packCode: z.string().min(1).max(64) }),
     modes: BOTH,

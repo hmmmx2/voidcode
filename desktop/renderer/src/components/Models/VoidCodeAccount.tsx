@@ -55,6 +55,8 @@ export default function VoidCodeAccount() {
   const [balance, setBalance] = useState<Balance | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [voucher, setVoucher] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
 
   const host = () => window.host as NonNullable<Window["host"]>;
 
@@ -95,6 +97,32 @@ export default function VoidCodeAccount() {
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function redeem(event: React.FormEvent) {
+    event.preventDefault();
+    const code = voucher.trim();
+    if (code === "") return;
+
+    setRedeeming(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await host().voidcode.redeem({ code });
+      if (!result.ok) {
+        // The server's wording, not ours. It tells "already redeemed" apart from "not valid",
+        // and a second click is the commonest way to get here.
+        setError(result.message);
+        return;
+      }
+      // Cleared only on success. A rejected code stays in the box so a typo can be corrected
+      // rather than retyped off a piece of paper.
+      setVoucher("");
+      setNotice(`Added ${result.credits.toLocaleString()} credits.`);
+      await refresh();
+    } finally {
+      setRedeeming(false);
     }
   }
 
@@ -203,6 +231,27 @@ export default function VoidCodeAccount() {
               ))}
             </div>
           )}
+
+          <form onSubmit={(e) => void redeem(e)} className="mt-4 flex items-center gap-2">
+            <input
+              type="text"
+              value={voucher}
+              onChange={(e) => setVoucher(e.target.value)}
+              placeholder="Voucher code"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="min-w-0 flex-1 rounded border border-line bg-transparent px-3 py-1.5 font-mono text-xs text-ink"
+            />
+            <button
+              type="submit"
+              disabled={redeeming || voucher.trim() === ""}
+              className="rounded border border-line px-3 py-1.5 text-xs text-ink transition-colors hover:border-ink-3 disabled:opacity-40"
+            >
+              {redeeming ? "Redeeming..." : "Redeem"}
+            </button>
+          </form>
 
           {notice !== null && <p className="mt-3 text-xs text-ink-2">{notice}</p>}
         </div>

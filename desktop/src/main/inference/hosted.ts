@@ -189,3 +189,41 @@ export async function checkout(
     return { ok: false, message: "Could not reach VoidCode." };
   }
 }
+
+
+/**
+ * Redeem a voucher code into the signed-in learner's wallet.
+ *
+ * THE API'S REFUSAL MESSAGE IS PASSED THROUGH VERBATIM, and that is deliberate. It distinguishes
+ * "already redeemed" from "not valid" on purpose — a second click is the commonest way to reach a
+ * refusal, and telling somebody their working code is invalid sends them to support over something
+ * that worked. Rewording it here would either lose that distinction or invent one the server did
+ * not make.
+ */
+export async function redeemVoucher(
+  code: string,
+): Promise<{ ok: true; credits: number } | { ok: false; message: string }> {
+  try {
+    const { status, body } = await call("/credits/vouchers/redeem", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({ code }),
+    });
+    if (status === 401) return { ok: false, message: "Sign in before redeeming a voucher." };
+    if (status === 429) {
+      // The endpoint is rate limited far harder than anything else, because a voucher code is a
+      // guessable-shaped secret and every outstanding one shares this door.
+      return { ok: false, message: "Too many attempts. Please wait a while and try again." };
+    }
+    if (status !== 200) {
+      const detail = (body as { detail?: unknown } | null)?.detail;
+      return {
+        ok: false,
+        message: typeof detail === "string" ? detail : "That code could not be redeemed.",
+      };
+    }
+    return { ok: true, credits: (body as { credits?: number }).credits ?? 0 };
+  } catch {
+    return { ok: false, message: "Could not reach VoidCode." };
+  }
+}

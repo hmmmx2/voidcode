@@ -259,6 +259,22 @@ class TestItIsInertUnlessArmed:
         monkeypatch.setattr(config, "SPINDOWN_ENABLED", False)
         await spindown.watch_loop(interval_seconds=0.01)
 
-    def test_the_defaults_are_off(self):
-        assert config.SPINDOWN_ENABLED is False
-        assert config.POD_CONTROL_ENABLED is False
+    def test_it_ships_disabled(self):
+        """The shipped default, read from `config.py` rather than from the running configuration.
+
+        Reading the live value made this fail on any machine where somebody had deliberately armed
+        pod control in their own `.env` — punishing the intended workflow rather than guarding
+        anything. `test_runpod_pod_control.py::test_it_ships_disarmed` holds the same line for both
+        switches; this one is kept so the spin-down suite fails on its own if that changes.
+        """
+        import re
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parents[1] / "src" / "config.py").read_text(
+            encoding="utf-8"
+        )
+        match = re.search(r'SPINDOWN_ENABLED\s*=\s*_flag\(\s*"SPINDOWN_ENABLED"\s*,\s*default=(\w+)', source)
+        assert match is not None and match.group(1) == "False", (
+            "spin-down no longer ships disabled, so a deployment that never opted in could stop "
+            "its own backend"
+        )

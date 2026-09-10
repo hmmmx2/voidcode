@@ -1251,6 +1251,8 @@ export function registerHandlers(): void {
 
   setHandler("voidcode:packs", async () => ({ packs: await hosted.packs() }));
 
+  setHandler("voidcode:redeem", async (input) => hosted.redeemVoucher(input.code.trim()));
+
   setHandler("voidcode:checkout", async (input) => {
     const started = await hosted.checkout(input.packCode);
     if (!started.ok) return started;

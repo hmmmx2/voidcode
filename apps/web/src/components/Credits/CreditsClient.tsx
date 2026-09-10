@@ -7,6 +7,7 @@ import {
     fetchBalance,
     fetchLedger,
     fetchPacks,
+    redeemVoucher,
     startCheckout,
     type CreditBalance,
     type CreditPack,
@@ -46,6 +47,9 @@ export default function CreditsClient() {
     const [buying, setBuying] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [awaitingWebhook, setAwaitingWebhook] = useState(returned === "success");
+    const [voucher, setVoucher] = useState("");
+    const [redeeming, setRedeeming] = useState(false);
+    const [redeemed, setRedeemed] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         try {
@@ -106,6 +110,28 @@ export default function CreditsClient() {
         // every poll and reset the two-minute deadline forever.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [awaitingWebhook, load]);
+
+    async function redeem(event: React.FormEvent) {
+        event.preventDefault();
+        const code = voucher.trim();
+        if (code === "") return;
+
+        setRedeeming(true);
+        setError(null);
+        setRedeemed(null);
+        try {
+            const credits = await redeemVoucher(code);
+            // Cleared only on success: a rejected code stays in the box so a typo can be fixed
+            // rather than retyped off a piece of paper.
+            setVoucher("");
+            setRedeemed(`Added ${credits.toLocaleString()} credits.`);
+            await load();
+        } catch (err) {
+            setError(err instanceof CreditsError ? err.message : "That code could not be redeemed.");
+        } finally {
+            setRedeeming(false);
+        }
+    }
 
     async function buy(packCode: string) {
         setBuying(packCode);
@@ -192,6 +218,36 @@ export default function CreditsClient() {
                         )}
                     </>
                 ) : null}
+            </section>
+
+            {/* ── Voucher ─────────────────────────────────────────── */}
+            <section className="mt-10">
+                <h2 className="text-sm font-medium text-ink-2">Redeem a code</h2>
+                <form onSubmit={(e) => void redeem(e)} className="mt-3 flex items-center gap-2">
+                    <input
+                        type="text"
+                        value={voucher}
+                        onChange={(e) => setVoucher(e.target.value)}
+                        placeholder="Voucher code"
+                        // `off` on all four: a voucher code is a one-time secret, and a browser
+                        // that remembers it leaves it in an autofill store on a shared machine.
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        className="min-w-0 flex-1 rounded border border-line bg-transparent px-3 py-2 font-mono text-sm text-ink"
+                    />
+                    <button
+                        type="submit"
+                        disabled={redeeming || voucher.trim() === ""}
+                        className="rounded border border-line px-4 py-2 text-sm text-ink transition-colors hover:border-ink-3 disabled:opacity-40"
+                    >
+                        {redeeming ? "Redeeming…" : "Redeem"}
+                    </button>
+                </form>
+                {redeemed !== null && (
+                    <p className="mt-2 text-sm text-ink-2">{redeemed}</p>
+                )}
             </section>
 
             {/* ── Packs ───────────────────────────────────────────── */}

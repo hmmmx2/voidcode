@@ -106,6 +106,14 @@ interface VoidCodeHost {
      * is https. A renderer that could pass a URL to `shell.openExternal` could launch anything
      * the operating system has a handler registered for.
      */
+    /**
+     * Redeem a voucher code. The message on failure is the server's own wording, which
+     * deliberately distinguishes "already redeemed" from "not valid" -- a second click is the
+     * commonest way to reach a refusal.
+     */
+    redeem(input: { code: string }): Promise<
+      { ok: true; credits: number } | { ok: false; message: string }
+    >;
     checkout(input: { packCode: string }): Promise<
       { ok: true; opened: boolean } | { ok: false; message: string }
     >;
