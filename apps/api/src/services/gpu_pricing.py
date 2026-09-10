@@ -65,6 +65,24 @@ class PricingRow:
         return ceil_div(base * self.margin_bps, 10_000)
 
 
+#: What a US dollar of GPU cost is worth in MYR, IN TENTHS, so the money path stays integer-only.
+#: 47 means 4.7 MYR to the dollar.
+#:
+#: Written as tenths rather than as 4.7 because this module's own no-floats guard rejects a float
+#: literal here -- and it was right to. A float constant is harmless in isolation, but it is how a
+#: float reaches the arithmetic beside it, and the guard cannot tell a one-off derivation from a
+#: per-transaction multiplication.
+#:
+#: THIS IS AN FX ASSUMPTION, NOT A MEASUREMENT, and it is the one number here that moves without
+#: anyone touching the code. You pay for the pod in USD and collect in MYR, so a weakening ringgit
+#: raises your real cost while every price stays where it is. The margin absorbs that as well as
+#: idle capacity; if the rate moves far, add a pricing row rather than hoping.
+USD_TO_MYR_TENTHS = 47
+
+# No `USD_TO_MYR = USD_TO_MYR_TENTHS / 10` convenience alias: that is a true division, and this
+# module's own guard rejects it. Callers that want the decimal can divide it themselves, outside the
+# money path.
+
 #: Dated, newest last. Add a row; never edit one that has settled requests behind it.
 PRICING: tuple[PricingRow, ...] = (
     PricingRow(
@@ -80,10 +98,36 @@ PRICING: tuple[PricingRow, ...] = (
         model="Qwen3-Coder-30B-A3B-Instruct + RL adapter",
         measured=False,
         note=(
-            "PLACEHOLDER. Throughput per slot for this model on this card at realistic generation "
-            "lengths has never been measured -- the A40 has been occupied by the seed-1 "
-            "replication and the max-cases ablation. Replace with a measured row before charging "
-            "anyone, and expect the reconciliation test to fail until then."
+            "PLACEHOLDER, AND DENOMINATED IN US CENTS, WHICH WAS WRONG FOR AN MYR PRODUCT. "
+            "Superseded the next day by the row below. Kept because this table is append-only and "
+            "because the error is worth being able to find: credits were defined as US cents while "
+            "packs were sold in ringgit, so a RM20 pack granted about RM56 of GPU. Nothing ever "
+            "settled against it -- metering has never been switched on."
+        ),
+    ),
+    PricingRow(
+        effective_from=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        # THE CORRECTION: one credit is one SEN, not one US cent, because that is the currency the
+        # product sells in. RunPod bills ~$0.49/hr for the A40, so the pod costs
+        # 0.49 x USD_TO_MYR = ~RM2.30/hr = 230 sen = 230 credits per hour.
+        #
+        # Getting this wrong is not a rounding error. With credits denominated in US cents and packs
+        # priced in ringgit, every pack sold GPU at roughly a third of cost, and every figure in the
+        # ledger stayed arithmetically correct while it happened. `test_pack_economics.py` now ties
+        # the two together so the units cannot drift apart again unnoticed.
+        # 49 US cents/hr x 4.7 = 230.3 sen, floored to 230. Integer throughout:
+        # 49 * 47 // 10 = 230.
+        pod_micro_per_hour=(49 * USD_TO_MYR_TENTHS // 10) * 1_000_000,
+        nominal_concurrency=16,
+        margin_bps=15_000,
+        gpu="A40 48GB",
+        model="Qwen3-Coder-30B-A3B-Instruct + RL adapter",
+        measured=False,
+        note=(
+            "MYR-denominated: 1 credit = 1 sen. Still PLACEHOLDER on the other axis -- "
+            "nominal_concurrency of 16 is an API semaphore count, not a measured property of an "
+            "A40, and the serving benchmark has not run. Replace with a measured row before "
+            "charging anyone."
         ),
     ),
 )

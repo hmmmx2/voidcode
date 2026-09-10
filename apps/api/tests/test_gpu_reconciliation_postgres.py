@@ -119,10 +119,19 @@ class TestABusyHourRecoversItsPodHour:
             f"a fully utilised hour drew {charged} micro-credits against a pod costing {pod_cost}. "
             "The price does not cover the hardware."
         )
-        # Within rounding of the intended margin. Rounding is per slot-second and can only round up,
-        # so the drift is bounded and one-directional.
-        assert abs(charged - expected) < slot_seconds_in_a_busy_hour, (
-            f"charged {charged}, intended {expected} at {row.margin_bps} bps"
+        # Over-recovery only, and only by rounding dust. The bound accounts for TWO ceilings, not
+        # one: `rate_micro_per_slot_second` rounds the base rate up, then rounds again after
+        # applying the margin, so the first error is amplified by the margin before the second is
+        # added. An earlier version of this assertion allowed one slot-second of drift and failed
+        # the moment the pod cost changed -- the arithmetic was right, the bound was wrong.
+        max_dust = slot_seconds_in_a_busy_hour * (1 + row.margin_bps // 10_000 + 1)
+        assert charged >= expected, (
+            f"charged {charged} against an intended {expected}: rounding up cannot under-recover, "
+            "so this means the rate and the margin disagree"
+        )
+        assert charged - expected < max_dust, (
+            f"charged {charged}, intended {expected} at {row.margin_bps} bps — "
+            f"{charged - expected} over is more than rounding can explain"
         )
 
     async def test_a_half_idle_hour_under_recovers_and_that_is_correct(
