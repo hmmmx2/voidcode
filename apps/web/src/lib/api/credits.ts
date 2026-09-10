@@ -30,6 +30,16 @@ export interface CreditBalance {
     reservedMicro: number;
     availableMicro: number;
     availableCredits: number;
+    /**
+     * Roughly how many minutes of answer generation the available credit buys, and the rate it was
+     * derived from. Optional because an API deployed before these existed does not send them, and a
+     * missing figure must render as nothing rather than as zero minutes.
+     *
+     * Computed server-side deliberately: the rate is a dated row resolved live, and a rate cached
+     * in a client bundle would render a stale price as a promise.
+     */
+    estimatedMinutes?: number;
+    rateMicroPerSlotSecond?: number;
 }
 
 export interface LedgerEntry {

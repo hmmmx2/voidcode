@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import config, identity, ratelimit
 from ..database import get_db
 from ..models.gpu_billing import MICRO_PER_CREDIT, GpuLedger, GpuReservation, GpuWallet
-from ..services import credit_packs, gpu_wallet_service, payments
+from ..services import credit_packs, gpu_pricing, gpu_wallet_service, payments
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,22 @@ async def read_balance(
     `available` is the number that matters and the only one worth showing prominently: it is what a
     request will be checked against. Displaying `balance` alone would promise credit that is already
     held by an in-flight request.
+
+    WHY THE MINUTES FIGURE IS COMPUTED HERE AND NOT IN THE BROWSER
+
+    "1,200 credits" means nothing to somebody deciding whether to buy. The conversion needs the live
+    rate, and the rate is a dated row resolved per request -- ship it to the client and a cached
+    bundle can render a stale price as a promise. The client also has no business holding the
+    formula: it divides by `nominal_concurrency`, which is not obvious and not the client's to know.
+
+    `rateMicroPerSlotSecond` goes out alongside so the figure is auditable by whoever reads it,
+    rather than a number the server asserts.
+
+    IT IS SLOT-MINUTES, AND THE COPY HAS TO SAY SO. Under continuous batching a slot-minute is not a
+    minute of the learner's own time, and the divisor it rests on has never been measured on this
+    hardware. This is a unit conversion of a price, not a prediction of how long anyone will study --
+    which is the distinction that separates it from the "messages remaining" count
+    `CreditsClient.tsx` refuses to show.
     """
     row = (
         await db.execute(
@@ -61,6 +77,8 @@ async def read_balance(
     reserved_micro = row.reserved_micro if row else 0
     available_micro = balance_micro - reserved_micro
 
+    rate_micro_per_slot_second = gpu_pricing.rate_for().rate_micro_per_slot_second
+
     return {
         "balanceMicro": balance_micro,
         "reservedMicro": reserved_micro,
@@ -68,6 +86,10 @@ async def read_balance(
         # Floored, never rounded: showing 1 credit when 0.99 is spendable invites a refusal the
         # learner was told would not happen.
         "availableCredits": available_micro // MICRO_PER_CREDIT,
+        # Floored for the same reason, and integer division throughout -- this is derived from the
+        # money path even though it is not itself money.
+        "estimatedMinutes": available_micro // (rate_micro_per_slot_second * 60),
+        "rateMicroPerSlotSecond": rate_micro_per_slot_second,
     }
 
 

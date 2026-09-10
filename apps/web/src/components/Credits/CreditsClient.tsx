@@ -169,6 +169,19 @@ export default function CreditsClient() {
                                 credits available
                             </span>
                         </p>
+                        {typeof balance.estimatedMinutes === "number" && (
+                            // "Answer generation", not "tutoring". Credit is spent while the model
+                            // is writing, so a forty-minute study session might be three minutes of
+                            // this. Calling it tutoring time would be the same lie as a
+                            // "messages remaining" count, told in a different unit.
+                            //
+                            // Rendered only when the API sent it: an older deployment does not, and
+                            // "0 minutes" next to a funded balance reads as a fault.
+                            <p className="mt-1 text-sm text-ink-3">
+                                about {formatGenerationTime(balance.estimatedMinutes)} of answer
+                                generation, at today&apos;s rate
+                            </p>
+                        )}
                         {balance.reservedMicro > 0 && (
                             // Shown only when non-zero. A permanent "0 held" line would make an
                             // ordinary state look like something to worry about.
@@ -232,6 +245,25 @@ export default function CreditsClient() {
             )}
         </div>
     );
+}
+
+
+/**
+ * Minutes, in whatever unit a person would actually say.
+ *
+ * The API returns minutes because minutes are the honest integer to derive from a per-second rate.
+ * Printing them raw is not: a starter pack works out at about 3,300 of them, and "3,338 minutes"
+ * reads as a number rather than as an amount of time. The arithmetic stays on the server; only the
+ * wording is decided here.
+ */
+function formatGenerationTime(minutes: number): string {
+    if (minutes < 60) return `${minutes} minutes`;
+    const hours = Math.floor(minutes / 60);
+    // Past a couple of days of generation the exact figure has stopped being decision-relevant, and
+    // precision there would imply a confidence the underlying rate does not have -- it divides by a
+    // concurrency that has never been measured on this hardware.
+    if (hours < 48) return `${hours} hours`;
+    return `${Math.floor(hours / 24)} days`;
 }
 
 /** Ledger types are internal words; these are what a learner is owed instead. */

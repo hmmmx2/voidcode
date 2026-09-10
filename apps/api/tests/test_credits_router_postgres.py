@@ -18,10 +18,10 @@ from sqlalchemy.pool import NullPool
 
 from src import identity
 from src.database import get_db
-from src.models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
+from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.routers import credits as credits_router
-from src.services import credit_packs, gpu_wallet_service as wallet
+from src.services import credit_packs, gpu_pricing, gpu_wallet_service as wallet
 
 from conftest import TEST_DATABASE_URL, requires_postgres
 
@@ -55,6 +55,8 @@ async def learner(sessionmaker_np):
     yield user_id
     async with sessionmaker_np() as db:
         await db.execute(delete(GpuLedger).where(GpuLedger.wallet_user_id == user_id))
+        # Not cascaded from the wallet, deliberately -- see `GpuGrantKey`.
+        await db.execute(delete(GpuGrantKey).where(GpuGrantKey.user_id == user_id))
         await db.execute(delete(GpuReservation).where(GpuReservation.wallet_user_id == user_id))
         await db.execute(delete(GpuWallet).where(GpuWallet.user_id == user_id))
         await db.execute(delete(User).where(User.id == user_id))
@@ -257,4 +259,83 @@ class TestARetiredPackCannotBeBoughtButStillCredits:
         )
         assert found.credits_micro == live.credits_micro
         assert retired not in credit_packs.packs_on_sale(), "a retired pack is still on display"
+
+
+class TestWhatABalanceIsWorth:
+    """A balance in credits is not a number anybody can act on.
+
+    "1,200 credits" tells a buyer nothing about whether to buy. The conversion needs the live rate,
+    which is a dated row, so it is done on the server -- a rate shipped to the browser can be served
+    stale from a cached bundle and would render an old price as a promise.
+    """
+
+    async def test_the_balance_says_roughly_how_much_generation_it_buys(
+        self, client, sessionmaker_np, learner
+    ):
+        rate = gpu_pricing.rate_for().rate_micro_per_slot_second
+        async with sessionmaker_np() as db:
+            await wallet.grant(db, learner, amount_micro=rate * 600, idempotency_key=f"g:minutes:{uuid.uuid4()}")
+
+        body = (await client.get("/v1/credits")).json()
+
+        assert body["rateMicroPerSlotSecond"] == rate, (
+            "the rate is returned so the figure can be checked by whoever reads it, rather than "
+            "asserted"
+        )
+        assert body["estimatedMinutes"] == 10, (
+            f"600 slot-seconds of credit should read as 10 minutes, got "
+            f"{body['estimatedMinutes']}"
+        )
+
+    async def test_it_is_floored_like_the_credits_figure(self, client, sessionmaker_np, learner):
+        """59 seconds of credit is nought minutes, not one.
+
+        Rounding up here promises generation the balance cannot pay for, which is the same mistake
+        as rounding `availableCredits` up -- and it lands at exactly the moment a learner is
+        deciding whether they still need to top up.
+        """
+        rate = gpu_pricing.rate_for().rate_micro_per_slot_second
+        async with sessionmaker_np() as db:
+            await wallet.grant(db, learner, amount_micro=rate * 119, idempotency_key=f"g:floor:{uuid.uuid4()}")
+
+        body = (await client.get("/v1/credits")).json()
+        assert body["estimatedMinutes"] == 1
+
+    async def test_an_empty_wallet_reads_as_no_time_rather_than_failing(self, client):
+        """Nought divided into nought minutes, not a 500 and not a missing key."""
+        body = (await client.get("/v1/credits")).json()
+        assert body["estimatedMinutes"] == 0
+        assert body["rateMicroPerSlotSecond"] > 0
+
+    async def test_the_figure_tracks_the_rate_rather_than_being_pinned(
+        self, client, sessionmaker_np, learner
+    ):
+        """Doubling the price halves the time. Asserted as a relationship, not a constant.
+
+        Pinning the minutes would fail on every deliberate reprice and teach whoever follows to
+        update the expected number without thinking about whether it was right.
+        """
+        import dataclasses
+
+        rate = gpu_pricing.rate_for().rate_micro_per_slot_second
+        async with sessionmaker_np() as db:
+            await wallet.grant(db, learner, amount_micro=rate * 600, idempotency_key=f"g:reprice:{uuid.uuid4()}")
+
+        before = (await client.get("/v1/credits")).json()["estimatedMinutes"]
+
+        dearer = tuple(
+            dataclasses.replace(r, pod_micro_per_hour=r.pod_micro_per_hour * 2)
+            for r in gpu_pricing.PRICING
+        )
+        original = gpu_pricing.PRICING
+        try:
+            gpu_pricing.PRICING = dearer
+            after = (await client.get("/v1/credits")).json()["estimatedMinutes"]
+        finally:
+            gpu_pricing.PRICING = original
+
+        assert after == before // 2, (
+            f"the price doubled but the estimate went from {before} to {after} minutes; it is not "
+            "reading the live pricing row"
+        )
 
