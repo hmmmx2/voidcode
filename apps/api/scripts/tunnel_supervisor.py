@@ -232,7 +232,21 @@ async def check(
     plan = tunnel.plan_from(description, forward.endpoint, healthy=healthy)
 
     if plan.action == "keep":
-        return _maybe_serve(forward, local_port, serve_script, serve_cooldown, state)
+        outcome = _maybe_serve(forward, local_port, serve_script, serve_cooldown, state)
+        if outcome != "rebuild":
+            return outcome
+
+        # A STALE TUNNEL LOOKS EXACTLY LIKE A DEAD BACKEND FROM HERE, and it is the cheaper of the
+        # two to rule out. Observed 2026-09-10: an ssh forward that accepted connections locally
+        # and carried none, while the pod served perfectly on the other side.
+        logger.warning("the backend is not answering; rebuilding the tunnel before blaming it")
+        forward.start(plan.endpoint, local_port, remote_port)
+        state["tunnel_rebuilt"] = True
+        for _ in range(20):
+            await asyncio.sleep(0.5)
+            if forwarding(local_port):
+                break
+        return "rebuilt"
 
     if plan.action == "wait":
         if forward.alive():
@@ -298,14 +312,19 @@ def _maybe_serve(
         backend_ready=ready,
         launched_ago=None if launched_at is None else time.monotonic() - launched_at,
         cooldown=cooldown,
+        tunnel_rebuilt=state.get("tunnel_rebuilt", False),
     )
 
     if plan.action == "none":
         if ready:
-            # Clears the cooldown so a LATER failure can relaunch immediately rather than waiting
-            # out a timer belonging to a launch that already succeeded.
+            # Clears both, so the NEXT outage starts from scratch: a fresh tunnel rebuild is tried
+            # again before the model is blamed, and no cooldown is inherited from a launch that
+            # already paid off.
             state.pop("launched_at", None)
+            state.pop("tunnel_rebuilt", None)
         return "keep"
+    if plan.action == "rebuild":
+        return "rebuild"
     if plan.action == "wait":
         logger.info("not relaunching: %s", plan.reason)
         return "loading"

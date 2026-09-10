@@ -268,7 +268,9 @@ class TestTheCooldownBookkeeping:
         script = tmp_path / "serve.sh"
         script.write_text("true", encoding="utf-8")
 
-        state: dict = {}
+        # `tunnel_rebuilt` set: a stale tunnel has already been ruled out for this outage, so
+        # the model is now the remaining suspect and the launch path is reachable.
+        state: dict = {"tunnel_rebuilt": True}
         result = supervisor._maybe_serve(self._forward(), 8080, script, 900.0, state)
 
         assert result == "failed"
@@ -285,7 +287,7 @@ class TestTheCooldownBookkeeping:
         script = tmp_path / "serve.sh"
         script.write_text("true", encoding="utf-8")
 
-        state: dict = {}
+        state: dict = {"tunnel_rebuilt": True}
         forward = self._forward()
         for _ in range(5):
             supervisor._maybe_serve(forward, 8080, script, 900.0, state)
@@ -300,9 +302,33 @@ class TestTheCooldownBookkeeping:
         script = tmp_path / "serve.sh"
         script.write_text("true", encoding="utf-8")
 
-        state = {"launched_at": 1.0}
+        state = {"launched_at": 1.0, "tunnel_rebuilt": True}
         assert supervisor._maybe_serve(self._forward(), 8080, script, 900.0, state) == "keep"
         assert "launched_at" not in state
+        assert "tunnel_rebuilt" not in state, (
+            "the next outage must try a tunnel rebuild again before blaming the model")
+
+    def test_a_stale_tunnel_is_ruled_out_before_the_model_is_blamed(self, monkeypatch, tmp_path):
+        """THE ORDERING, and a live incident is why it exists.
+
+        On 2026-09-10 the supervisor's ssh forward accepted connections locally and carried none,
+        while the pod served perfectly on the other side. `forwarding()` cannot tell -- `ssh -L`
+        binds the local port on connect, so a TCP check passes on a dead channel -- so the backend
+        looked down and the model was the suspect.
+
+        Rebuilding the tunnel costs three seconds and breaks nothing. Relaunching the model kills
+        whatever holds the GPU and costs ten minutes. The cheap, safe remedy goes first, and the
+        model is only touched once a FRESH tunnel has also failed.
+        """
+        launches = []
+        monkeypatch.setattr(supervisor, "backend_ready", lambda *a, **k: False)
+        monkeypatch.setattr(supervisor, "launch_serve", lambda *a, **k: launches.append(1) or True)
+        script = tmp_path / "serve.sh"
+        script.write_text("true", encoding="utf-8")
+
+        state: dict = {}
+        assert supervisor._maybe_serve(self._forward(), 8080, script, 900.0, state) == "rebuild"
+        assert launches == [], "the model was relaunched before a stale tunnel was ruled out"
 
     def test_a_timed_out_launch_is_treated_as_possibly_running(self):
         """`launch_serve` returns True on timeout, because the script may well have started.

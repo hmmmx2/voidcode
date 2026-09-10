@@ -136,7 +136,7 @@ def plan_from(description: dict, current: Endpoint | None, *, healthy: bool) -> 
 class ServePlan:
     """Whether to (re)launch the model server inside the pod, and why."""
 
-    action: str  # "launch" | "wait" | "none"
+    action: str  # "launch" | "wait" | "rebuild" | "none"
     reason: str
 
 
@@ -147,6 +147,7 @@ def serve_plan(
     backend_ready: bool,
     launched_ago: float | None,
     cooldown: float,
+    tunnel_rebuilt: bool = True,
 ) -> ServePlan:
     """Decide whether the pod needs its model server started.
 
@@ -178,6 +179,20 @@ def serve_plan(
         return ServePlan("none", "there is no tunnel to reach the backend through")
     if backend_ready:
         return ServePlan("none", "the backend is answering")
+    if not tunnel_rebuilt:
+        # TRY THE CHEAP, SAFE REMEDY BEFORE THE EXPENSIVE, DESTRUCTIVE ONE.
+        #
+        # "The backend is not answering" has two causes and they look identical from here: the
+        # model is down, or the tunnel is stale. Observed on 2026-09-10 -- an ssh forward that
+        # accepted connections locally and never carried them, while the pod was serving perfectly
+        # on the other side. `forwarding()` cannot tell: `ssh -L` binds the local port on connect,
+        # so a TCP check passes on a dead channel.
+        #
+        # Rebuilding the tunnel costs three seconds and breaks nothing. Relaunching the model kills
+        # whatever holds the GPU and costs ten minutes. Ordering them by that asymmetry means the
+        # common case is fixed cheaply, and the model is only touched once a FRESH tunnel has also
+        # failed -- which is the only evidence that actually implicates the model.
+        return ServePlan("rebuild", "the backend is not answering; rebuilding the tunnel first")
     if launched_ago is not None and launched_ago < cooldown:
         return ServePlan(
             "wait",
