@@ -14,8 +14,30 @@ pod is stopped, wait" does not, and those are the rules that go wrong. They live
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from src.services.tunnel import Endpoint, endpoint_from, plan_from, serve_plan
+
+
+def _load_supervisor():
+    """Load the supervisor BY PATH, not by package name.
+
+    `from scripts import tunnel_supervisor` works when this file runs alone and fails in a full
+    suite run: the repository root has its own top-level `scripts` package, another test puts that
+    root on `sys.path` first, and the import then resolves to the wrong one. A path is unambiguous
+    and does not depend on which tests ran before this one.
+    """
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "tunnel_supervisor.py"
+    spec = importlib.util.spec_from_file_location("_voidcode_tunnel_supervisor", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+supervisor = _load_supervisor()
 
 RUNNING_POD = {
     "desiredStatus": "RUNNING",
@@ -214,3 +236,84 @@ class TestStartingTheModelServer:
                           launched_ago=None, cooldown=900)
         assert plan.action == "none"
         assert "not enabled" in plan.reason
+
+
+class TestTheCooldownBookkeeping:
+    """The cold-start drill found this, and the unit tests above did not.
+
+    `serve_plan` was right. The CALLER was wrong: it recorded the cooldown only when the launch
+    reported success. The ssh call was timing out and reporting failure, so no cooldown was ever
+    recorded, and the supervisor relaunched every 20 seconds into its own loading engine. Three
+    api_servers ended up stacked on the pod with the GPU at 0 MiB and nothing serving.
+
+    Every test above passed throughout. They exercised the decision and nothing exercised the
+    bookkeeping the decision depends on, which is a whole class of bug: a correct rule fed a state
+    variable that is never set.
+    """
+
+    def _forward(self):
+        forward = supervisor.Forward()
+        forward.endpoint = Endpoint("1.2.3.4", 22)
+        return forward
+
+    def test_a_failed_launch_still_starts_the_cooldown(self, monkeypatch, tmp_path):
+        """THE ONE THAT WOULD HAVE SAVED THE DRILL.
+
+        A cooldown conditioned on knowing the attempt worked is absent exactly when it is needed:
+        the reason to wait is that the last attempt may be running and killing it would be
+        destructive, and "may be" is what a failure report cannot rule out.
+        """
+        monkeypatch.setattr(supervisor, "backend_ready", lambda *a, **k: False)
+        monkeypatch.setattr(supervisor, "launch_serve", lambda *a, **k: False)
+        script = tmp_path / "serve.sh"
+        script.write_text("true", encoding="utf-8")
+
+        state: dict = {}
+        result = supervisor._maybe_serve(self._forward(), 8080, script, 900.0, state)
+
+        assert result == "failed"
+        assert "launched_at" in state, (
+            "a launch that reported failure recorded no cooldown; the next check relaunches into "
+            "a possibly-loading engine and kills it")
+
+    def test_a_second_check_during_the_cooldown_does_not_relaunch(self, monkeypatch, tmp_path):
+        """The consequence of the above, asserted end to end through the caller."""
+        launches = []
+        monkeypatch.setattr(supervisor, "backend_ready", lambda *a, **k: False)
+        monkeypatch.setattr(supervisor, "launch_serve",
+                            lambda *a, **k: launches.append(1) or False)
+        script = tmp_path / "serve.sh"
+        script.write_text("true", encoding="utf-8")
+
+        state: dict = {}
+        forward = self._forward()
+        for _ in range(5):
+            supervisor._maybe_serve(forward, 8080, script, 900.0, state)
+
+        assert len(launches) == 1, (
+            f"launched {len(launches)} times in a row; this is the loop that stacked three engines "
+            "onto the GPU")
+
+    def test_a_recovered_backend_clears_the_cooldown(self, monkeypatch, tmp_path):
+        """So a LATER failure can act at once rather than waiting out a timer that already paid off."""
+        monkeypatch.setattr(supervisor, "backend_ready", lambda *a, **k: True)
+        script = tmp_path / "serve.sh"
+        script.write_text("true", encoding="utf-8")
+
+        state = {"launched_at": 1.0}
+        assert supervisor._maybe_serve(self._forward(), 8080, script, 900.0, state) == "keep"
+        assert "launched_at" not in state
+
+    def test_a_timed_out_launch_is_treated_as_possibly_running(self):
+        """`launch_serve` returns True on timeout, because the script may well have started.
+
+        Reporting failure there is what made the caller's bug destructive rather than merely noisy.
+        """
+        source = (
+            Path(supervisor.__file__).read_text(encoding="utf-8")
+            .split("except subprocess.TimeoutExpired:")[1]
+            .split("logger.info")[0]
+        )
+        assert "return True" in source, (
+            "a timed-out launch reports failure again; the script may be running and the next "
+            "check would kill it")

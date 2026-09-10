@@ -164,6 +164,13 @@ def serve_plan(
 
     `backend_ready` must be a real request to the model API, not a socket check: `ssh -L` binds the
     local port on connect, so a TCP connect succeeds whether or not anything listens inside the pod.
+
+    `launched_ago` must be set from the ATTEMPT, never from a confirmed success. The cold-start
+    drill on 2026-09-10 had the caller record it only when the launch reported success; the launch
+    call was timing out and reporting failure, so no cooldown was ever recorded, and the supervisor
+    relaunched every 20s into its own loading engine. Three api_servers ended up stacked on the pod
+    with the GPU at 0 MiB. A cooldown conditioned on knowing the outcome is a cooldown that is
+    absent exactly when it is needed.
     """
     if not enabled:
         return ServePlan("none", "starting the model server is not enabled")

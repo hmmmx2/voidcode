@@ -144,18 +144,27 @@ def launch_serve(endpoint: tunnel.Endpoint, script: Path) -> bool:
                          upload.stderr.decode("utf-8", "replace").strip()[:300])
             return False
 
-        # `bash <script>` returns as soon as the script backgrounds the engine; the script itself
-        # owns detaching it, so this does not wait for a model load.
+        # DETACHED ON THE SSH SIDE, not just inside the script, and the drill is why.
+        #
+        # `ssh 'bash <script>'` did not return. The script does background the engine, but ssh
+        # waits for the channel to close and something in that tree kept it open, so the call sat
+        # until the 180s timeout every single time. Wrapping the whole thing in `setsid nohup ...
+        # &` with all three streams pointed away from the channel, and echoing immediately, gives
+        # ssh nothing to wait for. `-n` keeps ssh from reading our stdin.
         run = subprocess.run(
-            [*base, f"bash {remote}"], capture_output=True, timeout=180, check=False,
+            [*base, "-n",
+             f"setsid nohup bash {remote} </dev/null >/dev/null 2>&1 & echo launched"],
+            capture_output=True, timeout=60, check=False,
         )
         if run.returncode != 0:
             logger.error("serve script failed: %s",
                          run.stderr.decode("utf-8", "replace").strip()[:300])
             return False
     except subprocess.TimeoutExpired:
-        logger.error("timed out launching the serve script")
-        return False
+        # NOT a failure, and treating it as one is what made this destructive. See `_maybe_serve`:
+        # a launch whose outcome is unknown may well be running, so it must start the cooldown.
+        logger.warning("the launch call timed out; assuming it started and waiting it out")
+        return True
 
     logger.info("serve script launched; the model will take minutes to load")
     return True
@@ -303,8 +312,19 @@ def _maybe_serve(
 
     logger.warning("the tunnel is up but the backend is not answering; starting the model server")
     assert serve_script is not None and forward.endpoint is not None
+
+    # THE COOLDOWN STARTS BEFORE THE ATTEMPT, NOT AFTER A SUCCESSFUL ONE.
+    #
+    # It used to be set only when `launch_serve` returned True, and the cold-start drill showed
+    # what that costs. The ssh call was timing out, which was reported as failure, so no cooldown
+    # was recorded -- and 20 seconds later the supervisor launched again. Each launch killed the
+    # engine the previous one was still loading. Three api_servers were stacked on the pod with the
+    # GPU at 0 MiB and nothing serving.
+    #
+    # The case a cooldown protects against is precisely the case where you do not know whether the
+    # last attempt worked. Conditioning it on knowing is conditioning it on not needing it.
+    state["launched_at"] = time.monotonic()
     if launch_serve(forward.endpoint, serve_script):
-        state["launched_at"] = time.monotonic()
         return "launched"
     return "failed"
 
