@@ -25,7 +25,14 @@ import {
 import ChatMessage from "./ChatMessage";
 import ChatHistoryDropdown from "./ChatHistoryDropdown";
 import ReviewTemplateBlock from "./ReviewTemplateBlock";
-import { API_BASE, makeHeaders, usableProvider, type TutorContent } from "@/lib/api/client";
+import {
+  API_BASE,
+  chooseProvider,
+  chosenProvider,
+  makeHeaders,
+  usableProvider,
+  type TutorContent,
+} from "@/lib/api/client";
 import {
   MAX_ATTACHMENTS,
   canSend,
@@ -1139,6 +1146,17 @@ export default function VoidCodeAIPanel({
   // Mirrors the state for the streaming loop, which runs far faster than React re-renders and
   // must not read a value that is one render behind. Same pattern as `streamingContentRef`.
   const queuePositionRef = useRef<number | null>(null);
+  /**
+   * Which backends this machine can currently use, and which one the learner picked.
+   *
+   * Loaded once and refreshed when the picker is opened rather than polled: the list changes when
+   * somebody starts Ollama or signs in, both of which are deliberate acts the person just
+   * performed, not background events worth a timer.
+   */
+  const [providers, setProviders] = useState<
+    Array<{ id: string; label: string; models: string[]; capabilities: { remote: boolean } }>
+  >([]);
+  const [provider, setProvider] = useState<string | null>(chosenProvider());
   const [currentReviewTemplate, setCurrentReviewTemplate] =
     useState<ReviewTemplate | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1152,6 +1170,15 @@ export default function VoidCodeAIPanel({
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   /** Surfaced in the dropdown. A delete that fails must not fail silently — see below. */
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const host = window.host;
+    if (host === undefined) return;
+    void host.providers
+      .list()
+      .then((r) => setProviders(r.providers.filter((p) => p.models.length > 0)))
+      .catch(() => setProviders([]));
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2081,6 +2108,29 @@ export default function VoidCodeAIPanel({
                   <ReviewTemplateBlock template={currentReviewTemplate} />
                 </div>
               )}
+            {providers.length > 1 && (
+              // Shown only when there is a choice to make. One provider and a picker is a control
+              // that does nothing, which is worse than no control.
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-[11px] uppercase tracking-wide text-ink-3">Answered by</span>
+                <select
+                  value={provider ?? providers[0]?.id ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setProvider(id);
+                    chooseProvider(id);
+                  }}
+                  className="rounded border border-line bg-transparent px-2 py-1 text-xs text-ink-2"
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                      {p.capabilities.remote ? " (uses credit)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {queuePosition !== null && (
               // Replaces the "Thinking..." line while queued rather than sitting beside it: two
               // status lines saying different things is worse than either alone.

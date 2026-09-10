@@ -36,6 +36,19 @@ from ..database import Base
 PURPOSE_PASSWORD_RESET = "password_reset"
 PURPOSE_EMAIL_VERIFY = "email_verify"
 
+#: A signed-in desktop client.
+#:
+#: The other two purposes are single-use links delivered by email and spent within the hour. This
+#: one is a long-lived credential a native app holds in the OS keychain and presents on every
+#: request, which changes three things about how it is handled: it is NOT consumed on use, issuing
+#: a second one does NOT revoke the first (a person may sign in on a laptop and a desktop), and its
+#: lifetime is measured in months rather than minutes.
+#:
+#: It exists because the web app's identity mechanism cannot be given to a desktop client. That is
+#: an HMAC over the user id with a secret shared between the Next.js proxy and this API; shipping
+#: it inside an installable application would hand every user the key to assert any identity.
+PURPOSE_DESKTOP_SESSION = "desktop_session"
+
 
 class AuthToken(Base):
     """One row per issued token. Consumed by setting `used_at`, never by deleting.

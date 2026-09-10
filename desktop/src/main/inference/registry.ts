@@ -41,21 +41,24 @@ function providers(): InferenceProvider[] {
 /**
  * Who the hosted backend is told is asking.
  *
- * TEMPORARY, AND MARKED SO RATHER THAN QUIETLY REASONABLE. There is no sign-in in this app yet:
- * the data layer is `app://api` answered in-process, and `client.ts` records that the identity
- * header was removed precisely because there was no server to assert an identity to. Now there
- * is one, and it bills people.
+ * A per-user, per-device session token minted by `/v1/auth/desktop/session` and kept in the OS
+ * keychain beside the OpenRouter key. Read at the moment of use, never held, so signing out stops
+ * working on the next request rather than the next launch.
  *
- * So this reads a user id from the environment for development and sends nothing otherwise,
- * which makes the hosted provider unusable against an API that enforces identity — deliberately.
- * An app that invented a plausible-looking id would let a learner spend somebody else's credit,
- * and a client that held the server's shared HMAC secret would ship that secret to every
- * installation. Neither is a thing to do by accident on the way to a demo.
+ * IT IS A BEARER TOKEN AND NOT THE WEB APP'S IDENTITY HEADER, and the difference is the whole
+ * design. The web app's mechanism is an HMAC over the user id with a secret shared between the
+ * Next.js proxy and the API; shipping that inside an installable application would hand every user
+ * the key to assert any identity. A token is per-person, revocable on its own, and worth exactly
+ * one account if it leaks.
  *
- * The next change is real sign-in: a token minted by the API, kept in `secrets.ts` beside the
- * OpenRouter key, sent as a bearer. This function is where that lands.
+ * `VOIDCODE_USER_ID` remains as a development-only escape hatch for running against an API with
+ * identity enforcement off. It is checked second so a real session always wins, and it grants
+ * nothing that signing in would not.
  */
 async function hostedIdentity(): Promise<Record<string, string>> {
+  const token = secretValue("voidcode");
+  if (token !== undefined) return { authorization: `Bearer ${token}` };
+
   const userId = process.env.VOIDCODE_USER_ID;
   return userId === undefined || userId === "" ? {} : { "x-user-id": userId };
 }

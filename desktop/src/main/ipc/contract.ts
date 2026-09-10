@@ -91,6 +91,33 @@ export const CHANNELS = {
     input: z.undefined(),
     modes: BOTH,
   },
+  /**
+   * Sign in to the VoidCode platform from this device.
+   *
+   * The password crosses this channel once and is never stored; main exchanges it for a session
+   * token and keeps that in the keychain. The renderer is told who signed in, never the token —
+   * a credential in the renderer is a credential in a devtools console and a crash dump.
+   */
+  "voidcode:signIn": {
+    input: z.object({
+      email: z.string().min(3).max(320),
+      password: z.string().min(1).max(4096),
+    }),
+    modes: BOTH,
+  },
+  "voidcode:signOut": { input: z.undefined(), modes: BOTH },
+  /** Whether this device has a session, for deciding what to render. Carries no credential. */
+  "voidcode:session": { input: z.undefined(), modes: BOTH },
+  "voidcode:credits": { input: z.undefined(), modes: BOTH },
+  "voidcode:packs": { input: z.undefined(), modes: BOTH },
+  /**
+   * Start a purchase. Returns nothing useful to the renderer on purpose: main opens the buyer's
+   * browser itself, so a compromised renderer cannot use this to navigate a person anywhere.
+   */
+  "voidcode:checkout": {
+    input: z.object({ packCode: z.string().min(1).max(64) }),
+    modes: BOTH,
+  },
   "chat:open": {
     input: z.object({
       // The persona is derived from the window mode, never sent from here: a Study window
@@ -491,7 +518,7 @@ export const CHANNELS = {
   },
   "vault:set": {
     input: z.object({
-      key: z.enum(["openrouter"]),
+      key: z.enum(["openrouter", "voidcode"]),
       value: z.string().min(1).max(4096),
     }),
     modes: BOTH,
@@ -502,7 +529,7 @@ export const CHANNELS = {
    * channel through which to exfiltrate a key — only to ask whether one exists.
    */
   "vault:has": {
-    input: z.object({ key: z.enum(["openrouter"]) }),
+    input: z.object({ key: z.enum(["openrouter", "voidcode"]) }),
     modes: BOTH,
   },
   /**
@@ -514,7 +541,7 @@ export const CHANNELS = {
    * it was the only remedy, and that requires having another key to hand.
    */
   "vault:clear": {
-    input: z.object({ key: z.enum(["openrouter"]) }),
+    input: z.object({ key: z.enum(["openrouter", "voidcode"]) }),
     modes: BOTH,
   },
 

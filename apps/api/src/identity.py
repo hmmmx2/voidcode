@@ -113,18 +113,50 @@ class Caller:
         return self.user_id == ANONYMOUS_USER_ID
 
 
-def resolve_caller(
+async def resolve_caller(
     request: Request,
     x_user_id: str | None = Header(default=None),
     x_internal_auth: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> Caller:
     """FastAPI dependency. Replaces nine hand-rolled `_get_user_id` copies.
 
     A malformed UUID is treated as absent rather than raising, matching the behaviour every router
     had. That is deliberate: the header is optional, and a garbled one should land an anonymous
     visitor on the catalog rather than on a 422.
+
+    TWO WAYS TO BE SOMEBODY, FOR TWO KINDS OF CLIENT.
+
+    The web app is a server talking to a server: Next.js holds the shared secret, signs the user id
+    it already authenticated, and this verifies the HMAC with no database work at all. That secret
+    can never be given to a desktop client, because shipping it inside an installable application
+    hands every user the key to assert any identity.
+
+    So a native client presents `Authorization: Bearer <token>` instead — a per-user, per-device
+    credential minted by `/v1/auth/desktop/session` and revocable on its own. Checked second,
+    because the signature path is the hot one and costs nothing.
+
+    IT OPENS ITS OWN SHORT-LIVED SESSION RATHER THAN TAKING `get_db`.
+
+    A dependency-injected session lives for the whole request, and this dependency runs on the chat
+    endpoint, where a request can stream for several minutes. With roughly fourteen spare database
+    connections fleet-wide, pinning one per in-flight stream is the outage the queue work was built
+    to avoid. This borrows a connection for one indexed lookup and gives it straight back.
     """
     global _unverified_requests
+
+    bearer = _bearer_from(authorization)
+    if bearer is not None:
+        user_id = await _user_for_bearer(bearer)
+        if user_id is not None:
+            return Caller(user_id=user_id, verified=True)
+        # A token that does not resolve is a decision, not an absence: the client sent a
+        # credential and it is not good. Falling through to anonymous would silently downgrade a
+        # signed-out desktop app into a free anonymous one.
+        raise HTTPException(
+            status_code=401,
+            detail="This session has expired or been signed out. Please sign in again.",
+        )
 
     if not x_user_id:
         return Caller(user_id=ANONYMOUS_USER_ID, verified=True)
@@ -154,6 +186,36 @@ def resolve_caller(
         request.method, request.url.path, x_user_id, _unverified_requests,
     )
     return Caller(user_id=user_id, verified=False)
+
+
+
+def _bearer_from(authorization: str | None) -> str | None:
+    """The token out of an `Authorization` header, or None.
+
+    Case-insensitive on the scheme because clients differ and the RFC says it is. Anything that is
+    not a bearer -- a Basic header, a bare token with no scheme -- is treated as absent rather than
+    rejected, so an unrelated proxy adding a header does not lock everybody out.
+    """
+    if not authorization:
+        return None
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+async def _user_for_bearer(token: str) -> uuid.UUID | None:
+    """Resolve a desktop session token. Opens and closes its own session — see `resolve_caller`."""
+    from .database import AsyncSessionLocal
+    from .services import token_service
+
+    try:
+        async with AsyncSessionLocal() as db:
+            return await token_service.user_id_for_session(db, token)
+    except Exception as exc:  # pragma: no cover - a database failure must not 500 every route
+        logger.error("could not verify a desktop session token: %s", exc)
+        return None
 
 
 def current_user_id(caller: Caller = Depends(resolve_caller)) -> uuid.UUID:

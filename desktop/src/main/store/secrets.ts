@@ -19,10 +19,15 @@ import { openDatabase } from "./db.js";
  * Names a secret may have, matching the contract's `key` enum.
  *
  * A type rather than a free string because the enum and the table have to agree: the channel
- * validates against `z.enum(["openrouter"])`, and a handler that passed something else would write
- * a row nothing ever reads again.
+ * validates against a matching `z.enum`, and a handler that passed something else would write a
+ * row nothing ever reads again.
+ *
+ * `voidcode` is a session token for the platform API, not a third-party key. It is kept here
+ * rather than anywhere new for the reason this file already gives: the database is the answer to
+ * "where does this app keep my things", and a credential that can spend money is not the one to
+ * make an exception for.
  */
-export type SecretName = "openrouter";
+export type SecretName = "openrouter" | "voidcode";
 
 export function putSecret(name: SecretName, ciphertext: Buffer): void {
   openDatabase()

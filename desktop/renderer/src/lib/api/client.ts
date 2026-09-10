@@ -174,10 +174,55 @@ type IpcRoute = (init: RequestInit | undefined, url: URL) => Promise<unknown>;
  * *before* the turn is sent, and answering it by re-deriving the same first-usable-provider rule
  * would be two copies of a policy that has to agree. One function, so they cannot drift.
  */
+/**
+ * Which backend the learner has chosen, or null for "whatever is available".
+ *
+ * `localStorage` rather than a database row, and that is a deliberate limit rather than laziness:
+ * this is a per-window display preference, not something worth a migration, an IPC channel and a
+ * schema. It survives a restart, which is all it needs to do, and a machine where it is missing
+ * falls back to the old behaviour exactly.
+ */
+const PROVIDER_CHOICE = "voidcode.provider";
+
+export function chosenProvider(): string | null {
+  try {
+    return window.localStorage.getItem(PROVIDER_CHOICE);
+  } catch {
+    // Private windows and locked-down profiles throw on access rather than returning null.
+    return null;
+  }
+}
+
+export function chooseProvider(id: string | null): void {
+  try {
+    if (id === null) window.localStorage.removeItem(PROVIDER_CHOICE);
+    else window.localStorage.setItem(PROVIDER_CHOICE, id);
+  } catch {
+    // A preference that cannot be saved is not worth failing a click over.
+  }
+}
+
+/**
+ * The backend that will answer, and the model it will use.
+ *
+ * THIS USED TO BE "THE FIRST PROVIDER WITH MODELS", FULL STOP, and that made one of them
+ * unreachable. The list is ordered local-first, so a machine with Ollama running always resolved
+ * to Ollama — and the hosted VoidCode model, which is the only one that costs anything and the
+ * only reason to sign in, could not be selected by anybody for any reason.
+ *
+ * A stored choice wins when that provider is still usable. It is checked against the live list
+ * rather than trusted: a learner who chose the hosted model and then signed out, or chose Ollama
+ * and then stopped it, gets a working fallback instead of an error about a backend that is not
+ * there.
+ */
 export async function usableProvider(): Promise<{ id: string; model: string } | null> {
   const { providers } = await host().providers.list();
-  const usable = providers.find((p) => p.models.length > 0);
-  if (usable === undefined) return null;
+  const withModels = providers.filter((p) => p.models.length > 0);
+  if (withModels.length === 0) return null;
+
+  const chosen = chosenProvider();
+  const preferred = chosen === null ? undefined : withModels.find((p) => p.id === chosen);
+  const usable = preferred ?? withModels[0]!;
   return { id: usable.id, model: usable.models[0]! };
 }
 

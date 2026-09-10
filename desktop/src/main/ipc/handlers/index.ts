@@ -11,7 +11,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BrowserWindow, MessageChannelMain, dialog } from "electron";
+import { BrowserWindow, MessageChannelMain, dialog, shell } from "electron";
+import * as hosted from "../../inference/hosted.js";
 import { write, logError } from "../../log.js";
 import { setHandler, IpcError } from "../broker.js";
 import { popupMenu, setMenuState } from "../../menu.js";
@@ -1228,6 +1229,54 @@ export function registerHandlers(): void {
   });
 
   setHandler("providers:list", async () => ({ providers: await availableProviders() }));
+
+  // ── The VoidCode platform ──────────────────────────────────────────────────────────────
+  //
+  // Every one of these is a thin pass to `inference/hosted.ts`, which owns the credential. The
+  // renderer learns outcomes — signed in, this balance, this refusal — and never the token.
+
+  setHandler("voidcode:signIn", async (input) => {
+    // The password crosses the broker once and is not logged, not stored, and not returned.
+    return hosted.signIn(input.email.trim(), input.password);
+  });
+
+  setHandler("voidcode:signOut", async () => {
+    await hosted.signOut();
+    return { ok: true };
+  });
+
+  setHandler("voidcode:session", async () => ({ signedIn: hosted.isSignedIn() }));
+
+  setHandler("voidcode:credits", async () => hosted.credits());
+
+  setHandler("voidcode:packs", async () => ({ packs: await hosted.packs() }));
+
+  setHandler("voidcode:checkout", async (input) => {
+    const started = await hosted.checkout(input.packCode);
+    if (!started.ok) return started;
+
+    // MAIN OPENS THE BROWSER, NOT THE RENDERER, and the URL is checked before it does.
+    //
+    // `shell.openExternal` will open anything — a file:// path, a custom scheme another
+    // application has registered. Handing that to a renderer is handing it the ability to launch
+    // things. So the renderer asks to buy a pack by code, and what gets opened is a URL this
+    // process received from our own API over TLS and has just checked is https.
+    let parsed: URL;
+    try {
+      parsed = new URL(started.url);
+    } catch {
+      return { ok: false as const, message: "The payment provider returned an unusable address." };
+    }
+    if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1") {
+      return { ok: false as const, message: "Refused to open a non-HTTPS payment page." };
+    }
+
+    await shell.openExternal(parsed.toString());
+    // Deliberately not the URL: the renderer has no reason to know where the buyer went, and
+    // returning it would put a checkout link somewhere a screenshot could catch it.
+    return { ok: true as const, opened: true };
+  });
+
 
   setHandler("models:pull", async (input, ctx) => {
     const provider = providerById("ollama");

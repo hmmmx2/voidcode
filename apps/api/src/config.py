@@ -244,6 +244,13 @@ SPINDOWN_IDLE_SECONDS = float(os.getenv("SPINDOWN_IDLE_SECONDS", "1200"))
 # How often the idle watcher looks. No point being finer than the idle window.
 SPINDOWN_CHECK_SECONDS = float(os.getenv("SPINDOWN_CHECK_SECONDS", "120"))
 
+# How long a signed-in desktop client stays signed in.
+#
+# Months rather than hours, because the alternative is asking a person to retype a password into a
+# native app every week, and an app that does that trains them to type it anywhere that asks. The
+# token is revocable per device, which is the control that matters more than a short lifetime.
+DESKTOP_SESSION_TTL_DAYS = int(os.getenv("DESKTOP_SESSION_TTL_DAYS", "90"))
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the

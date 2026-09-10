@@ -11,6 +11,7 @@ import { reportError } from "@/lib/shell/report-error";
 import { NO_MODEL_INSTALLED } from "@/lib/copy";
 import { Surface } from "@/components/app";
 import MachinePanel from "./MachinePanel";
+import VoidCodeAccount from "./VoidCodeAccount";
 import ModelTable, { STATUS, TIER, TIER_ORDER } from "./ModelTable";
 
 /**
@@ -441,6 +442,10 @@ export default function ModelsPage() {
         changes reads as a page-level action.
       */}
       <MachinePanel profile={data.profile} scanning={scanning} onRescan={() => void rescan()} />
+
+      {/* Beside the machine panel because it answers the same question that panel does — what can
+          answer my questions — with the one option that is not this machine. */}
+      <VoidCodeAccount />
 
       <OpenRouterKeyPanel />
 

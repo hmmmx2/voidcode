@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
+import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import config
 from ..models.auth_token import (
+    PURPOSE_DESKTOP_SESSION,
     PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET,
     AuthToken,
@@ -38,21 +40,30 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-async def issue(session: AsyncSession, user: User, purpose: str) -> str:
+async def issue(
+    session: AsyncSession, user: User, purpose: str, *, revoke_existing: bool = True
+) -> str:
     """Create a token for `user` and return the RAW value, which is never stored.
 
     Existing unspent tokens for the same purpose are revoked first. Otherwise requesting a second
     reset leaves the first link live, so an attacker who triggered a reset an hour ago still holds a
     working link after the real owner requests their own.
+
+    `revoke_existing=False` is for the one purpose where that reasoning inverts. A desktop session
+    is a credential a person holds on a machine, not a link sent to their inbox: revoking on issue
+    would mean signing in on a laptop silently signed them out of their desktop, which reads as a
+    bug rather than as security. The reset and verification flows keep the old behaviour.
     """
-    await revoke_all(session, user.id, purpose)
+    if revoke_existing:
+        await revoke_all(session, user.id, purpose)
 
     token = generate_token()
-    ttl = (
-        timedelta(minutes=config.RESET_TOKEN_TTL_MINUTES)
-        if purpose == PURPOSE_PASSWORD_RESET
-        else timedelta(hours=config.VERIFY_TOKEN_TTL_HOURS)
-    )
+    if purpose == PURPOSE_PASSWORD_RESET:
+        ttl = timedelta(minutes=config.RESET_TOKEN_TTL_MINUTES)
+    elif purpose == PURPOSE_DESKTOP_SESSION:
+        ttl = timedelta(days=config.DESKTOP_SESSION_TTL_DAYS)
+    else:
+        ttl = timedelta(hours=config.VERIFY_TOKEN_TTL_HOURS)
 
     session.add(AuthToken(
         user_id=user.id,
@@ -143,3 +154,51 @@ async def issue_password_reset(session: AsyncSession, user: User) -> str:
 
 async def issue_email_verification(session: AsyncSession, user: User) -> str:
     return await issue(session, user, PURPOSE_EMAIL_VERIFY)
+
+
+async def issue_desktop_session(session: AsyncSession, user: User) -> str:
+    """A long-lived credential for a signed-in desktop client. Does not revoke other devices."""
+    return await issue(session, user, PURPOSE_DESKTOP_SESSION, revoke_existing=False)
+
+
+async def user_id_for_session(session: AsyncSession, token: str) -> uuid.UUID | None:
+    """Who this desktop session belongs to, or None. DOES NOT CONSUME THE TOKEN.
+
+    `redeem()` next door marks a token spent, which is right for a link that may be used once and
+    catastrophic for a credential presented on every request -- the first API call would sign the
+    person out.
+
+    Returns None for every refusal rather than raising or distinguishing them. A client holding a
+    token that has expired, been revoked, or never existed does the same thing in all three cases:
+    sign in again. Telling them which would only help somebody probing tokens.
+    """
+    row = (
+        await session.execute(
+            select(AuthToken).where(
+                AuthToken.token_hash == hash_token(token),
+                AuthToken.purpose == PURPOSE_DESKTOP_SESSION,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if row is None or row.is_spent or row.is_expired():
+        return None
+    return row.user_id
+
+
+async def revoke_desktop_session(session: AsyncSession, token: str) -> bool:
+    """Sign out this one device. True when a live session was ended.
+
+    Scoped to the presented token rather than to the user, so signing out on a laptop does not sign
+    the person out of their desktop -- the mirror of why issuing does not revoke.
+    """
+    result = await session.execute(
+        update(AuthToken)
+        .where(
+            AuthToken.token_hash == hash_token(token),
+            AuthToken.purpose == PURPOSE_DESKTOP_SESSION,
+            AuthToken.used_at.is_(None),
+        )
+        .values(used_at=datetime.utcnow())
+    )
+    return (result.rowcount or 0) > 0

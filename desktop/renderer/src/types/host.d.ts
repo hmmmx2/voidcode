@@ -70,6 +70,47 @@ interface VoidCodeHost {
   hw: {
     scan(): Promise<import("@shared/hardware-types").HardwareProfile>;
   };
+    /**
+   * The VoidCode platform: sign-in, balance, and buying credit.
+   *
+   * Every one of these returns an OUTCOME, never a credential. The session token lives in the OS
+   * keychain and is read only in main — a renderer holding it would be a renderer whose devtools
+   * console and crash dumps hold it too.
+   */
+  voidcode: {
+    signIn(input: { email: string; password: string }): Promise<
+      | { ok: true; user: { id: string; email: string; name: string } }
+      | { ok: false; message: string }
+    >;
+    signOut(): Promise<{ ok: boolean }>;
+    session(): Promise<{ signedIn: boolean }>;
+    credits(): Promise<
+      | {
+          ok: true;
+          balance: {
+            availableCredits: number;
+            reservedMicro: number;
+            estimatedMinutes?: number;
+            rateMicroPerSlotSecond?: number;
+          };
+        }
+      | { ok: false; message: string }
+    >;
+    packs(): Promise<{
+      packs: Array<{ code: string; label: string; priceDisplay: string; credits: number }>;
+    }>;
+    /**
+     * Start a purchase. Resolves once main has opened the browser.
+     *
+     * Returns no URL on purpose: main does the opening, after checking what our API handed back
+     * is https. A renderer that could pass a URL to `shell.openExternal` could launch anything
+     * the operating system has a handler registered for.
+     */
+    checkout(input: { packCode: string }): Promise<
+      { ok: true; opened: boolean } | { ok: false; message: string }
+    >;
+  };
+
   providers: {
     list(): Promise<{
       providers: Array<{

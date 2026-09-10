@@ -33,13 +33,15 @@ the insert would then fail on the index instead of returning a clean 409.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import identity, ratelimit
+from .. import config, identity, ratelimit
 from ..database import get_db
 from ..models.auth_token import PURPOSE_PASSWORD_RESET
 from ..models.user import User
@@ -437,3 +439,78 @@ async def change_password(
 
     logger.info("Password changed for %s", user.email)
     return MessageResponse(message="Your password has been changed.")
+
+
+class DesktopSessionResponse(BaseModel):
+    """What a signed-in desktop client is handed. The token is shown once and stored by the client."""
+
+    token: str
+    expires_at: datetime
+    user: LoginResponse
+
+
+@router.post("/desktop/session", response_model=DesktopSessionResponse)
+async def create_desktop_session(
+    payload: PasswordLoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> DesktopSessionResponse:
+    """Sign in from the desktop app and receive a session token.
+
+    SEPARATE FROM `/password-login`, WHICH RETURNS A USER AND NOTHING ELSE. That endpoint serves
+    the web app, where the session lives in a NextAuth cookie and the identity reaching this API is
+    signed server-side. A native client has no server to sign for it, so it needs a credential of
+    its own — and it needs one it can store, present on every request, and have revoked without
+    changing a password.
+
+    EVERY FAILURE RETURNS THE SAME 401, for the reason `/password-login` gives at length: anything
+    that distinguishes "no such address" from "wrong password" is a membership oracle for whatever
+    email list somebody cares to submit. The rate limit is per-email AND per-IP for the same reason
+    it is there.
+    """
+    email = payload.email.strip().lower()
+    await ratelimit.check_email_and_ip(ratelimit.LOGIN, request, email)
+
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
+    user = result.scalar_one_or_none()
+
+    # Called even when there is no user, so a made-up address is not measurably faster than a real
+    # one with the wrong password. Same contract as `/password-login`.
+    ok = await verify_password(user.password_hash if user else None, payload.password)
+    if not ok or user is None or not user.is_active:
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+
+    token = await token_service.issue_desktop_session(db, user)
+    await db.commit()
+
+    return DesktopSessionResponse(
+        token=token,
+        expires_at=datetime.utcnow() + timedelta(days=config.DESKTOP_SESSION_TTL_DAYS),
+        # `LoginResponse` rather than a new shape: the desktop needs exactly what the web
+        # login returns, and a second user schema is a second thing to keep in step.
+        user=LoginResponse(
+            id=str(user.id),
+            email=user.email,
+            name=user.name,
+            role=user.role,
+            is_active=user.is_active,
+        ),
+    )
+
+
+@router.delete("/desktop/session", response_model=MessageResponse)
+async def end_desktop_session(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """Sign out THIS device, leaving other signed-in machines alone.
+
+    Returns the same message whether or not a live session was ended. A client signing out wants to
+    forget its token either way, and reporting "there was nothing to revoke" tells an attacker
+    holding a stale token that it is stale.
+    """
+    token = identity._bearer_from(authorization)
+    if token is not None:
+        await token_service.revoke_desktop_session(db, token)
+        await db.commit()
+    return MessageResponse(message="Signed out.")
