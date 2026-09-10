@@ -94,6 +94,49 @@ requires_postgres = pytest.mark.skipif(
 )
 
 
+# ── A live tutor, for the evaluations that need one ─────────────
+#
+# WHY THIS EXISTS AND WHY IT IS NOT LIKE `requires_postgres`.
+#
+# Everything else in this suite is deterministic: the same input produces the same output, and a
+# failure means the code is wrong. The tutor evaluations are not that. They ask a language model a
+# question and judge what it says, so they need a *running API with a model behind it*, they cost
+# GPU time per assertion, and their answers vary run to run.
+#
+# That makes them evaluations rather than tests, and the split is deliberate: they live in the same
+# suite so they cannot be forgotten, and they skip by default so an ordinary run stays fast, free
+# and deterministic. Set `TUTOR_EVAL=1` to opt in.
+#
+# The probe asks the API whether its backend is ready rather than whether the port is open, because
+# a port that accepts and then never serves is precisely the failure `TEST_DATABASE_URL` above
+# documents — and here it would show up as an evaluation that hangs rather than one that skips.
+TUTOR_API_URL = os.getenv("TUTOR_API_URL", "http://127.0.0.1:8020")
+
+
+def _tutor_backend_ready() -> bool:
+    if os.getenv("TUTOR_EVAL") != "1":
+        return False
+    try:
+        import json
+        import urllib.request
+
+        with urllib.request.urlopen(f"{TUTOR_API_URL}/health", timeout=5) as response:
+            body = json.loads(response.read() or b"{}")
+        return body.get("model_loaded") is True
+    except Exception:
+        return False
+
+
+requires_live_tutor = pytest.mark.skipif(
+    not _tutor_backend_ready(),
+    reason=(
+        "the tutor evaluations need TUTOR_EVAL=1 and a running API with a model behind it "
+        f"(looked at {TUTOR_API_URL}/health). They cost GPU time per assertion and their "
+        "answers vary, so they are opt-in."
+    ),
+)
+
+
 # ── Judge0 fake ─────────────────────────────────────────────────
 #
 # Judge0 needs a privileged container and takes seconds per submission. The
