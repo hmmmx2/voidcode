@@ -1774,17 +1774,19 @@ async def _begin_metering(
 def _release_slot(meter: "metering.Meter | None", *, consumed: bool) -> None:
     """Release the permit and finish the meter, together, at every site that does either.
 
-    Collapsing the five bare `release()` calls into one helper is what makes the invariant
-    checkable: `test_gpu_metering.py` asserts that every `_inference_semaphore.release()` in this
-    file is inside this function. A sixth release site added later without a settle would leave a
+    Six call sites in this file route through here (1703, 2002, 2005, 2146, 2218, 2293 at the time
+    of writing). The actual pairing lives in `metering.release_slot`, because this file is not the
+    only one that releases this semaphore: `interviews.py` imports `_inference_semaphore` and hands
+    it to `metering.gpu_slot`, which released it directly until that was noticed.
+
+    `test_gpu_metering_wiring.py::test_the_only_release_call_is_inside_release_slot` now asserts the
+    invariant across BOTH files. A seventh release site added later without a settle would leave a
     reservation held forever, and the learner's credit with it.
 
     `consumed=False` means the request never reached the model -- a failed prompt build, or a
     configuration refusal -- so the hold is released without a charge.
     """
-    _inference_semaphore.release()
-    if meter is not None:
-        meter.finish(consumed=consumed)
+    metering.release_slot(_inference_semaphore, meter, consumed=consumed)
 
 
 # --- API Endpoints ---

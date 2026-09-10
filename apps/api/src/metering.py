@@ -143,6 +143,12 @@ async def begin(
         kind=kind,
         backend=backend,
         rate_micro_per_slot_second=row.rate_micro_per_slot_second,
+        # The cost basis behind that rate, from the SAME row, so revenue and cost on a reservation
+        # can never come from two different prices.
+        pod_micro_per_hour=row.pod_micro_per_hour,
+        nominal_concurrency=row.nominal_concurrency,
+        margin_bps=row.margin_bps,
+        pricing_measured=row.measured,
     )
     return Meter(
         reservation_id=reservation.id, user_id=user_id, hold_micro=hold_micro,
@@ -167,6 +173,34 @@ async def drain(timeout: float = 5.0) -> None:
             "%d gpu settle task(s) did not finish in %.1fs; the sweep will release them",
             len(still_pending), timeout,
         )
+
+
+
+def release_slot(
+    semaphore: asyncio.Semaphore, meter: "Meter | None", *, consumed: bool
+) -> None:
+    """Release the permit and finish the meter, together. The only place either happens.
+
+    WHY THIS LIVES HERE AND NOT IN `main.py`
+
+    It used to be `main.py::_release_slot`, and `test_gpu_metering_wiring.py` asserted that every
+    `_inference_semaphore.release()` in `main.py` was inside it. That guard was true and
+    insufficient: `gpu_slot` below released the SAME semaphore object at two sites in THIS file --
+    `interviews.py` imports `_inference_semaphore` from `main` and passes it in -- and the guard
+    parsed only `main.py`, and only matched the literal name `_inference_semaphore`. Two unguarded
+    releases, invisible to the test written to find exactly that.
+
+    The pairing is what matters: a permit released without finishing the meter leaves a reservation
+    `held` forever and the learner's credit held with it, until the sweep expires it. Putting the
+    pair in one function in the module both callers already import makes the invariant checkable
+    across the whole codebase instead of one file of it.
+
+    `consumed=False` means the request never reached the model -- a failed prompt build, or a
+    configuration refusal -- so the hold is released without a charge.
+    """
+    semaphore.release()
+    if meter is not None:
+        meter.finish(consumed=consumed)
 
 
 @contextlib.asynccontextmanager
@@ -216,14 +250,10 @@ async def gpu_slot(
                 )
         yield meter
     except BaseException:
-        semaphore.release()
-        if meter is not None:
-            meter.finish(consumed=False)
+        release_slot(semaphore, meter, consumed=False)
         raise
     else:
-        semaphore.release()
-        if meter is not None:
-            meter.finish(consumed=True)
+        release_slot(semaphore, meter, consumed=True)
 
 
 class SlotUnavailable(Exception):

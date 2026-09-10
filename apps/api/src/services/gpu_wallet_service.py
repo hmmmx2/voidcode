@@ -26,7 +26,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
+from ..models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,25 @@ class InsufficientCredit(WalletError):
         )
 
 
+
+def cost_micro_for(
+    slot_ms: int, *, pod_micro_per_hour: int | None, nominal_concurrency: int | None
+) -> int | None:
+    """What the occupancy cost the operator, before margin. None when the basis was not recorded.
+
+    ROUNDED UP, LIKE THE CHARGE, AND FOR THE MIRROR-IMAGE REASON. The rule elsewhere on this path is
+    never to round a cost down in our own favour. Here the cost is ours, so rounding it down would
+    inflate the reported margin instead -- the same bias, pointing the other way. Up on both sides
+    keeps the difference honest.
+
+    Integer throughout: `slot_ms` cancels against the 1000 in the denominator without ever forming a
+    float, which is the rule `models/gpu_billing.py` states for this whole path.
+    """
+    if not pod_micro_per_hour or not nominal_concurrency:
+        return None
+    return ceil_div(pod_micro_per_hour * slot_ms, 3600 * 1000 * nominal_concurrency)
+
+
 async def reserve(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -71,6 +90,14 @@ async def reserve(
     kind: str,
     backend: str,
     rate_micro_per_slot_second: int,
+    # The cost basis behind that rate. Optional so a caller that only cares about billing still
+    # works, and because rows written before these columns existed legitimately have none -- but
+    # `metering.begin()` passes all four, and a wiring test asserts it keeps doing so. Omitting
+    # them costs nothing at settle except the ability to say what the request cost to serve.
+    pod_micro_per_hour: int | None = None,
+    nominal_concurrency: int | None = None,
+    margin_bps: int | None = None,
+    pricing_measured: bool | None = None,
 ) -> GpuReservation:
     """Take a hold, or raise. Commits before returning.
 
@@ -120,6 +147,10 @@ async def reserve(
         state="held",
         hold_micro=hold_micro,
         rate_micro_per_slot_second=rate_micro_per_slot_second,
+        pod_micro_per_hour=pod_micro_per_hour,
+        nominal_concurrency=nominal_concurrency,
+        margin_bps=margin_bps,
+        pricing_measured=pricing_measured,
         backend=backend,
         replica=os.getenv("HOSTNAME"),
     )
@@ -151,6 +182,7 @@ async def _finish(
     slot_ms: int | None,
     backend_ms: int | None,
     state: str,
+    cost_micro: int | None = None,
 ) -> bool:
     """Settle or void, idempotently. Returns False when the reservation was already finished.
 
@@ -170,6 +202,9 @@ async def _finish(
             settled_micro=charge_micro,
             slot_ms=slot_ms,
             backend_ms=backend_ms,
+            # Written with the claim rather than afterwards, so a row can never be `settled` with
+            # revenue recorded and no cost beside it.
+            cost_micro=cost_micro,
             settled_at=datetime.now(timezone.utc),
         )
     )
@@ -255,6 +290,14 @@ async def settle(
     return await _finish(
         db, reservation_id,
         charge_micro=charge, slot_ms=slot_ms, backend_ms=backend_ms, state="settled",
+        # From the basis snapshotted on THIS reservation, not from a fresh pricing lookup -- the
+        # same reason the rate above comes off the row. A price that changed while the learner was
+        # waiting must not reach either number.
+        cost_micro=cost_micro_for(
+            slot_ms,
+            pod_micro_per_hour=reservation.pod_micro_per_hour,
+            nominal_concurrency=reservation.nominal_concurrency,
+        ),
     )
 
 
@@ -274,6 +317,16 @@ async def grant(
     exists and nothing reads it — so an endpoint here would mean inventing an authorization primitive
     on the money path as a side effect. Grants happen from a script until that primitive is designed
     on its own terms.
+
+    IDEMPOTENCY IS GUARDED TWICE, AND ONLY ONE OF THE TWO SURVIVES A DELETED WALLET.
+
+    `uq_gpu_ledger_idempotency_key` refuses a duplicate while the wallet exists. It is not enough on
+    its own: `gpu_ledger.wallet_user_id` cascades from the wallet, which cascades from the user, so
+    deleting either erased the proof — and a provider redelivering days later then credited the same
+    payment again, because `grant()` recreates a missing wallet a few lines below. `gpu_grant_keys`
+    has no foreign key and outlives all of that. See `models/gpu_billing.py::GpuGrantKey`.
+
+    Both inserts commit together, so either constraint refusing rolls the whole grant back.
     """
     if amount_micro <= 0:
         raise ValueError("a grant must be positive")
@@ -301,6 +354,15 @@ async def grant(
             amount_micro=amount_micro,
             balance_after_micro=refreshed.balance_micro,
             idempotency_key=idempotency_key,
+        )
+    )
+    # The durable half of the guard. Same transaction, so a conflict on either row refuses the
+    # whole grant; different lifetime, so this one is still there after a wallet is deleted.
+    db.add(
+        GpuGrantKey(
+            idempotency_key=idempotency_key,
+            user_id=user_id,
+            amount_micro=amount_micro,
         )
     )
     try:

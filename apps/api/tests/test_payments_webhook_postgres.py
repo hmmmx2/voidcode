@@ -28,7 +28,7 @@ from sqlalchemy.pool import NullPool
 
 from src import config
 from src.database import get_db
-from src.models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
+from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.routers import credits as credits_router
 from src.services import credit_packs
@@ -65,6 +65,8 @@ async def buyer(sessionmaker_np):
     yield user_id
     async with sessionmaker_np() as db:
         await db.execute(delete(GpuLedger).where(GpuLedger.wallet_user_id == user_id))
+        # Deliberately not cascaded from the wallet -- see `GpuGrantKey`. Cleaned by hand.
+        await db.execute(delete(GpuGrantKey).where(GpuGrantKey.user_id == user_id))
         await db.execute(delete(GpuReservation).where(GpuReservation.wallet_user_id == user_id))
         await db.execute(delete(GpuWallet).where(GpuWallet.user_id == user_id))
         await db.execute(delete(User).where(User.id == user_id))
@@ -190,6 +192,49 @@ class TestRedeliveryCreditsOnce:
         pack = credit_packs.pack_by_code("my-starter-20")
         assert await _balance(sessionmaker_np, buyer) == 2 * pack.credits_micro
 
+
+class TestRedeliveryAfterTheWalletIsGone:
+    """The redelivery guard must not be erasable by deleting the thing it protects.
+
+    `uq_gpu_ledger_idempotency_key` is the only record that a grant already happened, and it lives on
+    a row whose foreign key cascades from the wallet, which cascades from the user. So deleting a
+    wallet deletes the proof — and Stripe redelivers for days after the fact, on any timeout, any
+    5xx, any deploy that landed mid-request.
+
+    A wallet gets deleted by support closing a billing account, by an erasure request, or by a
+    cleanup script. None of those look like a payments change, which is why nobody would connect the
+    second grant to them.
+    """
+
+    async def test_a_replay_after_the_wallet_is_deleted_does_not_credit_again(
+        self, client, sessionmaker_np, buyer
+    ):
+        payload = _event(buyer)
+
+        first = await client.post("/v1/credits/webhook", content=payload, headers=_headers(payload))
+        assert first.json()["credited"] is True
+
+        # The wallet goes, and the ledger with it — `ondelete="CASCADE"` on
+        # `gpu_ledger.wallet_user_id`. This is a DB-level cascade, so it happens whether the delete
+        # comes from the ORM, a script, or psql.
+        async with sessionmaker_np() as db:
+            await db.execute(delete(GpuWallet).where(GpuWallet.user_id == buyer))
+            await db.commit()
+
+        second = await client.post("/v1/credits/webhook", content=payload, headers=_headers(payload))
+
+        assert second.status_code == 200
+        assert second.json()["credited"] is False, (
+            "the same payment credited twice. Deleting the wallet cascaded away the ledger row "
+            "carrying the idempotency key, so the replay looked like a first delivery."
+        )
+
+        async with sessionmaker_np() as db:
+            wallet = await db.get(GpuWallet, buyer)
+        assert wallet is None, (
+            f"a refused replay recreated the wallet with {wallet.balance_micro if wallet else 0} "
+            "micro in it"
+        )
 
 class TestNothingElseCredits:
     async def test_a_forged_signature_credits_nothing(self, client, sessionmaker_np, buyer):

@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from src.models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
+from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.services import gpu_wallet_service as wallet
 
@@ -67,6 +67,9 @@ async def funded(sessionmaker_np):
 
     async with sessionmaker_np() as db:
         await db.execute(delete(GpuLedger).where(GpuLedger.wallet_user_id == user_id))
+        # Not cascaded, by design -- `gpu_grant_keys` has no foreign key precisely so that
+        # deleting a wallet cannot erase it. A test still cleans up after itself.
+        await db.execute(delete(GpuGrantKey).where(GpuGrantKey.user_id == user_id))
         await db.execute(delete(GpuReservation).where(GpuReservation.wallet_user_id == user_id))
         await db.execute(delete(GpuWallet).where(GpuWallet.user_id == user_id))
         await db.execute(delete(User).where(User.id == user_id))
@@ -352,6 +355,124 @@ class TestConcurrency:
         assert row.reserved_micro == hold * 3
         assert row.reserved_micro <= row.balance_micro
 
+
+class TestTheBoundaryOfWhatAWalletCanAfford:
+    """`reserve()`'s predicate is `available >= hold`. One micro either side of it.
+
+    The suite tested the accept side of the equality -- a wallet funded for exactly one hold -- and
+    nothing else. An off-by-one here is either a wallet that oversells by a micro or one that
+    refuses a learner who can afford their request, and both are silent.
+    """
+
+    async def test_a_hold_one_micro_over_the_balance_is_refused(self, sessionmaker_np, funded):
+        await _grant(sessionmaker_np, funded, 5_000)
+        with pytest.raises(wallet.InsufficientCredit):
+            await _reserve(sessionmaker_np, funded, 5_001)
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        assert row.reserved_micro == 0, "a refused hold still moved credit"
+
+    async def test_a_hold_of_exactly_the_balance_is_allowed(self, sessionmaker_np, funded):
+        await _grant(sessionmaker_np, funded, 5_000)
+        reservation = await _reserve(sessionmaker_np, funded, 5_000)
+        assert reservation.hold_micro == 5_000
+
+    async def test_a_hold_one_micro_under_the_balance_is_allowed(self, sessionmaker_np, funded):
+        await _grant(sessionmaker_np, funded, 5_000)
+        reservation = await _reserve(sessionmaker_np, funded, 4_999)
+        assert reservation.hold_micro == 4_999
+
+    async def test_the_boundary_moves_with_what_is_already_held(self, sessionmaker_np, funded):
+        """Available is balance MINUS reserved, so a live hold shifts the same edge."""
+        await _grant(sessionmaker_np, funded, 5_000)
+        await _reserve(sessionmaker_np, funded, 3_000)  # 2_000 left
+
+        with pytest.raises(wallet.InsufficientCredit):
+            await _reserve(sessionmaker_np, funded, 2_001)
+        assert (await _reserve(sessionmaker_np, funded, 2_000)).hold_micro == 2_000
+
+
+class TestTwoSettlesAtOnce:
+    """The sequential double settle was tested; the concurrent one was not.
+
+    They exercise different things. Sequentially the second call reads a row already marked
+    `settled`, and the guard never has to hold. Concurrently both statements race for a row that is
+    still `held`, which is when `UPDATE ... WHERE state = 'held'` and `rowcount` earn their keep --
+    and it is the realistic case, because the settle task and the sweep can fire together.
+    """
+
+    async def test_two_concurrent_settles_charge_once(self, sessionmaker_np, funded):
+        await _grant(sessionmaker_np, funded, 10_000)
+        reservation = await _reserve(sessionmaker_np, funded, 4_000)
+
+        barrier = asyncio.Barrier(2)
+
+        async def attempt() -> bool:
+            async with sessionmaker_np() as db:
+                await barrier.wait()
+                return await wallet.settle(db, reservation.id, slot_ms=1500)
+
+        outcomes = sorted(await asyncio.gather(attempt(), attempt()))
+        assert outcomes == [False, True], (
+            f"two concurrent settles returned {outcomes}; exactly one must win"
+        )
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        assert row.balance_micro == 8_500, "the charge was applied twice"
+        assert row.reserved_micro == 0
+
+        async with sessionmaker_np() as db:
+            charges = (
+                await db.execute(
+                    select(GpuLedger).where(
+                        GpuLedger.reservation_id == reservation.id,
+                        GpuLedger.entry_type == "charge",
+                    )
+                )
+            ).scalars().all()
+        assert len(charges) == 1, f"{len(charges)} charge rows for one reservation"
+
+
+class TestAPriceChangeDoesNotReachAnInFlightRequest:
+    """A learner is charged the rate they were quoted, not the one that landed while they waited.
+
+    `reserve()` snapshots `rate_micro_per_slot_second` onto the reservation row and `settle()` reads
+    it back from there. That is the whole mechanism, and nothing tested it: every other test passes
+    one constant rate through both halves, so a `settle()` that re-read the live pricing table would
+    pass all of them.
+
+    `test_gpu_pricing.py` covers the dated table's own lookup. This covers the hand-off.
+    """
+
+    async def test_the_charge_uses_the_rate_quoted_at_hold_time(self, sessionmaker_np, funded):
+        import dataclasses
+
+        from src.services import gpu_pricing
+
+        await _grant(sessionmaker_np, funded, 100_000)
+        reservation = await _reserve(sessionmaker_np, funded, 50_000)
+        assert reservation.rate_micro_per_slot_second == RATE
+
+        # The price changes mid-flight. Ten times the rate, so a settle that consulted the table
+        # instead of the row could not produce the right number by coincidence.
+        dearer = tuple(
+            dataclasses.replace(row, pod_micro_per_hour=row.pod_micro_per_hour * 10)
+            for row in gpu_pricing.PRICING
+        )
+        original = gpu_pricing.PRICING
+        try:
+            gpu_pricing.PRICING = dearer
+            async with sessionmaker_np() as db:
+                assert await wallet.settle(db, reservation.id, slot_ms=10_000) is True
+        finally:
+            gpu_pricing.PRICING = original
+
+        row = await _wallet_row(sessionmaker_np, funded)
+        # 10_000 ms at 1000 micro/slot-second = 10_000 micro, at the OLD rate.
+        assert row.balance_micro == 90_000, (
+            "the charge moved with a price change that landed after the hold. The rate must come "
+            "from the reservation row, not from a fresh pricing lookup."
+        )
 
 class TestTheFloorPrice:
     """Section 4.3 of the billing spec: "A one-token reply still occupied the GPU and still cost you."

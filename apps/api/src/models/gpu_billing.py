@@ -52,6 +52,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum as SAEnum,
@@ -163,6 +164,33 @@ class GpuReservation(Base):
     backend: Mapped[str] = mapped_column(String(16), nullable=False)
     #: Which replica held it, so a sweep can tell "the pod is gone" from "the pod is still working".
     replica: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # ── What it cost us, as opposed to what it cost the learner ──────────────────────────────
+    #
+    # `settled_micro` is revenue. Without these there is no cost, so margin was not a query --
+    # it was an arithmetic exercise against a Python tuple that may since have gained rows, and
+    # therefore not reconstructible for any request already served.
+    #
+    # The INPUTS are stored, not only the derived cost. A cost computed from a rate alone cannot be
+    # re-derived after a price change, and the point of recording it is a figure that still means
+    # something in six months. With these, margin is `settled_micro - cost_micro` in plain SQL and
+    # the derivation stays checkable.
+    #
+    # All nullable: rows written before this existed have no cost basis, and inventing one for them
+    # would be worse than admitting it. `pricing_measured` is why -- see below.
+
+    #: Base cost of the occupancy actually measured, BEFORE margin. Written at settle, because it
+    #: needs `slot_ms`. Null on a voided reservation: nothing was consumed to cost anything.
+    cost_micro: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: The three pricing inputs, snapshotted at hold time from the same `PricingRow` that produced
+    #: `rate_micro_per_slot_second`. Stored so the cost can be recomputed and checked.
+    pod_micro_per_hour: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    nominal_concurrency: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    margin_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: False means the concurrency this cost divides by was never measured on this hardware -- it
+    #: was `MAX_CONCURRENT_REQUESTS`, an API semaphore count, not a property of an A40. A margin
+    #: query that does not filter on this is reporting an assumption as a measurement.
+    pricing_measured: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -244,3 +272,48 @@ class GpuLedger(Base):
         UniqueConstraint("idempotency_key", name="uq_gpu_ledger_idempotency_key"),
         Index("ix_gpu_ledger_wallet", "wallet_user_id", "id"),
     )
+
+
+class GpuGrantKey(Base):
+    """Proof that a grant already happened, kept independently of the wallet it credited.
+
+    WHY THIS IS NOT JUST THE LEDGER'S UNIQUE CONSTRAINT
+
+    `uq_gpu_ledger_idempotency_key` is what makes a redelivered webhook a no-op, and it worked --
+    right up until the wallet was deleted. `gpu_ledger.wallet_user_id` cascades from `gpu_wallets`,
+    which cascades from `users`, so deleting either erases the proof that a payment was already
+    credited. Stripe redelivers for days after the fact, on any timeout, any 5xx, any deploy that
+    landed mid-request. The replay then looks like a first delivery, `grant()` recreates the missing
+    wallet, and the same payment credits twice with both grants individually correct.
+
+    That was a real defect, not a hypothetical: the test in
+    `tests/test_payments_webhook_postgres.py::TestRedeliveryAfterTheWalletIsGone` failed before this
+    table existed.
+
+    THERE IS DELIBERATELY NO FOREIGN KEY ON `user_id`
+
+    This table records that an event was processed, which stays true after the subject is gone. A
+    foreign key would reintroduce exactly the cascade that caused the defect, and would also block
+    an erasure request rather than surviving one -- the row keeps a user id for audit, but it is a
+    record of an event, not a relationship to a row.
+
+    Erasure therefore stays possible: deleting a user still removes their wallet, their reservations
+    and their ledger. What survives is a key and an amount, which is the minimum needed to refuse a
+    replay. If that itself has to go one day, the erasure procedure must decide it explicitly, which
+    is the point.
+    """
+
+    __tablename__ = "gpu_grant_keys"
+
+    #: The key IS the primary key. One row per grant that ever happened, and the insert conflicting
+    #: is what makes `grant()` idempotent -- a database constraint rather than a read-check-write,
+    #: so it holds under concurrent redelivery, which is exactly when a check would lose.
+    idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    #: No ForeignKey. See the class docstring; this is the whole point of the table.
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    amount_micro: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_gpu_grant_keys_user", "user_id", "created_at"),)

@@ -20,12 +20,45 @@ MAIN = Path(__file__).resolve().parents[1] / "src" / "main.py"
 SOURCE = MAIN.read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE)
 
+#: `metering.py` is parsed too, because it releases the same semaphore object. `interviews.py`
+#: imports `_inference_semaphore` from `main` and hands it to `metering.gpu_slot`, so a guard that
+#: reads only `main.py` is blind to half the release sites.
+METERING = Path(__file__).resolve().parents[1] / "src" / "metering.py"
+METERING_SOURCE = METERING.read_text(encoding="utf-8")
+METERING_TREE = ast.parse(METERING_SOURCE)
 
-def _function(name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
-    for node in ast.walk(TREE):
+
+def _find_function(tree: ast.AST, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
             return node
-    raise AssertionError(f"{name} is gone from main.py — this test needs rewriting, not deleting")
+    return None
+
+
+def _function(name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    found = _find_function(TREE, name)
+    if found is None:
+        raise AssertionError(
+            f"{name} is gone from main.py — this test needs rewriting, not deleting"
+        )
+    return found
+
+
+def _sole_offset(body: str, pattern: str, what: str) -> int:
+    """Where `pattern` appears, insisting it appears exactly once.
+
+    `str.index` was used here and it is a trap in a wiring guard: when the thing it looks for is
+    renamed, `index` raises `ValueError` from inside the test rather than failing with a message,
+    so the person who renamed it sees a crash in a file they did not touch and no statement of what
+    invariant they broke. `re.search` plus an explicit count says what happened and what to do —
+    the shape `test_judge0_auth.py` already uses.
+    """
+    matches = list(re.finditer(pattern, body))
+    assert len(matches) == 1, (
+        f"expected exactly one occurrence of {what} ({pattern!r}), found {len(matches)}. "
+        "If it was renamed or duplicated, update this test — the invariant it guards is still real."
+    )
+    return matches[0].start()
 
 
 class TestEveryReleaseIsAlsoASettle:
@@ -37,35 +70,55 @@ class TestEveryReleaseIsAlsoASettle:
     """
 
     def test_the_only_release_call_is_inside_release_slot(self):
-        helper = _function("_release_slot")
-        helper_lines = set(range(helper.lineno, (helper.end_lineno or helper.lineno) + 1))
+        """Across BOTH files that touch this semaphore, not just `main.py`.
 
+        The original version parsed `main.py` alone and matched only the literal name
+        `_inference_semaphore`. `metering.gpu_slot` released the same object under the parameter
+        name `semaphore` -- `interviews.py` imports `_inference_semaphore` from `main` and passes it
+        in -- so two unguarded releases sat in plain sight of a test written to find exactly them.
+        Matching on the attribute `.release` rather than on the receiver's name is what closes that.
+        """
         offenders = []
-        for node in ast.walk(TREE):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            if (
-                isinstance(func, ast.Attribute)
-                and func.attr == "release"
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "_inference_semaphore"
-            ):
-                if node.lineno not in helper_lines:
-                    offenders.append(node.lineno)
+        for label, tree, source in (
+            ("main.py", TREE, SOURCE),
+            ("metering.py", METERING_TREE, METERING_SOURCE),
+        ):
+            allowed = set()
+            for name in ("_release_slot", "release_slot"):
+                fn = _find_function(tree, name)
+                if fn is not None:
+                    allowed |= set(range(fn.lineno, (fn.end_lineno or fn.lineno) + 1))
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if isinstance(func, ast.Attribute) and func.attr == "release":
+                    if node.lineno not in allowed:
+                        offenders.append(f"{label}:{node.lineno}")
 
         assert offenders == [], (
-            "`_inference_semaphore.release()` called outside `_release_slot` at line(s) "
-            f"{offenders}. Every release must also finish the meter, or that request's hold is "
-            "stranded. Route it through `_release_slot(meter, consumed=...)`."
+            f"a semaphore is released outside the release helper at {offenders}. Every release "
+            "must also finish the meter, or that request's hold is stranded. Route it through "
+            "`metering.release_slot(semaphore, meter, consumed=...)`."
         )
 
     def test_release_slot_actually_finishes_the_meter(self):
-        """Guards the guard: the helper above proves nothing if `_release_slot` stops settling."""
+        """Guards the guard: the test above proves nothing if the helper stops settling."""
+        helper = _find_function(METERING_TREE, "release_slot")
+        assert helper is not None, "metering.release_slot is gone -- update the guard above"
+        body = ast.get_source_segment(METERING_SOURCE, helper) or ""
+        assert "semaphore.release()" in body
+        assert "meter.finish(" in body
+
+    def test_main_still_routes_its_releases_through_the_helper(self):
+        """`main.py`'s own wrapper must delegate rather than release directly."""
         helper = _function("_release_slot")
         body = ast.get_source_segment(SOURCE, helper) or ""
-        assert "_inference_semaphore.release()" in body
-        assert "meter.finish(" in body
+        assert "metering.release_slot(" in body, (
+            "`_release_slot` no longer delegates to `metering.release_slot`, so the two files can "
+            "drift apart again"
+        )
 
 
 class TestTheClockStartsAfterTheSlotIsHeld:
@@ -77,8 +130,10 @@ class TestTheClockStartsAfterTheSlotIsHeld:
         """
         endpoint = _function("create_chat_completion")
         body = ast.get_source_segment(SOURCE, endpoint) or ""
-        acquire = body.index("_inference_semaphore.acquire()")
-        begin = body.index("_begin_metering(")
+        acquire = _sole_offset(
+            body, r"_inference_semaphore\.acquire\(\)", "the semaphore acquire"
+        )
+        begin = _sole_offset(body, r"_begin_metering\(", "the metering start")
         assert acquire < begin, (
             "metering starts before the semaphore is acquired, so queue wait would be billed"
         )
@@ -158,7 +213,11 @@ class TestRefusalsHappenBeforeTheGpuIsTouched:
         """402 and 429 must both land before a permit is spent and before any generation starts."""
         endpoint = _function("create_chat_completion")
         body = ast.get_source_segment(SOURCE, endpoint) or ""
-        assert body.index(marker) < body.index("prepare_messages_hybrid(")
+        refusal = _sole_offset(body, re.escape(marker), f"the {marker} guard")
+        generation = _sole_offset(body, r"prepare_messages_hybrid\(", "the prompt build")
+        assert refusal < generation, (
+            f"{marker} runs after generation starts, so a refused request has already spent GPU"
+        )
 
 
 class TestTheInterviewGradingPathIsNotFreeGpu:

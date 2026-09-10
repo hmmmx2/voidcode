@@ -27,7 +27,7 @@ A NOTE ON WHAT THESE PRICES ARE WORTH
 
 `gpu_pricing` currently ships an unmeasured rate, so the credits-per-ringgit here cannot yet be
 checked against what a request actually costs to serve. Sizing is deliberately conservative until
-the serving benchmark lands. `test_credit_packs.py` asserts the relationship rather than the
+the serving benchmark lands. `test_pack_economics.py` asserts the relationship rather than the
 numbers, so when a measured rate arrives the sizing can be re-derived without rewriting the tests.
 """
 

@@ -67,6 +67,12 @@ async def learner(sessionmaker_np):
         await db.commit()
 
 
+
+async def _grant(sessionmaker_np, user_id, amount):
+    async with sessionmaker_np() as db:
+        await wallet.grant(db, user_id, amount_micro=amount, idempotency_key=f"g:{uuid.uuid4()}")
+
+
 async def _run_requests(sessionmaker_np, user_id, *, count: int, slot_seconds: int, rate: int):
     """Reserve and settle `count` requests each occupying `slot_seconds`. Returns total charged."""
     charged = 0
@@ -250,3 +256,233 @@ class TestThePriceIsStillAPlaceholder:
             "the pricing row is now measured — re-run this suite against the real throughput "
             "figure and confirm a busy hour still covers the pod before removing this guard"
         )
+
+
+class TestMarginIsQueryableFromTheRow:
+    """Revenue was recorded and cost was not, so margin was an arithmetic exercise, not a query.
+
+    Recomputing it after the fact meant reaching back into `gpu_pricing.PRICING` -- a dated,
+    append-only tuple -- and guessing which row was live when each request ran. That gets harder
+    with every price change and is already impossible to do exactly for a request served under a
+    superseded row. These columns make it a `SELECT`.
+    """
+
+    async def test_a_settled_request_carries_its_cost_and_the_basis_behind_it(
+        self, sessionmaker_np, learner
+    ):
+        row = gpu_pricing.rate_for()
+        rate = row.rate_micro_per_slot_second
+        await _grant(sessionmaker_np, learner, 100 * rate)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=60 * rate, request_id="chatcmpl-cost",
+                kind="chat", backend="sglang", rate_micro_per_slot_second=rate,
+                pod_micro_per_hour=row.pod_micro_per_hour,
+                nominal_concurrency=row.nominal_concurrency,
+                margin_bps=row.margin_bps,
+                pricing_measured=row.measured,
+            )
+        async with sessionmaker_np() as db:
+            assert await wallet.settle(db, reservation.id, slot_ms=30_000) is True
+
+        async with sessionmaker_np() as db:
+            settled = await db.get(GpuReservation, reservation.id)
+
+        assert settled.pod_micro_per_hour == row.pod_micro_per_hour
+        assert settled.nominal_concurrency == row.nominal_concurrency
+        assert settled.margin_bps == row.margin_bps
+        assert settled.pricing_measured is row.measured
+        assert settled.cost_micro is not None, "a settled request recorded no cost"
+
+    async def test_the_cost_is_reproducible_from_the_columns_beside_it(
+        self, sessionmaker_np, learner
+    ):
+        """The reason the inputs are stored: the derivation can be re-run against the row."""
+        row = gpu_pricing.rate_for()
+        rate = row.rate_micro_per_slot_second
+        await _grant(sessionmaker_np, learner, 100 * rate)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=60 * rate, request_id="chatcmpl-cost-repro",
+                kind="chat", backend="sglang", rate_micro_per_slot_second=rate,
+                pod_micro_per_hour=row.pod_micro_per_hour,
+                nominal_concurrency=row.nominal_concurrency,
+                margin_bps=row.margin_bps,
+                pricing_measured=row.measured,
+            )
+        async with sessionmaker_np() as db:
+            await wallet.settle(db, reservation.id, slot_ms=30_000)
+
+        async with sessionmaker_np() as db:
+            settled = await db.get(GpuReservation, reservation.id)
+
+        expected = wallet.ceil_div(
+            settled.pod_micro_per_hour * settled.slot_ms,
+            3600 * 1000 * settled.nominal_concurrency,
+        )
+        assert settled.cost_micro == expected
+
+    async def test_margin_is_a_subtraction_and_it_is_positive(self, sessionmaker_np, learner):
+        """`settled_micro - cost_micro`, and it must come out at about `margin_bps`.
+
+        Asserted as a relationship rather than a number, so a deliberate reprice does not fail it
+        while a units mix-up still does -- the discipline `test_pack_economics.py` was written for.
+        """
+        row = gpu_pricing.rate_for()
+        rate = row.rate_micro_per_slot_second
+        await _grant(sessionmaker_np, learner, 1000 * rate)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=600 * rate, request_id="chatcmpl-margin",
+                kind="chat", backend="sglang", rate_micro_per_slot_second=rate,
+                pod_micro_per_hour=row.pod_micro_per_hour,
+                nominal_concurrency=row.nominal_concurrency,
+                margin_bps=row.margin_bps,
+                pricing_measured=row.measured,
+            )
+        # Long enough that the per-second rounding is negligible against the ratio.
+        async with sessionmaker_np() as db:
+            await wallet.settle(db, reservation.id, slot_ms=600_000)
+
+        async with sessionmaker_np() as db:
+            settled = await db.get(GpuReservation, reservation.id)
+
+        margin = settled.settled_micro - settled.cost_micro
+        assert margin > 0, (
+            f"a 600-second request billed {settled.settled_micro} and cost {settled.cost_micro}: "
+            "serving it lost money. Check that the rate and the cost divide by the same concurrency."
+        )
+        # 15_000 bps means revenue is 1.5x cost, so margin is 0.5x cost. Two ceilings sit between
+        # the two figures, so this is a band rather than an equality.
+        implied_bps = (settled.settled_micro * 10_000) // settled.cost_micro
+        assert abs(implied_bps - row.margin_bps) <= 20, (
+            f"the row implies a {implied_bps} bps margin but the price says {row.margin_bps}"
+        )
+
+    async def test_a_voided_request_records_no_cost(self, sessionmaker_np, learner):
+        """Nothing was consumed, so there is nothing to have cost anything.
+
+        A zero here would be a lie of a different kind -- it would read as a free request rather
+        than as one that never ran.
+        """
+        row = gpu_pricing.rate_for()
+        rate = row.rate_micro_per_slot_second
+        await _grant(sessionmaker_np, learner, 100 * rate)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=60 * rate, request_id="chatcmpl-void",
+                kind="chat", backend="sglang", rate_micro_per_slot_second=rate,
+                pod_micro_per_hour=row.pod_micro_per_hour,
+                nominal_concurrency=row.nominal_concurrency,
+                margin_bps=row.margin_bps,
+                pricing_measured=row.measured,
+            )
+        async with sessionmaker_np() as db:
+            assert await wallet.void(db, reservation.id) is True
+
+        async with sessionmaker_np() as db:
+            voided = await db.get(GpuReservation, reservation.id)
+        assert voided.cost_micro is None
+
+    async def test_a_reservation_without_a_basis_settles_without_one(
+        self, sessionmaker_np, learner
+    ):
+        """Every row written before this existed. Reading one must not raise.
+
+        The columns are nullable precisely so the sweep -- which voids a reservation without ever
+        seeing a price -- and every pre-existing row keep working. A `NOT NULL` here would have
+        turned an additive migration into an outage.
+        """
+        rate = 1000
+        await _grant(sessionmaker_np, learner, 100_000)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=60_000, request_id="chatcmpl-nobasis",
+                kind="chat", backend="hf", rate_micro_per_slot_second=rate,
+            )
+        async with sessionmaker_np() as db:
+            assert await wallet.settle(db, reservation.id, slot_ms=30_000) is True
+
+        async with sessionmaker_np() as db:
+            settled = await db.get(GpuReservation, reservation.id)
+        assert settled.settled_micro == 30_000, "billing broke when the cost basis was absent"
+        assert settled.cost_micro is None
+
+    async def test_the_cost_basis_is_the_one_quoted_at_hold_time(self, sessionmaker_np, learner):
+        """A price change mid-flight must not move the cost any more than it moves the charge."""
+        import dataclasses
+
+        row = gpu_pricing.rate_for()
+        rate = row.rate_micro_per_slot_second
+        await _grant(sessionmaker_np, learner, 1000 * rate)
+
+        async with sessionmaker_np() as db:
+            reservation = await wallet.reserve(
+                db, learner, hold_micro=600 * rate, request_id="chatcmpl-costdrift",
+                kind="chat", backend="sglang", rate_micro_per_slot_second=rate,
+                pod_micro_per_hour=row.pod_micro_per_hour,
+                nominal_concurrency=row.nominal_concurrency,
+                margin_bps=row.margin_bps,
+                pricing_measured=row.measured,
+            )
+
+        dearer = tuple(
+            dataclasses.replace(r, pod_micro_per_hour=r.pod_micro_per_hour * 10)
+            for r in gpu_pricing.PRICING
+        )
+        original = gpu_pricing.PRICING
+        try:
+            gpu_pricing.PRICING = dearer
+            async with sessionmaker_np() as db:
+                await wallet.settle(db, reservation.id, slot_ms=30_000)
+        finally:
+            gpu_pricing.PRICING = original
+
+        async with sessionmaker_np() as db:
+            settled = await db.get(GpuReservation, reservation.id)
+        expected = wallet.ceil_div(
+            row.pod_micro_per_hour * 30_000, 3600 * 1000 * row.nominal_concurrency
+        )
+        assert settled.cost_micro == expected, (
+            "the recorded cost moved with a price change that landed after the hold"
+        )
+
+
+class TestTheWiringPassesTheBasis:
+    """`metering.begin()` is the only caller in production, so it is the one that must not forget.
+
+    `reserve()` takes the basis optionally -- rows predating the columns legitimately have none --
+    which means a caller that omits it produces a settled request with revenue and no cost, silently.
+    This is the guard against that, in the source-scanning style the rest of the suite uses.
+    """
+
+    def test_begin_passes_every_cost_column(self):
+        import ast
+        from pathlib import Path
+
+        source = (
+            Path(__file__).resolve().parents[1] / "src" / "metering.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        begin = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "begin"
+        )
+        body = ast.get_source_segment(source, begin) or ""
+        for field in (
+            "pod_micro_per_hour",
+            "nominal_concurrency",
+            "margin_bps",
+            "pricing_measured",
+        ):
+            assert f"{field}=" in body, (
+                f"`metering.begin()` no longer passes `{field}` to reserve(), so every request it "
+                "meters will settle with revenue recorded and no cost beside it"
+            )
+

@@ -10,6 +10,8 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+import dataclasses
+
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -19,7 +21,7 @@ from src.database import get_db
 from src.models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.routers import credits as credits_router
-from src.services import gpu_wallet_service as wallet
+from src.services import credit_packs, gpu_wallet_service as wallet
 
 from conftest import TEST_DATABASE_URL, requires_postgres
 
@@ -70,6 +72,11 @@ async def client(sessionmaker_np, learner):
 
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[identity.current_user_id] = lambda: learner
+    # `/checkout` resolves a full Caller rather than a bare id, because it has to refuse an
+    # anonymous or unverified buyer. Overriding only `current_user_id` left it 401ing.
+    app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(
+        user_id=learner, verified=True
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -204,3 +211,50 @@ class TestLedgerAndUsage:
                 backend="hf", rate_micro_per_slot_second=RATE,
             )
         assert (await client.get("/v1/credits/usage")).json()["requests"] == []
+
+
+class TestARetiredPackCannotBeBoughtButStillCredits:
+    """The asymmetry `credit_packs` documents, asserted for the first time.
+
+    `pack_by_code()` deliberately resolves retired packs so a webhook arriving after a pack was
+    pulled still credits the buyer -- money was taken, and dropping it would be theft with a plausible
+    excuse. `/checkout` must do the opposite and refuse, or a stale price stays purchasable forever
+    through a hand-made request.
+
+    Nothing tested either half, and it was not reachable to test: all three rows in `PACKS` take the
+    `on_sale=True` default, so `not pack.on_sale` in `routers/credits.py` was dead code in every
+    run. The retired row is created here rather than shipped, so retiring a real pack later needs no
+    change to this test.
+    """
+
+    async def test_checkout_refuses_a_pack_that_is_no_longer_on_sale(
+        self, client, monkeypatch
+    ):
+        live = credit_packs.packs_on_sale()[0]
+        retired = dataclasses.replace(live, code="my-retired-test", on_sale=False)
+        monkeypatch.setattr(credit_packs, "PACKS", credit_packs.PACKS + (retired,))
+        monkeypatch.setattr("src.config.PAYMENTS_ENABLED", True)
+
+        response = await client.post(
+            "/v1/credits/checkout", json={"pack_code": "my-retired-test"}
+        )
+
+        assert response.status_code == 404, (
+            f"a retired pack was purchasable ({response.status_code}). Its price is frozen at "
+            "whatever it was when it was pulled."
+        )
+
+    async def test_a_retired_pack_still_resolves_for_a_late_webhook(self, monkeypatch):
+        """The other half. A purchase started before the pack was pulled must still credit."""
+        live = credit_packs.packs_on_sale()[0]
+        retired = dataclasses.replace(live, code="my-retired-test", on_sale=False)
+        monkeypatch.setattr(credit_packs, "PACKS", credit_packs.PACKS + (retired,))
+
+        found = credit_packs.pack_by_code("my-retired-test")
+        assert found is not None, (
+            "a retired pack stopped resolving, so a webhook for a purchase made before it was "
+            "pulled would take the money and grant nothing"
+        )
+        assert found.credits_micro == live.credits_micro
+        assert retired not in credit_packs.packs_on_sale(), "a retired pack is still on display"
+
