@@ -126,13 +126,17 @@ class TestDatedTable:
         with pytest.raises(ValueError):
             rate_for(datetime(2000, 1, 1, tzinfo=timezone.utc))
 
-    def test_the_shipped_price_is_still_marked_unmeasured(self):
-        """A guard on honesty, not on arithmetic.
+    def test_the_row_that_was_live_before_the_benchmark_is_marked_unmeasured(self):
+        """A guard on honesty, not on arithmetic, and it is date-pinned on purpose.
 
-        The shipped row is a placeholder: throughput per slot for the served model on an A40 has
-        never been measured. When someone measures it and adds a real row, this test fails and makes
-        them delete it deliberately — which is the moment to check that the reconciliation test also
-        started passing.
+        The instant below is before the serving benchmark ran, and the row live then WAS a
+        placeholder -- throughput per slot for this model on an A40 had never been measured. The
+        table is append-only, so that stays true forever and this assertion keeps its meaning.
+
+        Pinning the date rather than asking for "the current row" is what stops this test from
+        quietly becoming a claim about a row it was never written about. The equivalent guard on
+        the LIVE row lives in `test_gpu_reconciliation_postgres.py`, and it now asserts the
+        opposite -- that the shipped price is measured and says what measured it.
         """
         row = rate_for(datetime(2026, 9, 10, tzinfo=timezone.utc))
         assert row.measured is False

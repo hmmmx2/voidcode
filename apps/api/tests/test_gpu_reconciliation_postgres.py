@@ -240,21 +240,43 @@ class TestTheBooksBalance:
 
 
 class TestThePriceIsStillAPlaceholder:
-    async def test_the_shipped_row_is_unmeasured_so_this_suite_proves_arithmetic_not_viability(
+    async def test_the_shipped_row_is_measured_and_says_what_measured_it(
         self, sessionmaker_np, learner
     ):
-        """The honesty guard, and the most important sentence in this file.
+        """This guard used to assert the opposite, and it did its job.
 
-        Everything above proves the machinery charges what the price says. It does NOT prove the
-        price is right, because the price is derived from a throughput figure nobody has measured
-        for this model on this card. When a measured row replaces the placeholder, this test fails
-        and whoever is here should re-read the assertions above with real numbers before deleting
-        it.
+        It read `assert row.measured is False` with a message telling whoever tripped it to re-run
+        this suite against real numbers before deleting it. The serving benchmark ran on
+        2026-09-10 and that is exactly what happened: the A40 served 16 concurrent requests at
+        max_model_len 5120 with zero failures, so the concurrency divisor the price rests on is no
+        longer a guess. The assertions above now hold against a measured figure rather than a
+        placeholder.
+
+        WHAT REPLACES IT IS NOT NOTHING. A `measured=True` with no evidence behind it is worse than
+        `measured=False`, because the flag is what a margin query filters on -- and an unbacked
+        claim there turns an assumption into a reported fact. So this asserts the flag AND that the
+        note says what produced it.
+
+        The residual caveat, recorded in the row itself: 16 is a demonstrated floor, not the card's
+        ceiling. The sweep's top level was 16 and it rejected nothing, so the true limit was never
+        found. The price uses the floor deliberately -- a higher divisor would understate cost, and
+        that is the one direction this table must not err in.
         """
         row = gpu_pricing.rate_for()
-        assert row.measured is False, (
-            "the pricing row is now measured — re-run this suite against the real throughput "
-            "figure and confirm a busy hour still covers the pod before removing this guard"
+        assert row.measured is True, (
+            "the live pricing row is unmeasured again — a price that divides by a guessed "
+            "concurrency can under-recover threefold with every ledger figure staying correct"
+        )
+        assert "MEASURED" in row.note
+        assert "bench-serving-30b.json" in row.note, (
+            "the row claims to be measured but does not say by what. The artefact is the whole "
+            "difference between a measurement and an assertion, and `measured` is the flag a "
+            "margin query filters on."
+        )
+        assert row.nominal_concurrency <= 16, (
+            "the concurrency divisor now exceeds what the benchmark demonstrated. The sweep's top "
+            "level was 16 and it rejected nothing, so anything above that is extrapolation — and "
+            "extrapolating upward here understates cost."
         )
 
 

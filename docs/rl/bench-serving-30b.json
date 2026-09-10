@@ -1,0 +1,91 @@
+{
+  "measured_at_utc": "2026-09-10T08:55:24Z",
+  "base_url": "http://127.0.0.1:8080/v1",
+  "model": "rl",
+  "max_tokens": 768,
+  "levels": [
+    {
+      "concurrency": 1,
+      "requests": 3,
+      "wall_seconds": 18.259,
+      "ok": 3,
+      "failed": 0,
+      "slot_seconds_p50": 5.732,
+      "slot_seconds_p95": 8.458,
+      "slot_seconds_mean": 6.086,
+      "completion_tokens_total": 1651,
+      "tokens_per_second_aggregate": 90.4,
+      "tokens_per_second_per_slot": 90.4,
+      "ttft_p50": 0.095,
+      "errors": []
+    },
+    {
+      "concurrency": 2,
+      "requests": 6,
+      "wall_seconds": 20.626,
+      "ok": 6,
+      "failed": 0,
+      "slot_seconds_p50": 5.655,
+      "slot_seconds_p95": 9.293,
+      "slot_seconds_mean": 6.697,
+      "completion_tokens_total": 3324,
+      "tokens_per_second_aggregate": 161.2,
+      "tokens_per_second_per_slot": 82.7,
+      "ttft_p50": 0.083,
+      "errors": []
+    },
+    {
+      "concurrency": 4,
+      "requests": 12,
+      "wall_seconds": 26.64,
+      "ok": 12,
+      "failed": 0,
+      "slot_seconds_p50": 7.633,
+      "slot_seconds_p95": 10.967,
+      "slot_seconds_mean": 7.997,
+      "completion_tokens_total": 6766,
+      "tokens_per_second_aggregate": 254.0,
+      "tokens_per_second_per_slot": 70.5,
+      "ttft_p50": 0.114,
+      "errors": []
+    },
+    {
+      "concurrency": 8,
+      "requests": 24,
+      "wall_seconds": 34.71,
+      "ok": 24,
+      "failed": 0,
+      "slot_seconds_p50": 11.168,
+      "slot_seconds_p95": 13.666,
+      "slot_seconds_mean": 10.374,
+      "completion_tokens_total": 14066,
+      "tokens_per_second_aggregate": 405.2,
+      "tokens_per_second_per_slot": 56.5,
+      "ttft_p50": 0.122,
+      "errors": []
+    },
+    {
+      "concurrency": 16,
+      "requests": 48,
+      "wall_seconds": 44.117,
+      "ok": 48,
+      "failed": 0,
+      "slot_seconds_p50": 11.35,
+      "slot_seconds_p95": 17.256,
+      "slot_seconds_mean": 12.632,
+      "completion_tokens_total": 27349,
+      "tokens_per_second_aggregate": 619.9,
+      "tokens_per_second_per_slot": 45.1,
+      "ttft_p50": 0.139,
+      "errors": []
+    }
+  ],
+  "verdict": {
+    "achievable_concurrency": 16,
+    "usable": true,
+    "single_slot_tokens_per_second": 90.4,
+    "rule": "highest concurrency with zero failures and per-slot throughput >= 25% of the single-slot figure",
+    "levels_rejected": []
+  },
+  "how_to_use": "Set PricingRow.nominal_concurrency to verdict.achievable_concurrency, set measured=True, and re-run apps/api/tests/test_gpu_reconciliation_postgres.py. If a busy hour no longer covers the pod, the margin or the price has to move -- that is the answer this benchmark exists to produce, whichever way it comes out."
+}

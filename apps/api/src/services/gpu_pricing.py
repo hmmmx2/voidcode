@@ -130,6 +130,43 @@ PRICING: tuple[PricingRow, ...] = (
             "charging anyone."
         ),
     ),
+    PricingRow(
+        # 08:56 UTC: the minute the benchmark finished. Dated to when the measurement
+        # exists rather than to midnight, so the row above stays the one that was live
+        # for the whole period when nobody had measured anything.
+        effective_from=datetime(2026, 9, 10, 8, 56, tzinfo=timezone.utc),
+        # Same money as the row above. What changed is that the concurrency divisor is no longer a
+        # guess, so `measured` can finally be True.
+        pod_micro_per_hour=(49 * USD_TO_MYR_TENTHS // 10) * 1_000_000,
+        # MEASURED, AND DELIBERATELY NOT RAISED. `docs/rl/bench-serving-30b.json`: the A40 served 16
+        # concurrent requests at 5120 tokens with 48 of 48 succeeding and per-slot throughput at
+        # 45.1 tok/s -- half the single-slot 90.4, against a rejection threshold of a quarter.
+        #
+        # 16 IS A FLOOR, NOT A CEILING, AND THE PRICE USES THE FLOOR ON PURPOSE. The sweep stopped
+        # at 16 because that is the highest level the script tests: `levels_rejected` is empty, so
+        # nothing was refused and the real limit was never found. vLLM's own estimate from the KV
+        # cache it allocated is 43.83x. Dividing the pod's cost by a concurrency higher than what
+        # has actually been demonstrated would understate cost, which is the one direction this
+        # table must not err in.
+        #
+        # The consequence of using the floor is that credit is priced above true cost if the card
+        # really does forty. That is the safe error -- learners pay more than necessary rather than
+        # the pod running at a loss -- and it can be corrected downward once a sweep finds the
+        # ceiling.
+        nominal_concurrency=16,
+        margin_bps=15_000,
+        gpu="A40 48GB",
+        model="Qwen3-Coder-30B-A3B-Instruct + RL adapter",
+        measured=True,
+        note=(
+            "MEASURED. Serving benchmark 2026-09-10 on a dedicated A40 with nothing else "
+            "resident: 16 concurrent at max_model_len 5120, zero failures over 48 requests, "
+            "619.9 tok/s aggregate, 45.1 tok/s per slot, single-slot 90.4 tok/s, TTFT p50 0.139 s. "
+            "Full result in docs/rl/bench-serving-30b.json. The figure is a demonstrated floor "
+            "rather than the card's ceiling: the sweep's top level was 16 and it rejected nothing, "
+            "so the price is conservative by however much the real limit exceeds it."
+        ),
+    ),
 )
 
 
