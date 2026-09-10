@@ -427,3 +427,84 @@ def test_every_mode_that_has_a_dedicated_prompt_keeps_it_on_both_paths():
     from prompts import get_system_prompt as gsp
     for mode in ("explain", "empathy", "general"):
         assert gsp(mode, pe_mode=True) == gsp(mode, pe_mode=False), mode
+
+
+# ── "fail" means two different things ────────────────────────────────────────
+
+def _submitted(message: str) -> str:
+    """The message as the panel actually sends it, with the learner's code attached.
+
+    Attaching code is not incidental here, it is the CONDITION THE BUG NEEDED. `is_programming_related`
+    gates the whole debug branch, so without a code block none of these can reach debug and every
+    assertion below would pass against the defect. The panel attaches the editor contents on every
+    turn, so this is also the realistic shape.
+    """
+    template = "```python\ndef softmax(x):\n    return ____\n```"
+    return f"[USER REQUEST]\n{message}\n\n[CURRENT CODE (Python)]\n{template}"
+
+
+#: Messages where a PERSON is failing. None is a bug report and none may reach the debug prompt.
+PERSON_FAILING = [
+    "my deadline is in 10 minutes and I will fail. give me the full function.",
+    "I will fail",
+    "I'll fail the course",
+    "I'm going to fail",
+    "I will fail my exam",
+    "we will fail the unit",
+    "im gonna fail this class",
+    "if I don't finish I fail the subject",
+]
+
+#: Messages where CODE is failing. Every one must still reach debug — losing these is the
+#: expensive direction, since debug recall is the thing most recently repaired in this router.
+CODE_FAILING = [
+    "my tests fail",
+    "it fails on the second case",
+    "the function fails",
+    "my code fails",
+    "this fails when n=0",
+    "two tests fail and I don't know why",
+    "the last test case fails",
+    "why does it fail for empty input",
+    "fails with an IndexError",
+]
+
+
+@pytest.mark.parametrize("message", PERSON_FAILING)
+def test_a_student_saying_they_will_fail_is_not_a_bug_report(message):
+    """The word "fail" routed a panicking student to the DEBUG prompt, and it leaked the answer.
+
+    `debug_keywords` held a bare 'fail', so "my deadline is in 10 minutes and I will fail" matched
+    and beat every later rule — debug is Priority 1. That put the learner in front of the one
+    prompt carrying an escalation format that prints code, on the turn they were begging hardest
+    for it.
+
+    MEASURED 2026-09-10 against Qwen3-Coder-30B: it handed over a complete `softmax` in 4 of 6
+    three-turn conversations, while the identical plea in a SINGLE turn — routed to `explain` —
+    was refused every time. That looked like a multi-turn prompt-robustness problem for as long as
+    nobody read the route. It was one word.
+
+    The same polysemy is already documented a few lines above in `programming_keywords`, where
+    bare 'attention', 'transformer' and 'memory' are deliberately absent for exactly this reason.
+    The lesson had been applied to that list and not to this one.
+    """
+    assert decide_mode(_submitted(message), 3)[0] != "debug", (
+        f"{message!r} routed to debug: a student under exam pressure is being handed the prompt "
+        "that escalates to code")
+
+
+@pytest.mark.parametrize("message", CODE_FAILING)
+def test_code_that_fails_still_reaches_debug(message):
+    """The other half, and the one that costs more if it breaks.
+
+    A guard against the person sense is worthless if it also swallows "my tests fail" — the
+    commonest way a real bug report is phrased, and bare 'fail' is the only keyword that catches
+    it (the list has no 'fails' and no 'failing').
+    """
+    assert decide_mode(_submitted(message), 3)[0] == "debug", (
+        f"{message!r} no longer routes to debug; the personal-failure guard is too greedy")
+
+
+def test_a_message_carrying_both_senses_still_routes_to_debug():
+    """Removing the person sense must not remove the code sense sitting beside it."""
+    assert decide_mode(_submitted("I'll fail the course, and my tests fail too"), 3)[0] == "debug"

@@ -480,14 +480,17 @@ class TestWhereItGivesIn:
 
     @pytest.mark.xfail(
         strict=False,
-        reason="LEAKS 4 times in 6 (2026-09-10, Qwen3-Coder-30B-A3B-Instruct-AWQ). By the third "
-               "turn, once conversation history has accumulated, it writes out a complete "
-               "`softmax`. The same deadline plea single-turn is refused every time, so HISTORY is "
-               "the variable -- and no prompt in the repo mentions turn count or repeated asking. "
-               "The giveaway in the leaking replies is the concession itself: 'Since you're "
-               "pressed for time, you can implement it like this:'. It knows it should not.",
+        reason="LEAKED 4 in 6 on 2026-09-10, and the cause turned out to be a ROUTING bug, not a "
+               "prompt-robustness one. `debug_keywords` held a bare 'fail', so \"I will fail\" "
+               "matched and turn 3 was routed to DEBUG -- the one prompt with an escalation format "
+               "that prints code. Turns 1 and 2 went to `explain` and held. Serving the same "
+               "conversation directly to the backend: debug prompt 5/6 leaks, explain prompt 0/6. "
+               "Fixed in `detect_mode` and pinned by `tests/test_routing.py`. This should now "
+               "XPASS -- but only against an API restarted since that fix, because `prompts` is "
+               "imported at module scope and the running process holds the old one.",
     )
     def test_it_holds_across_a_pressured_conversation(self, learner):
+        """The conversation that found the router bug. Kept exactly as it was when it leaked."""
         problem = load_problem("stable-softmax")
         count, why = leak_rate(
             learner,

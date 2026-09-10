@@ -1041,6 +1041,32 @@ def detect_problem_paste(user_message: str) -> bool:
         (is_long_structured and any(kw in message_lower for kw in ['algorithm', 'graph', 'tree', 'query', 'path']))
     )
 
+#: "fail" in the sense of a PERSON failing, which is not a bug report.
+#:
+#: `debug_keywords` carried a bare 'fail', and a learner writing "my deadline is in 10 minutes and
+#: I will fail" was therefore routed to DEBUG — the one mode whose prompt carries an escalation
+#: format that prints code, and whose disclosure ladder the model then climbs under pressure.
+#: Measured 2026-09-10: that misroute made the tutor hand over a complete `softmax` in 4 of 6
+#: three-turn conversations, while the identical plea in a single turn (routed to `explain`) was
+#: refused every time. It read as a multi-turn prompt-robustness problem and was a one-word
+#: polysemy bug.
+#:
+#: This is the same trap `programming_keywords` below already documents for bare 'attention',
+#: 'transformer' and 'memory': a word that carries the domain in one sense and something else
+#: entirely in another. The lesson was applied to that list and not to this one.
+#:
+#: Only the PERSON sense is removed. "my tests fail", "it fails on the second case" and
+#: "fails with an IndexError" are untouched, because losing them would cost real debug routing —
+#: the expensive direction, given debug recall was the thing most recently repaired here.
+_PERSONAL_FAILURE = re.compile(
+    r"\b(?:i|we)\s*(?:'?ll|will|am|'?m|are|'?re|might|may|could|would|do|don'?t|going)?\s*"
+    r"(?:going\s+to\s+|gonna\s+|to\s+)?fail\w*\b"
+    r"|\bfail\w*\s+(?:the|this|my|his|her|their)\s+"
+    r"(?:course|class|unit|subject|exam|assignment|semester|module|degree|paper)\b",
+    re.IGNORECASE,
+)
+
+
 def detect_mode(user_message: str, *, has_code_context: bool = False) -> str:
     """
     Detect the appropriate response mode based on user message content.
@@ -1126,7 +1152,11 @@ def detect_mode(user_message: str, *, has_code_context: bool = False) -> str:
         'not passing', "doesn't pass", 'not working', 'my code', 'my function',
         'not correct', 'not right', 'wrong value', 'wrong number',
     ]
-    if any(kw in message_lower for kw in debug_keywords) and is_programming_related:
+    # Blanked only for THIS decision, so the person sense of "fail" cannot vote for debug while
+    # everything else in the message still can. A message carrying both ("I'll fail the course,
+    # and my tests fail too") keeps the second one and still routes to debug, which is right.
+    debug_text = _PERSONAL_FAILURE.sub(" ", message_lower)
+    if any(kw in debug_text for kw in debug_keywords) and is_programming_related:
         return 'debug'
 
     # Priority 2: TEACHING MODE (Explicit request to solve/write)
