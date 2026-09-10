@@ -94,10 +94,17 @@ def test_production_refuses_to_start_when_misconfigured(monkeypatch) -> None:
 
 
 def test_a_correctly_configured_production_starts(monkeypatch) -> None:
+    # `INTERNAL_AUTH_ENFORCE` joined this list when credit metering landed. It was always the
+    # intended end state of the two-phase identity rollout -- ship the header, then require it --
+    # and production had simply never been made to insist on it. Charging made the gap load-bearing:
+    # without enforcement an unsigned `X-User-Id` is accepted on trust, so any caller can spend any
+    # user's credit and the ledger records an ordinary charge. See
+    # `test_billing_requires_real_identity.py`.
     config = _config(
         monkeypatch, APP_ENV="production", ALLOWED_ORIGINS="https://voidcode.example",
         INTERNAL_API_SECRET="x" * 32, APP_BASE_URL="https://voidcode.example",
-        EMAIL_PROVIDER="resend", RESEND_API_KEY="re_test", RATELIMIT_PEPPER="not-the-default")
+        EMAIL_PROVIDER="resend", RESEND_API_KEY="re_test", RATELIMIT_PEPPER="not-the-default",
+        INTERNAL_AUTH_ENFORCE="true")
     config.assert_production_config()          # must not raise
 
 

@@ -240,6 +240,24 @@ def assert_production_config() -> None:
     router or reset links pointing at localhost. Silently falling back to a
     development default in production is exactly how this drifts back.
     """
+    # CHECKED IN EVERY ENVIRONMENT, NOT ONLY PRODUCTION.
+    #
+    # `INTERNAL_AUTH_ENFORCE=false` means an unsigned `X-User-Id` header is accepted on trust — the
+    # two-phase rollout that let the header ship before the backend started requiring it. That is a
+    # reasonable trade for read paths. It is not a reasonable trade for a path that spends money:
+    # with billing enforced and identity unenforced, anyone can assert any user id and drain that
+    # user's credit, and the ledger will record it as a perfectly ordinary charge.
+    #
+    # Not production-only, deliberately. A development instance that charges a spoofable identity is
+    # how the combination gets discovered in production instead of here.
+    if GPU_BILLING_ENFORCE and not INTERNAL_AUTH_ENFORCE:
+        raise ConfigError(
+            "GPU_BILLING_ENFORCE is on while INTERNAL_AUTH_ENFORCE is off. Credit would be spent "
+            "against an identity any caller can assert simply by sending an X-User-Id header. "
+            "Turn on INTERNAL_AUTH_ENFORCE first, confirm "
+            "voidcode_unverified_identity_requests_total is flat at zero, then enable billing."
+        )
+
     if not IS_PRODUCTION:
         if INTERNAL_AUTH_ENFORCE and not INTERNAL_API_SECRET:
             raise ConfigError(
@@ -249,6 +267,17 @@ def assert_production_config() -> None:
         return
 
     problems: list[str] = []
+
+    # Production may not run on trust. The flag exists for a staged rollout, and a rollout that is
+    # never completed is just a permanently open door: `resolve_caller` counts every unsigned
+    # request it lets through, and in production that count should be structurally impossible
+    # rather than merely low.
+    if not INTERNAL_AUTH_ENFORCE:
+        problems.append(
+            "INTERNAL_AUTH_ENFORCE is off. An unsigned X-User-Id header is accepted on trust, so "
+            "any caller can act as any user. The web proxy already signs every request, so the "
+            "only callers this turns away are ones bypassing it."
+        )
 
     if not ALLOWED_ORIGINS:
         problems.append(
