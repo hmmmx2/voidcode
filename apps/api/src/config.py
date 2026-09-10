@@ -207,6 +207,27 @@ GPU_QUEUE_MAX_WAIT_SECONDS = float(os.getenv("GPU_QUEUE_MAX_WAIT_SECONDS", "120"
 # and they will wait for it.
 GPU_QUEUE_MAX_DEPTH = int(os.getenv("GPU_QUEUE_MAX_DEPTH", "50"))
 
+# ── GPU provider (pod lifecycle) ─────────────────────────────────
+#
+# A RunPod API key is ACCOUNT-WIDE. Every pod in the account is addressable by id, including ones
+# that have nothing to do with this service, and RunPod offers no per-pod credential. Whatever
+# protection exists has to exist in our own code, which is why `services/runpod_client.py` refuses
+# to act unless it has been told exactly which pod, and offers no way to name a different one.
+#
+# Three values rather than one, deliberately. The key alone is not enough to do anything; the id
+# alone is not enough either; and the switch means a deployment that happens to have both still
+# does nothing until somebody decides.
+RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
+
+# The ONE pod this service may start or stop. Not a secret -- it is an identifier, and it appears in
+# hostnames and logs -- so it must NOT go in the secret-shaped list in `test_env_templates.py`, or
+# that test will demand it be empty in every template, which is the opposite of what is wanted.
+RUNPOD_POD_ID = os.getenv("RUNPOD_POD_ID", "")
+
+# Master switch, off by default, mirroring PAYMENTS_ENABLED. Off means every call raises
+# PodControlDisabled before a URL is constructed.
+POD_CONTROL_ENABLED = _flag("POD_CONTROL_ENABLED", default=False)
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the
@@ -369,6 +390,22 @@ def assert_production_config() -> None:
             f"PAYMENTS_ENABLED is on but {' and '.join(missing)} is empty. Checkout would fail "
             "after the learner has decided to buy, which is the worst place to discover it. "
             "Both are set in the environment, never in the database."
+        )
+    # Same shape as the Stripe guard above, and checked in every environment for the same reason:
+    # discovering that pod control is half-configured at the moment it is needed means either a
+    # backend that never wakes or -- worse -- code that reaches for a pod id it does not have.
+    if POD_CONTROL_ENABLED and not (RUNPOD_API_KEY and RUNPOD_POD_ID):
+        missing = [
+            name for name, value in (
+                ("RUNPOD_API_KEY", RUNPOD_API_KEY),
+                ("RUNPOD_POD_ID", RUNPOD_POD_ID),
+            ) if not value
+        ]
+        raise ConfigError(
+            f"POD_CONTROL_ENABLED is on but {' and '.join(missing)} is empty. Pod control must "
+            "know exactly which pod it may touch: a RunPod key is account-wide, and a service that "
+            "is allowed to stop pods without being told which one is a service that can stop any "
+            "of them."
         )
 
     if GPU_BILLING_ENFORCE and not INTERNAL_AUTH_ENFORCE:

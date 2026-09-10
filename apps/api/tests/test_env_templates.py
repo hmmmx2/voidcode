@@ -92,7 +92,11 @@ def test_secret_shaped_variables_are_empty_in_every_template() -> None:
     # two values that let somebody charge the account or forge a credit grant.
     secretish = ("INTERNAL_API_SECRET", "RESEND_API_KEY", "RATELIMIT_PEPPER", "AUTH_SECRET",
                  "JUDGE0_AUTH_TOKEN", "JUDGE0_ADMIN_TOKEN", "AUTH_GOOGLE_SECRET",
-                 "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")
+                 "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+                 # RUNPOD_API_KEY belongs here; RUNPOD_POD_ID deliberately does NOT. The id is an
+                 # identifier that appears in hostnames and logs, and listing it here would demand
+                 # it be empty in every template -- the opposite of what a deployment needs.
+                 "RUNPOD_API_KEY")
     for template in (API_ENV, DOCKER_ENV, WEB_ENV):
         for line in template.read_text(encoding="utf-8").splitlines():
             if "=" not in line or line.strip().startswith("#"):
