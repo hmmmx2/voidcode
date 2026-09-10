@@ -1703,6 +1703,7 @@ async def _is_model_ready() -> bool:
 async def _semaphore_wrapped(
     gen: AsyncGenerator[str, None],
     meter: "metering.Meter | None" = None,
+    lease: "queue_service.SlotLease | None" = None,
 ) -> AsyncGenerator[str, None]:
     """Hold the inference semaphore for the full lifetime of an SSE stream.
 
@@ -1717,6 +1718,13 @@ async def _semaphore_wrapped(
     on the stage-A header below for the API that died silently after 20-60 requests when a discarded
     wrapper's `finally` never ran. One layer, one `finally`, one invariant.
 
+    `lease` is here for exactly the same reason and was briefly NOT, which is worth recording. The
+    fleet-slot lease was threaded through the six `_release_slot` call sites by editing them all to
+    read `lease=slot_lease` -- and one of those six is this `finally`, in a module-level function
+    where `slot_lease` is a local of the endpoint and does not exist. Every streaming request would
+    have raised `NameError` while cleaning up. 419 tests did not catch it, because none of them
+    drives this generator; `ruff --select F821` found it in under a second.
+
     `finish()` schedules and returns; it never awaits. During a client disconnect this `finally`
     runs while the task is being cancelled, and awaiting database I/O there risks swallowing the
     `CancelledError` or hanging the close.
@@ -1725,7 +1733,7 @@ async def _semaphore_wrapped(
         async for chunk in gen:
             yield chunk
     finally:
-        _release_slot(meter, consumed=True, lease=slot_lease)
+        _release_slot(meter, consumed=True, lease=lease)
 
 
 async def _begin_metering(
@@ -2143,7 +2151,7 @@ async def create_chat_completion(
                     top_p=request.top_p,
                     repetition_penalty=request.repetition_penalty,
                     request_id=request_id,
-                ), meter),
+                ), meter, slot_lease),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -2200,7 +2208,7 @@ async def create_chat_completion(
                     presence_penalty=gen_cfg.get("presence_penalty", 0.0),
                     thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
                     enable_thinking=gen_cfg.get("enable_thinking", True),
-                ), meter),
+                ), meter, slot_lease),
                 media_type="text/event-stream",
                 headers=_headers,
             )
@@ -2216,7 +2224,7 @@ async def create_chat_completion(
                 top_p=request.top_p,
                 repetition_penalty=request.repetition_penalty,
                 request_id=request_id,
-            ), meter),
+            ), meter, slot_lease),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
