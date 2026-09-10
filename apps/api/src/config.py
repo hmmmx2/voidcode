@@ -148,7 +148,16 @@ WITHHOLD_SOLUTIONS = _flag("WITHHOLD_SOLUTIONS", default=True)
 
 USE_SGLANG = _flag("USE_SGLANG", default=False)
 SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL", "http://sglang-server:30000/v1")
-SGLANG_MODEL_NAME = os.getenv("SGLANG_MODEL_NAME", "default")
+# The alias the backend exposes for the model to use -- NOT a model id. SGLang and vLLM serve
+# under whatever name they were started with, and a server can expose several: the one this
+# project runs offers `base` and `rl`, which are different weights.
+#
+# EMPTY BY DEFAULT, AND IT USED TO BE "default". That is not a name any backend here answers
+# to -- it 404s -- so an unconfigured deployment failed every request with "The model `default`
+# does not exist", after logging six warmup warnings and then "warmup complete". Empty means
+# "ask the backend", which resolves cleanly when it serves exactly one model and produces a
+# loud, specific startup error naming the real options when it does not.
+SGLANG_MODEL_NAME = os.getenv("SGLANG_MODEL_NAME", "")
 
 # Client timeout for calls to SGLang. MUST exceed the longest generation any mode can ask for, or
 # the request is cut off mid-answer and the learner sees an error on exactly the questions that

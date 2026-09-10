@@ -150,7 +150,9 @@ services:
       # SGLang backend
       - USE_SGLANG=true
       - SGLANG_BASE_URL=http://sglang-server:30000/v1
-      - SGLANG_MODEL_NAME=default
+      # Empty: this compose file starts one SGLang server serving one model, so the
+      # backend is asked rather than told. `default` used to be here and 404s.
+      - SGLANG_MODEL_NAME=
 
       # Database — use Docker service hostnames + internal ports
       - DATABASE_URL=postgresql+asyncpg://alwin:alwin_dev@postgres:5432/alwin_tutor

@@ -432,6 +432,27 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning("SGLang health check timed out — proceeding anyway")
 
+        # ── Which model, decided once, out loud ─────────────────────────────
+        #
+        # The alias used to default to "default", which no backend here answers to. A
+        # deployment that never set it logged six warmup warnings, then "warmup complete", then
+        # 404d every request -- three chances to say something useful and none of them taken.
+        # `probe()` has already fetched the model list for the readiness check, so this asks a
+        # question that is already answered.
+        global SGLANG_MODEL_NAME
+        await backend_registry.probe()
+        _chosen, _level, _why = backend_registry.choose_model(SGLANG_MODEL_NAME)
+        if _level == "fatal":
+            # Refuse to serve rather than serve the wrong model. An empty model name does not
+            # 404 against this backend -- it returns 200 and picks the first one -- so the
+            # alternative to stopping here is answering every request from weights nobody
+            # chose, indistinguishably from working correctly.
+            logger.error("%s", _why)
+            raise RuntimeError(_why)
+        if _level:
+            getattr(logger, _level)("%s", _why)
+        SGLANG_MODEL_NAME = _chosen
+
         # ── RadixAttention KV-cache warmup ──────────────────────────────────
         # Fire one minimal request per mode so SGLang pre-computes the KV for
         # each system-prompt prefix.  All real student requests that share the
@@ -439,6 +460,7 @@ async def lifespan(app: FastAPI):
         # Without this, the first student in each mode pays the full prefill
         # cost; with it, every request after startup gets the 3-4x speedup.
         logger.info("Priming SGLang RadixAttention KV cache (6 modes)...")
+        _primed = 0
         for _wm in ("teaching", "debug", "followup", "explain", "general", "empathy"):
             try:
                 await _backend_client().chat.completions.create(
@@ -457,9 +479,18 @@ async def lifespan(app: FastAPI):
                     },
                 )
                 logger.info(f"  KV cache primed ✓ {_wm}")
+                _primed += 1
             except Exception as _wup_err:
                 logger.warning(f"  KV cache warmup failed for {_wm}: {_wup_err}")
-        logger.info("SGLang RadixAttention warmup complete — all mode prefixes cached")
+        # Counted, not asserted. This line used to read "all mode prefixes cached"
+        # unconditionally, so six consecutive failures were followed by a claim of complete
+        # success -- which is how a wrong model alias got past startup unnoticed.
+        if _primed == 6:
+            logger.info("SGLang RadixAttention warmup complete — all 6 mode prefixes cached")
+        else:
+            logger.error(
+                "SGLang warmup primed only %d of 6 mode prefixes; the backend is reachable but "
+                "not answering as configured", _primed)
 
     elif USE_VLLM:
         # P4: vLLM AsyncLLMEngine — PagedAttention + continuous batching

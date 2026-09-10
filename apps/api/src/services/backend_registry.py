@@ -202,6 +202,63 @@ def served_model(alias: str = "") -> str | None:
     return None
 
 
+def serving_aliases() -> list[str]:
+    """The names this backend answers to, as of the last probe."""
+    return sorted(_state.models)
+
+
+def choose_model(configured: str) -> tuple[str, str, str]:
+    """Which alias to send, and what to say about it: `(name, level, message)`.
+
+    Pure apart from reading the last probe, and separated from the lifespan so the rules can be
+    tested without a server. `level` is "" when there is nothing to report.
+
+    THE RULES, AND WHY EACH ONE IS WHAT IT IS.
+
+    Configured and served -> use it, say nothing. The ordinary case.
+
+    Configured and NOT served -> keep it and report an ERROR naming what IS served. Keeping the
+    wrong value rather than silently substituting a working one is deliberate: an operator who
+    typed `rl` and got `base` would be measuring the wrong weights and would have no way to know.
+    Fail visibly on their value, do not quietly succeed on another.
+
+    Unset with exactly one model served -> adopt it. There is no ambiguity to resolve and no other
+    answer that could be meant.
+
+    Unset with several served -> FATAL. Not a warning, because an empty model name does not fail:
+    measured against this backend on 2026-09-10, `model=""` returns 200 and serves `base`, the
+    first model, while `model="default"` 404s. So the unconfigured case silently picks weights
+    nobody chose, and an operator evaluating a fine-tune would be handed the base model with a 200
+    and no way to tell. Refusing to start is the only outcome that cannot be mistaken for working.
+    This project has already published one number that was measuring something other than what it
+    claimed; that is the cost being avoided here.
+
+    Backend listed nothing -> say the check could not run. Silence here would read as approval.
+    """
+    served = serving_aliases()
+    if configured and configured in served:
+        return configured, "", ""
+    if not served:
+        return configured, "warning", (
+            "the backend listed no models, so SGLANG_MODEL_NAME could not be checked"
+        )
+    if configured:
+        return configured, "error", (
+            f"SGLANG_MODEL_NAME={configured!r} is not served by this backend, which offers "
+            f"{served}. Every request will fail with a 404 until this is set to one of them."
+        )
+    if len(served) == 1:
+        return served[0], "info", (
+            f"SGLANG_MODEL_NAME is unset; using {served[0]!r}, the only model this backend serves"
+        )
+    return "", "fatal", (
+        f"SGLANG_MODEL_NAME is unset and this backend serves {served}. Set it to one of them. "
+        f"Refusing to start rather than defaulting: an empty model name does NOT fail here, it "
+        f"quietly serves {served[0]!r}, so every request and every evaluation would run against "
+        "weights nobody chose and look entirely healthy doing it."
+    )
+
+
 def reset_for_tests() -> None:
     """Clear all state. Only for tests -- the registry is a module-level singleton by design."""
     global _state

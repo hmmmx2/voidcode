@@ -355,3 +355,81 @@ class TestWhichModelIsActuallyServing:
         registry.served_model("base")
 
         assert len(rec.calls) == 1, f"expected one request, made {len(rec.calls)}"
+
+
+class TestChoosingTheModelAlias:
+    """`SGLANG_MODEL_NAME` shipped as "default", which no backend here answers to.
+
+    An unconfigured deployment logged six warmup warnings, then "warmup complete — all mode
+    prefixes cached", then 404'd every request with "The model `default` does not exist". Three
+    chances to say something useful and none of them taken. The decision now happens once, at
+    startup, out loud — and lives here rather than in the lifespan so it can be tested without a
+    server.
+    """
+
+    async def _probe_with(self, monkeypatch, aliases):
+        body = {"object": "list", "data": [{"id": a, "root": f"/w/{a}"} for a in aliases]}
+        _install(monkeypatch, _Recorder(body=body))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+        await registry.probe()
+
+    async def test_a_configured_alias_that_is_served_is_used_silently(self, monkeypatch):
+        await self._probe_with(monkeypatch, ["base", "rl"])
+        name, level, _ = registry.choose_model("rl")
+        assert (name, level) == ("rl", "")
+
+    async def test_an_unserved_alias_is_an_error_naming_the_real_ones(self, monkeypatch):
+        """The message has to carry the options, or the operator learns only that it is broken."""
+        await self._probe_with(monkeypatch, ["base", "rl"])
+        _name, level, message = registry.choose_model("default")
+        assert level == "error"
+        assert "base" in message and "rl" in message
+        assert "default" in message
+
+    async def test_an_unserved_alias_is_NOT_silently_replaced(self, monkeypatch):
+        """THE ONE THAT MATTERS MOST, and the reason this does not "helpfully" fall back.
+
+        Substituting a working alias for a wrong one means an operator who typed `rl` gets `base`
+        — a different set of weights — and no way to tell. Everything downstream, including the
+        evaluations that decide whether a fine-tune is working, would be measuring the wrong model
+        while looking entirely healthy. Fail visibly on their value instead.
+        """
+        await self._probe_with(monkeypatch, ["base", "rl"])
+        name, _, _ = registry.choose_model("typo")
+        assert name == "typo", "a wrong alias was swapped for a working one; the failure is now silent"
+
+    async def test_unset_with_one_model_served_adopts_it(self, monkeypatch):
+        """The ordinary single-model deployment. No ambiguity, so nothing to configure."""
+        await self._probe_with(monkeypatch, ["only-one"])
+        name, level, message = registry.choose_model("")
+        assert name == "only-one"
+        assert level == "info"
+        assert "only-one" in message
+
+    async def test_unset_with_several_served_is_fatal(self, monkeypatch):
+        """FATAL, not a warning, and the reason is measured rather than assumed.
+
+        An empty model name does NOT fail against this backend: `model=""` returns 200 and serves
+        `base`, the first model, while `model="default"` 404s. So the unconfigured case silently
+        picks weights nobody chose, and somebody evaluating a fine-tune gets the base model with a
+        200 and no way to tell. Refusing to start is the only outcome that cannot be mistaken for
+        working.
+        """
+        await self._probe_with(monkeypatch, ["base", "rl"])
+        name, level, message = registry.choose_model("")
+        assert level == "fatal", "an unresolvable alias is survivable; it silently serves the wrong model"
+        assert name == ""
+        assert "base" in message and "rl" in message
+        assert "quietly serves" in message, "the message must say what happens, not just that it is unset"
+
+    async def test_an_unreachable_backend_says_the_check_could_not_run(self, monkeypatch):
+        """Silence would read as approval, and the value is unverified rather than fine."""
+        rec = _Recorder(boom=True)
+        _install(monkeypatch, rec)
+        registry.configure("http://gone:30000/v1", lambda url: object())
+        await registry.probe()
+
+        name, level, message = registry.choose_model("rl")
+        assert name == "rl"
+        assert level == "warning"
+        assert "could not be checked" in message
