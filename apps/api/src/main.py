@@ -2542,6 +2542,25 @@ async def create_chat_completion(
     # the SAME id: that is the only thing tying "this request waited 40s" to "this request was
     # charged 12 credits", and a queue ticket with an id nothing else uses answers no question.
 
+    # ── Wake the backend if it is asleep ─────────────────────────────────────
+    #
+    # THE OTHER HALF OF SPIN-DOWN, AND IT WAS MISSING. `spindown.watch_loop` has been started from
+    # the lifespan since the feature landed, but `ensure_awake` was defined and called from
+    # nowhere -- so arming `SPINDOWN_ENABLED` would have stopped the pod once and left it stopped,
+    # with every subsequent request failing against a backend nothing was going to restart. A
+    # stop-without-start is worse than no spin-down at all: it converts a bill into an outage.
+    #
+    # Here rather than in the lifespan because this is the only place that knows a learner is
+    # waiting. Cheap on every request: `ensure_awake` short-circuits on the TTL-cached probe and
+    # returns without a network call when the backend is ready, and returns immediately when pod
+    # control is not armed -- which is every deployment that does not rent its GPU by the hour.
+    #
+    # DELIBERATELY DOES NOT WAIT for the pod to come up. A cold start is minutes; blocking here
+    # would hold the request open for all of it with nothing to show. The start is requested, and
+    # the queue frame reports `backendState: "waking"` -- the one channel in this system that can
+    # honestly say "this is going to be a while" rather than timing out.
+    await spindown.ensure_awake()
+
     # ── Capacity ─────────────────────────────────────────────────────────────
     #
     # TWO LIMITS, ASKING DIFFERENT QUESTIONS. `_inference_semaphore` bounds concurrency in THIS

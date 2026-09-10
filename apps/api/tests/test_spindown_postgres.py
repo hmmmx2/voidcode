@@ -15,24 +15,25 @@ and the next arriving. A learner reading an answer before asking a follow-up pay
 cold start for the privilege.
 """
 
+import ast
+import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src import config
 from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
-from src.models.gpu_queue import STATE_ADMITTED, STATE_WAITING, GpuQueueTicket, GpuSlot
+from src.models.gpu_queue import STATE_ADMITTED, GpuQueueTicket, GpuSlot
 from src.models.user import User
 from src.services import gpu_wallet_service as wallet
 from src.services import queue_service as queue
 from src.services import runpod_client, spindown
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -101,7 +102,7 @@ async def _age_every_settle(sessionmaker_np, seconds: int) -> None:
         await db.execute(
             update(GpuReservation)
             .where(GpuReservation.settled_at.is_not(None))
-            .values(settled_at=datetime.now(timezone.utc) - timedelta(seconds=seconds))
+            .values(settled_at=datetime.now(UTC) - timedelta(seconds=seconds))
         )
         await db.commit()
 
@@ -212,7 +213,7 @@ class TestWhenItIsActuallyIdle:
             await db.execute(
                 update(GpuSlot)
                 .where(GpuSlot.id == slot)
-                .values(leased_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                .values(leased_until=datetime.now(UTC) - timedelta(seconds=1))
             )
             await db.commit()
 
@@ -278,3 +279,85 @@ class TestItIsInertUnlessArmed:
             "spin-down no longer ships disabled, so a deployment that never opted in could stop "
             "its own backend"
         )
+
+
+class TestBothHalvesAreConnected:
+    """A stop needs a start, and for a long time only the stop was wired.
+
+    `watch_loop` has been started from the lifespan since the feature landed. `ensure_awake` was
+    written at the same time, tested, documented -- and called from nowhere. Arming
+    `SPINDOWN_ENABLED` would therefore have stopped the pod once and left it stopped, with every
+    request after that failing against a backend nothing was going to restart.
+
+    That is strictly worse than having no spin-down: it converts a bill into an outage, and an
+    outage whose cause is a feature working exactly as designed. Neither half is useful alone, so
+    both are pinned here.
+
+    Text and AST scans rather than imports, because `conftest.py` records that tests must never
+    import `main` -- it pulls torch at module scope.
+    """
+
+    MAIN = Path(__file__).resolve().parents[1] / "src" / "main.py"
+
+    def test_the_watcher_is_started_from_the_lifespan(self):
+        source = self.MAIN.read_text(encoding="utf-8")
+        starts = re.findall(r"asyncio\.create_task\(spindown\.watch_loop\(\)\)", source)
+        assert len(starts) == 1, (
+            f"expected exactly one place starting the idle watcher, found {len(starts)} -- "
+            "without it nothing ever stops the pod and SPINDOWN_ENABLED does nothing")
+
+    def test_something_wakes_the_pod_again(self):
+        """THE ONE THAT WAS MISSING.
+
+        Without a caller, `ensure_awake` is dead code and spin-down is a one-way door.
+        """
+        source = self.MAIN.read_text(encoding="utf-8")
+        calls = re.findall(r"await spindown\.ensure_awake\(\)", source)
+        assert len(calls) == 1, (
+            f"expected exactly one call to ensure_awake, found {len(calls)} -- if the pod can be "
+            "stopped and nothing starts it, the first request after an idle period fails forever")
+
+    def test_the_wake_happens_before_the_request_tries_to_use_the_backend(self):
+        """Waking after taking a slot would hold capacity open across a cold start.
+
+        The capacity gate is where a request commits to a slot or a queue position. Asking the pod
+        to come back has to happen before that, or a multi-minute wake is spent holding a resource
+        every other learner is waiting for.
+        """
+        source = self.MAIN.read_text(encoding="utf-8")
+        wake = source.index("await spindown.ensure_awake()")
+        capacity = source.index("# ── Capacity ─")
+        assert wake < capacity, (
+            "ensure_awake runs after the capacity gate; a cold start would be spent holding a slot")
+
+    def test_the_watcher_is_cancelled_at_shutdown(self):
+        """A spin-down decision taken during shutdown reads a system that is idle only because it
+        is stopping."""
+        source = self.MAIN.read_text(encoding="utf-8")
+        assert "_spindown_task.cancel()" in source, (
+            "the idle watcher is no longer cancelled at shutdown")
+
+    def test_waking_does_not_block_the_request(self):
+        """`ensure_awake` must fire and return, not wait for readiness.
+
+        A cold start is minutes. Waiting inside the request holds the connection open for all of
+        it and then times out anyway; the queue frame's `backendState: "waking"` is the channel
+        built for saying so.
+        """
+        spindown_source = (
+            Path(__file__).resolve().parents[1] / "src" / "services" / "spindown.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(spindown_source)
+        function = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "ensure_awake"
+        )
+        waits = [
+            node for node in ast.walk(function)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"sleep", "wait_for"}
+        ]
+        assert not waits, (
+            "ensure_awake now waits for the backend; a cold start would block the request that "
+            "triggered it for minutes")
