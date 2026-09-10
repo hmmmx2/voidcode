@@ -235,26 +235,41 @@ async def forget(db: AsyncSession, ticket_id: uuid.UUID) -> None:
 # ── Waiting ─────────────────────────────────────────────────────────────────────────────────
 
 
-async def wait_for_slot(
+#: What `wait_for_slot_events` yields. A two-tuple rather than a class: there are exactly two
+#: kinds, the consumer branches on the first element, and a class here would be ceremony.
+POSITION = "position"
+ADMITTED = "admitted"
+
+
+async def wait_for_slot_events(
     sessionmaker: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
     request_id: str,
     *,
     max_wait_seconds: float,
     max_depth: int,
-    on_position=None,
     is_disconnected=None,
-) -> tuple[uuid.UUID, int]:
-    """Queue for a slot. Returns `(ticket_id, slot_id)` once admitted.
+):
+    """Queue for a slot, YIELDING progress. `("position", n)` while waiting, then `("admitted", …)`.
+
+    A GENERATOR RATHER THAN A CALLBACK, AND THAT IS THE WHOLE REASON THIS FUNCTION EXISTS.
+
+    The caller that most needs to report queue position is an SSE endpoint, and an SSE endpoint
+    reports by yielding. A callback cannot yield on its caller's behalf -- `on_position` could only
+    push into a queue that the generator then drained, which is two synchronisation primitives and a
+    shutdown ordering problem to deliver a number that was already in hand. Inverting it removes
+    both.
+
+    `wait_for_slot` below is now a thin consumer of this, so the polling, the heartbeat, the
+    disconnect check and the abandonment all have exactly one implementation.
 
     TAKES A SESSIONMAKER, NOT A SESSION, AND THAT IS THE LOAD-BEARING DETAIL. A session held across
     the sleeps below would hold a database connection for the whole wait. There are about fourteen
     spare fleet-wide, so twenty waiters would exhaust them and the incident would read as a database
     problem rather than as a queue that got popular. Each tick opens one, runs a statement, commits.
 
-    `on_position` is awaited with the current position each tick, which is how a streaming caller is
-    told where it is. `is_disconnected` is awaited each tick too: a caller who closed the tab must
-    not be admitted, because admitting them spends a slot -- the scarcest thing here -- on nobody.
+    `is_disconnected` is awaited each tick: a caller who closed the tab must not be admitted,
+    because admitting them spends a slot -- the scarcest thing here -- on nobody.
     """
     async with sessionmaker() as db:
         ticket = await enqueue(db, user_id, request_id, max_depth=max_depth)
@@ -273,24 +288,22 @@ async def wait_for_slot(
                 slot_id = await try_claim(db, ticket_id)
                 if slot_id is not None:
                     await _mark(db, ticket_id, STATE_ADMITTED)
-                    return ticket_id, slot_id
+                    yield (ADMITTED, (ticket_id, slot_id))
+                    return
 
-                # Same short-lived session: report where we are, then let the connection go.
-                if on_position is not None:
-                    ahead = int(
-                        (
-                            await db.execute(
-                                select(func.count())
-                                .select_from(GpuQueueTicket)
-                                .where(
-                                    GpuQueueTicket.state == STATE_WAITING,
-                                    GpuQueueTicket.created_at < created_at,
-                                )
+                # Same short-lived session: work out where we are, then let the connection go.
+                ahead = int(
+                    (
+                        await db.execute(
+                            select(func.count())
+                            .select_from(GpuQueueTicket)
+                            .where(
+                                GpuQueueTicket.state == STATE_WAITING,
+                                GpuQueueTicket.created_at < created_at,
                             )
-                        ).scalar_one()
-                    )
-                    await on_position(ahead + 1)
-
+                        )
+                    ).scalar_one()
+                )
                 await db.execute(
                     update(GpuQueueTicket)
                     .where(GpuQueueTicket.id == ticket_id)
@@ -298,17 +311,56 @@ async def wait_for_slot(
                 )
                 await db.commit()
 
+            # Yielded OUTSIDE the `async with`, so the connection is back in the pool before the
+            # consumer does whatever it does with the number -- which, for the SSE path, is a write
+            # to a socket that may block on a slow client. Holding a database connection across
+            # that is how a slow reader becomes a database incident.
+            yield (POSITION, ahead + 1)
+
             if asyncio.get_running_loop().time() >= deadline:
                 async with sessionmaker() as db:
                     await abandon(db, ticket_id)
                 raise QueueTimeout(f"no slot became free within {max_wait_seconds:.0f}s")
 
             await asyncio.sleep(POLL_SECONDS)
-    except asyncio.CancelledError:
-        # A cancelled wait must not leave a ticket counted in everybody else's position.
+    except (asyncio.CancelledError, GeneratorExit):
+        # A cancelled or abandoned wait must not leave a ticket counted in everybody else's
+        # position. GeneratorExit matters as much as CancelledError here: a consumer that stops
+        # iterating -- a client that hung up mid-queue -- closes this generator rather than
+        # cancelling it, and the ticket would otherwise linger until its heartbeat went stale.
         async with sessionmaker() as db:
             await abandon(db, ticket_id)
         raise
+
+
+async def wait_for_slot(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+    request_id: str,
+    *,
+    max_wait_seconds: float,
+    max_depth: int,
+    on_position=None,
+    is_disconnected=None,
+) -> tuple[uuid.UUID, int]:
+    """Queue for a slot and return `(ticket_id, slot_id)`. A consumer of the generator above.
+
+    Kept for callers that do not stream and only want the result -- notably `acquire_lease`, which
+    the non-streaming path uses. The polling logic lives in one place; this only decides what to do
+    with each event.
+    """
+    events = wait_for_slot_events(
+        sessionmaker, user_id, request_id,
+        max_wait_seconds=max_wait_seconds,
+        max_depth=max_depth,
+        is_disconnected=is_disconnected,
+    )
+    async for kind, payload in events:
+        if kind == ADMITTED:
+            return payload
+        if on_position is not None:
+            await on_position(payload)
+    raise QueueTimeout("the queue ended without admitting or refusing")  # pragma: no cover
 
 
 async def renew_forever(
@@ -421,6 +473,60 @@ async def acquire_lease(
         max_depth=max_depth,
         is_disconnected=is_disconnected,
     )
+    renewer = asyncio.get_running_loop().create_task(
+        renew_forever(sessionmaker, slot_id, ticket_id)
+    )
+    return SlotLease(ticket_id, slot_id, renewer)
+
+
+async def try_acquire_lease(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+    request_id: str,
+) -> SlotLease | None:
+    """Take a slot IF one is free right now. None means every slot is busy; never waits.
+
+    THE POINT IS TO KEEP THE COMMON CASE ON THE UNCHANGED CODE PATH.
+
+    Almost every request arrives to a free slot. Making all of them go through the streaming
+    queue machinery -- headers first, preparation inside a generator, refusals as in-band events --
+    would put the rare path's complexity and its different error semantics onto the common one, for
+    no benefit to anybody who never waits.
+
+    So the endpoint asks here first. A `SlotLease` means proceed exactly as before, with prompt
+    preparation and its 402s happening before any bytes are sent. `None` means the caller has to
+    decide how to wait, which for a streaming request means telling the learner about it.
+
+    The ticket is created and then removed when the claim fails. That costs an insert and a delete
+    on the miss, and it is what lets the claim be the same single guarded statement in both cases
+    rather than a second, subtly different one.
+    """
+    async with sessionmaker() as db:
+        # No depth limit: this is not joining a queue, it is asking for a slot that is free now.
+        ticket = await enqueue(db, user_id, request_id, max_depth=2**31)
+        ticket_id = ticket.id
+
+    async with sessionmaker() as db:
+        slot_id = await try_claim(db, ticket_id)
+        if slot_id is None:
+            await forget(db, ticket_id)
+            return None
+        await _mark(db, ticket_id, STATE_ADMITTED)
+
+    renewer = asyncio.get_running_loop().create_task(
+        renew_forever(sessionmaker, slot_id, ticket_id)
+    )
+    return SlotLease(ticket_id, slot_id, renewer)
+
+
+def lease_from_admission(
+    sessionmaker: async_sessionmaker[AsyncSession], ticket_id: uuid.UUID, slot_id: int
+) -> SlotLease:
+    """Wrap an already-admitted ticket in a lease, starting its renewal.
+
+    For the streaming path, which gets its admission from `wait_for_slot_events` rather than from
+    `acquire_lease`, and still needs the renewal running for the length of the generation.
+    """
     renewer = asyncio.get_running_loop().create_task(
         renew_forever(sessionmaker, slot_id, ticket_id)
     )

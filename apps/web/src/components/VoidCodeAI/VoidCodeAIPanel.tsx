@@ -1026,6 +1026,17 @@ export default function VoidCodeAIPanel({
   // unmount, new-chat, or re-entrant handleSend calls.
   const abortControllerRef = useRef<AbortController | null>(null);
   const [autoSubmitStatus, setAutoSubmitStatus] = useState<string | null>(null);
+  /**
+   * Where this request sits in the GPU queue, or null when it is not waiting.
+   *
+   * Only ever set from a `type: "queue"` frame, and cleared the moment any answer content
+   * arrives — the position stops being true at that point, and a stale "3rd in line" sitting above
+   * a streaming answer would read as a fault rather than as history.
+   */
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  // Mirrors `queuePosition` for the streaming loop, which runs far faster than React re-renders
+  // and must not read a value that is one render behind. Same pattern as `streamingContentRef`.
+  const queuePositionRef = useRef<number | null>(null);
   const [currentReviewTemplate, setCurrentReviewTemplate] =
     useState<ReviewTemplate | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1457,6 +1468,19 @@ export default function VoidCodeAIPanel({
               continue;
             }
 
+            // ── Queue position ───────────────────────────────────────
+            // The request is waiting for a GPU slot. The frame is a valid OpenAI chunk with an
+            // empty delta, so it would fall through harmlessly to the content branch below and
+            // render nothing; this is what turns it into something the learner can see.
+            if (parsed.type === "queue") {
+              const q = parsed.queue as { position?: number } | undefined;
+              if (typeof q?.position === "number") {
+                queuePositionRef.current = q.position;
+                setQueuePosition(q.position);
+              }
+              continue;
+            }
+
             // ── Token usage event ────────────────────────────────────
             if (parsed.type === "usage") {
               const u = parsed.usage as Record<string, number>;
@@ -1474,6 +1498,13 @@ export default function VoidCodeAIPanel({
             ).choices?.[0]?.delta?.content;
 
             if (delta) {
+              // The wait is over the instant the first token lands. Clearing here rather than on
+              // stream completion means the queue line never overlaps a visible answer.
+              if (queuePositionRef.current !== null) {
+                queuePositionRef.current = null;
+                setQueuePosition(null);
+              }
+
               // Content accumulates in the ref instantly (zero React overhead).
               streamingContentRef.current += delta;
 
@@ -1559,6 +1590,11 @@ export default function VoidCodeAIPanel({
       setIsLoading(false);
       setIsStreaming(false);
       setAutoSubmitStatus(null);
+      // Cleared here as well as on the first token, because a request can leave the queue without
+      // ever producing one -- a queue timeout, a refusal delivered in-band, a dropped connection.
+      // Without this the position line survives the request that owned it.
+      queuePositionRef.current = null;
+      setQueuePosition(null);
     }
   }, [
     input,
@@ -1775,7 +1811,23 @@ export default function VoidCodeAIPanel({
                   <ReviewTemplateBlock template={currentReviewTemplate} />
                 </div>
               )}
-            {isLoading && !autoSubmitStatus && !isStreaming && (
+            {queuePosition !== null && (
+              // Replaces the "Thinking..." dots while queued, rather than sitting beside them:
+              // two simultaneous status lines saying different things is worse than either.
+              <div className="flex items-center gap-2 text-ink-3">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-ink-3 rounded-full animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 bg-ink-3 rounded-full animate-bounce motion-reduce:animate-none [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 bg-ink-3 rounded-full animate-bounce motion-reduce:animate-none [animation-delay:300ms]" />
+                </div>
+                <span className="text-xs">
+                  {queuePosition <= 1
+                    ? "Waiting for a free GPU slot..."
+                    : `Waiting for a free GPU slot — ${queuePosition - 1} ahead of you...`}
+                </span>
+              </div>
+            )}
+            {isLoading && !autoSubmitStatus && !isStreaming && queuePosition === null && (
               <div className="flex items-center gap-2 text-ink-3">
                 <div className="flex gap-1">
                   <span className="w-1.5 h-1.5 bg-ink-3 rounded-full animate-bounce motion-reduce:animate-none [animation-delay:0ms]" />

@@ -122,21 +122,44 @@ class TestEveryReleaseIsAlsoASettle:
 
 
 class TestTheClockStartsAfterTheSlotIsHeld:
-    def test_metering_begins_after_acquire_not_before(self):
-        """A request must never pay for the time it spent waiting for a slot.
+    """A request must never pay for the time it spent waiting for a slot.
 
-        Queue wait is a throughput problem. If `begin` moved above `acquire`, a busy pod would start
-        charging learners for its own contention, and the number would still look plausible.
-        """
-        endpoint = _function("create_chat_completion")
-        body = ast.get_source_segment(SOURCE, endpoint) or ""
+    Queue wait is a throughput problem. If the meter started above the acquire, a busy pod would
+    charge learners for its own contention and the number would still look plausible.
+
+    THERE ARE NOW TWO PLACES THAT TAKE A SLOT AND THEN PREPARE, and both are checked. The ordinary
+    path does it in `create_chat_completion`; a request that had to queue does it inside
+    `_queued_stream`, after the wait it reported to the caller. A guard that only knew about the
+    first would have gone quiet about half the paths the moment the queue was switched on.
+    """
+
+    @pytest.mark.parametrize("holder", ["create_chat_completion", "_queued_stream"])
+    def test_metering_begins_after_acquire_not_before(self, holder: str):
+        body = ast.get_source_segment(SOURCE, _function(holder)) or ""
         acquire = _sole_offset(
-            body, r"_inference_semaphore\.acquire\(\)", "the semaphore acquire"
+            body, r"_inference_semaphore\.acquire\(\)", f"the semaphore acquire in {holder}"
         )
-        begin = _sole_offset(body, r"_begin_metering\(", "the metering start")
-        assert acquire < begin, (
-            "metering starts before the semaphore is acquired, so queue wait would be billed"
+        prepare = _sole_offset(
+            body, r"_prepare_for_generation\(", f"the preparation call in {holder}"
         )
+        assert acquire < prepare, (
+            f"{holder} prepares before acquiring a permit, so the meter would start during the "
+            "wait and queue time would be billed"
+        )
+
+    def test_the_meter_starts_inside_preparation_and_nowhere_else(self):
+        """`_begin_metering` moved into the helper; it must not reappear beside it.
+
+        Two call sites would mean two holds for one request, and the second would be invisible until
+        somebody read a ledger and found a learner charged twice for one answer.
+        """
+        calls = re.findall(r"_begin_metering\(", SOURCE)
+        assert len(calls) == 2, (
+            f"expected exactly two occurrences of `_begin_metering(` -- its definition and the one "
+            f"call in `_prepare_for_generation` -- found {len(calls)}"
+        )
+        helper = ast.get_source_segment(SOURCE, _function("_prepare_for_generation")) or ""
+        assert "_begin_metering(" in helper
 
 
 class TestNoSecondGeneratorLayer:
@@ -208,15 +231,94 @@ class TestTheIdentityGate:
 
 
 class TestRefusalsHappenBeforeTheGpuIsTouched:
-    @pytest.mark.parametrize("marker", ["ratelimit.check_ip", "_begin_metering("])
-    def test_the_refusal_precedes_generation(self, marker: str):
-        """402 and 429 must both land before a permit is spent and before any generation starts."""
-        endpoint = _function("create_chat_completion")
-        body = ast.get_source_segment(SOURCE, endpoint) or ""
-        refusal = _sole_offset(body, re.escape(marker), f"the {marker} guard")
-        generation = _sole_offset(body, r"prepare_messages_hybrid\(", "the prompt build")
-        assert refusal < generation, (
-            f"{marker} runs after generation starts, so a refused request has already spent GPU"
+    """402 and 429 must both land before a permit is spent and before any generation starts.
+
+    The two refusals sit in different functions now, so they are checked separately rather than by
+    one parametrised marker. `prepare_messages_hybrid` moved into `_prepare_for_generation` along
+    with the metering call that must precede it.
+    """
+
+    def test_the_rate_limit_runs_before_anything_expensive(self):
+        """Ahead of the capacity gate, the queue and preparation alike.
+
+        A flood that got as far as taking tickets would fill the queue with requests that were
+        going to be refused anyway, pushing real learners behind them.
+        """
+        body = ast.get_source_segment(SOURCE, _function("create_chat_completion")) or ""
+        limit = _sole_offset(body, r"ratelimit\.check_ip", "the rate limit")
+        for later, label in (
+            (r"queue_service\.try_acquire_lease\(", "the slot claim"),
+            (r"_prepare_for_generation\(", "the preparation call"),
+        ):
+            assert limit < _sole_offset(body, later, label), (
+                f"the rate limit runs after {label}"
+            )
+
+    def test_credit_is_checked_before_the_prompt_is_built(self):
+        """Inside the helper both now live in: the hold, then the prompt.
+
+        Building the prompt first would mean a learner with no credit still costs a retrieval and a
+        template render before being told no.
+        """
+        body = ast.get_source_segment(SOURCE, _function("_prepare_for_generation")) or ""
+        meter = _sole_offset(body, r"_begin_metering\(", "the metering start")
+        prompt = _sole_offset(body, r"prepare_messages_hybrid\(", "the prompt build")
+        assert meter < prompt, (
+            "the prompt is built before credit is checked, so a refused request has already worked"
+        )
+
+    def test_the_queued_path_refuses_in_band_rather_than_raising(self):
+        """Once headers are sent there is no status code left, and this is where that is honoured.
+
+        A bare `raise HTTPException` inside `_queued_stream` would surface as a torn connection with
+        no explanation, because the 200 has already gone out. Every refusal there has to become a
+        frame.
+        """
+        body = ast.get_source_segment(SOURCE, _function("_queued_stream")) or ""
+        assert "raise HTTPException" not in body, (
+            "`_queued_stream` raises an HTTPException after headers are already sent; it must "
+            "yield `_stream_error(...)` instead"
+        )
+        assert "_stream_error(" in body
+
+
+class TestTheQueuedPathAddsNoSecondWrapper:
+    """The failure this file already guards, restated for the path that was added after it.
+
+    `main.py` records an API that died silently after 20-60 requests when a discarded async
+    generator wrapper's `finally` never ran and the upstream stream leaked. `_queued_stream` had
+    every reason to be written as a wrapper around `_semaphore_wrapped` and is deliberately not:
+    it delegates with `async for` and carries the single `finally` itself.
+    """
+
+    def test_the_queued_stream_does_not_wrap_the_semaphore_wrapper(self):
+        body = ast.get_source_segment(SOURCE, _function("_queued_stream")) or ""
+        assert "_semaphore_wrapped(" not in body, (
+            "`_queued_stream` wraps `_semaphore_wrapped`, which is two generator layers around one "
+            "stream -- the shape that leaked upstream connections until an API stopped answering"
+        )
+
+    def test_it_carries_exactly_one_finally(self):
+        fn = _function("_queued_stream")
+        finallys = [
+            node for node in ast.walk(fn)
+            if isinstance(node, ast.Try) and node.finalbody
+        ]
+        assert len(finallys) == 1, (
+            f"`_queued_stream` has {len(finallys)} `finally` blocks. One layer, one `finally`, one "
+            "invariant -- a second is a second place for the release to be got wrong."
+        )
+
+    def test_it_only_releases_what_it_took(self):
+        """Releasing a permit that was never acquired raises the count above the cap.
+
+        That is a capacity leak which gets worse with every timed-out request and never announces
+        itself: the pod simply starts accepting more concurrent work than it was sized for.
+        """
+        body = ast.get_source_segment(SOURCE, _function("_queued_stream")) or ""
+        assert "if acquired_semaphore:" in body, (
+            "`_queued_stream` releases unconditionally; a request that timed out in the queue "
+            "never acquired the permit it would be handing back"
         )
 
 

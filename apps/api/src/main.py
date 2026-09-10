@@ -32,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from threading import Thread
-from typing import Any
+from typing import NamedTuple, Any
 
 # torch / transformers are only available in the HF and vLLM paths.
 # The SGLang path runs in a CPU-only container — guard all heavy imports.
@@ -65,7 +65,7 @@ from pydantic import BaseModel, Field
 # In the vLLM/Docker path, LoRA is already merged into the AWQ weights at
 # quantisation time, so peft is never imported and does not need to be installed.
 # Import is deferred to load_model() to keep the vLLM container dependency-free.
-from . import config, identity, knowledge_cache, metering, multimodal, ratelimit
+from . import config, identity, knowledge_cache, metering, metrics, multimodal, ratelimit
 from .database import AsyncSessionLocal
 from .services import (
     backend_registry,
@@ -1837,8 +1837,15 @@ async def root():
 
 
 @app.get("/metrics")
-async def metrics():
+async def prometheus_metrics():
     """Prometheus scrape endpoint. Spec §6.2 — there was none.
+
+    NAMED `prometheus_metrics`, NOT `metrics`, AND THAT IS NOT COSMETIC. A module-level `async def
+    metrics()` binds the name `metrics` for the entire module, shadowing `from . import metrics`
+    everywhere below it. This function already worked around its own shadow with a local import;
+    what it could not do was stop code added later from writing `metrics.record_...` and getting an
+    AttributeError on a route handler. That is exactly what happened when the queue metrics landed,
+    and no linter caught it -- the name resolves, it is just bound to the wrong thing.
 
     Deliberately NOT behind the identity dependency. A scraper is not a user, it has no session, and
     requiring one would mean either giving Prometheus a credential or giving up on scraping. The
@@ -1847,12 +1854,10 @@ async def metrics():
     """
     from fastapi import Response
 
-    from . import metrics as metrics_module
-
     # Read the live counter out of identity.py rather than mirroring it. Two counters for one fact
     # drift, and the one on the dashboard would be the one nobody updated.
-    metrics_module.set_enforcement(config.INTERNAL_AUTH_ENFORCE)
-    body, content_type = metrics_module.render()
+    metrics.set_enforcement(config.INTERNAL_AUTH_ENFORCE)
+    body, content_type = metrics.render()
     return Response(content=body, media_type=content_type)
 
 
@@ -1966,6 +1971,322 @@ async def list_models():
     }
 
 
+
+class _Prepared(NamedTuple):
+    """Everything decided between taking a slot and asking the model for tokens."""
+
+    meter: "metering.Meter | None"
+    messages: list
+    detected_mode: str
+    latest_user_message: str
+    located_issues: list[dict] | None
+
+
+async def _prepare_for_generation(
+    request: "ChatCompletionRequest", caller: identity.Caller, request_id: str
+) -> _Prepared:
+    """Take the hold, build the prompt, run stage-A localisation. Raises `HTTPException`.
+
+    LIFTED OUT OF THE ENDPOINT SO IT CAN RUN IN TWO PLACES, and the two places differ in exactly one
+    way that matters: whether response headers have already been sent.
+
+    On the ordinary path this runs BEFORE headers, so a 402 for insufficient credit or a 401 for an
+    unusable identity is a real HTTP status the client sees as one. On the queued path it runs after
+    headers -- there is no way to report a queue position without sending them first -- so the same
+    exception has to become an in-band error event on a 200 response. That is a genuine loss and it
+    is why the ordinary path was kept rather than routing everything through the queue.
+
+    It does NOT release the slot on failure. The caller owns the slot and knows how to give it back;
+    a helper that released a lease it was handed would be releasing something it does not own.
+    """
+    meter = None
+    try:
+        if config.GPU_METERING_ENABLED:
+            meter = await _begin_metering(caller, request_id=request_id)
+        messages, detected_mode = prepare_messages_hybrid(request.messages)
+    except HTTPException:
+        # Already the right status -- 401 for an unusable identity, 402 for insufficient credit.
+        # THE HOLD IS VOIDED HERE, because this function is what took it. If metering succeeded and
+        # the prompt build then threw, the learner has credit reserved against a request that will
+        # never run; the caller cannot void it because it never received the meter. Ownership is
+        # split cleanly: this owns the meter it created, the caller owns the slot it was given.
+        if meter is not None:
+            meter.finish(consumed=False)
+        raise
+    except Exception as _prep_err:
+        if meter is not None:
+            meter.finish(consumed=False)
+        logger.exception(f"[{request_id}] prepare_messages_hybrid failed: {_prep_err}")
+        raise HTTPException(
+            status_code=500, detail=f"Request preparation failed: {_prep_err!s}"
+        ) from _prep_err
+
+    # Log request. text_of() again: slicing [:60] on a parts list would raise here, in the logging
+    # line, long after the real work — an unhelpful place to discover the request was multimodal.
+    user_messages = [msg for msg in request.messages if msg.role == "user"]
+    latest_user_message = multimodal.text_of(user_messages[-1].content) if user_messages else ""
+    logger.info(
+        f"[{request_id}] Mode: {detected_mode.upper()} | Query: {latest_user_message[:60]}..."
+    )
+
+    # ── Two-stage debug (stage A) ────────────────────────────────────────────
+    # First turn only. A later turn is an escalation, where naming the line is the point, and
+    # re-localising would also discard the conversation the student has been having.
+    _reasoning_visible_to_caller.set(bool(request.include_reasoning))
+
+    located_issues: list[dict] | None = None
+    if (USE_TWO_STAGE_DEBUG and USE_SGLANG and detected_mode == "debug"
+            and len(user_messages) <= 1):
+        located_issues = await _localise_bugs(latest_user_message, request_id)
+        if located_issues:
+            # Replace the system prompt: stage B is handed location and symptom and NOT the fix.
+            # Grounding is not reapplied -- `debug` is not in GROUNDED_MODES, so there was none.
+            messages = [{"role": "system", "content": _hint_system_prompt(located_issues)}] + [
+                m for m in messages if m.get("role") != "system"]
+
+    return _Prepared(meter, messages, detected_mode, latest_user_message, located_issues)
+
+
+def _stream_for(request: "ChatCompletionRequest", request_id: str, prepared: _Prepared):
+    """The backend's token generator for this request, and the headers that go with it.
+
+    Returns the INNER generator, unwrapped. Whoever calls this owns the slot and is responsible for
+    putting exactly one `finally` around the iteration -- `_semaphore_wrapped` on the ordinary path,
+    `_queued_stream`'s own `finally` on the queued one. This function deliberately does not wrap,
+    because a second wrapper layer is the failure this file documents at length: a discarded
+    wrapper never drives the inner generator to completion, its `finally` never runs, and the
+    upstream stream leaks. One layer, one `finally`, one invariant.
+    """
+    gen_cfg = get_generation_config(prepared.detected_mode)
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+
+    if USE_VLLM:
+        # vLLM takes a plain string prompt (not token IDs). apply_chat_template converts the
+        # messages list to the Qwen chat format.
+        from .vllm_engine import generate_stream_vllm
+        actual_max_tokens = min(request.max_tokens, gen_cfg["max_new_tokens"])
+        actual_temp = (
+            request.temperature if request.temperature is not None else gen_cfg["temperature"]
+        )
+        vllm_prompt = tokenizer.apply_chat_template(
+            prepared.messages, tokenize=False, add_generation_prompt=True
+        )
+        return generate_stream_vllm(
+            prompt=vllm_prompt,
+            mode=prepared.detected_mode,
+            max_new_tokens=actual_max_tokens,
+            temperature=actual_temp,
+            top_p=request.top_p,
+            repetition_penalty=request.repetition_penalty,
+            request_id=request_id,
+        ), headers
+
+    if USE_SGLANG:
+        actual_max_tokens = token_budget(
+            prepared.detected_mode, prepared.latest_user_message, request.max_tokens
+        )
+        actual_temp = (
+            request.temperature if request.temperature is not None else gen_cfg["temperature"]
+        )
+        actual_top_p = (
+            request.top_p if request.top_p is not None else gen_cfg.get("top_p", 0.95)
+        )
+
+        # Stage A's diagnosis travels as a HEADER, not as a stream frame.
+        #
+        # It was briefly prepended by wrapping the generator in another async generator, and that
+        # wrapper is the only suspect for an API that died silently after 20-60 requests -- three
+        # times on this arm, while the one run with the flag off survived. A discarded wrapper never
+        # drives the inner generator to completion, so its `finally` never runs and the underlying
+        # SGLang stream is left open.
+        #
+        # A header avoids the question entirely: it is sent before the body, needs no extra
+        # generator, and cannot be mixed into the answer text under any failure mode.
+        #
+        # NOTE FOR THE QUEUED PATH: headers are already gone by the time preparation runs there, so
+        # a queued request carries no diagnosis header. That is a real asymmetry and it is recorded
+        # rather than papered over -- see `_queued_stream`.
+        if request.include_diagnosis and prepared.located_issues is not None:
+            headers["X-VoidCode-Diagnosis"] = json.dumps(prepared.located_issues)
+
+        return generate_stream_sglang(
+            messages=prepared.messages,
+            mode=prepared.detected_mode,
+            max_new_tokens=actual_max_tokens,
+            temperature=actual_temp,
+            top_p=actual_top_p,
+            request_id=request_id,
+            top_k=gen_cfg.get("top_k", 20),
+            min_p=gen_cfg.get("min_p", 0.0),
+            presence_penalty=gen_cfg.get("presence_penalty", 0.0),
+            thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
+            enable_thinking=gen_cfg.get("enable_thinking", True),
+        ), headers
+
+    # ── HF streaming path (USE_VLLM=false, USE_SGLANG=false) ──────────
+    return generate_stream(
+        messages=prepared.messages,
+        mode=prepared.detected_mode,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        repetition_penalty=request.repetition_penalty,
+        request_id=request_id,
+    ), headers
+
+
+
+
+def _queue_frame(request_id: str, position: int, backend_state: str) -> str:
+    """One queue update, shaped so that every reader does something sensible with it.
+
+    THREE AUDIENCES, ONE FRAME.
+
+      * **The proxies.** The leading SSE comment is what keeps the connection alive. `nginx.conf`'s
+        `proxy_read_timeout` is a gap-BETWEEN-READS timeout, so anything written resets it -- which
+        is exactly why a heartbeating stream has no 300s ceiling while a silent wait would hit one.
+        Every conformant SSE parser discards a comment line, so it costs nothing to send.
+      * **A strict OpenAI client**, such as the desktop app, which points at this endpoint with a
+        hardcoded base URL. It sees a valid `chat.completion.chunk` whose delta is empty, renders
+        nothing, and ignores the extra keys. That is why this is not a bespoke event shape.
+      * **Our own web client**, which branches on `type` -- the convention already used by the
+        `thinking` and `usage` frames this endpoint emits.
+
+    The web client's loop is worth knowing when changing this: it skips anything not starting with
+    `data: `, silently skips unparseable JSON, and guards content on `if (delta)`. An empty delta is
+    therefore a no-op there today, before it learns what a queue frame is.
+    """
+    chunk = {
+        "id": request_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": SGLANG_MODEL_NAME if USE_SGLANG else BASE_MODEL_ID,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+        "type": "queue",
+        "queue": {
+            "position": position,
+            "ahead": max(position - 1, 0),
+            "backendState": backend_state,
+        },
+    }
+    return f": queue position {position}\n\n" + f"data: {json.dumps(chunk)}\n\n"
+
+
+def _stream_error(message: str, kind: str) -> str:
+    """A refusal delivered inside a 200 response, because the headers are already gone.
+
+    This is the price of reporting queue position at all, and it is worth stating plainly: once the
+    response has started there is no status code left to send. A learner who runs out of credit
+    while queued gets a 200 whose body says so, rather than a 402. The ordinary path -- every
+    request that does not wait -- still gets the real status, which is why it was kept.
+    """
+    return (
+        f"data: {json.dumps({'error': {'message': message, 'type': kind}})}\n\n"
+        "data: [DONE]\n\n"
+    )
+
+
+async def _queued_stream(
+    request: "ChatCompletionRequest",
+    caller: identity.Caller,
+    http_request: Request,
+    request_id: str,
+):
+    """Wait for a slot in view of the learner, then prepare and generate. One generator, one finally.
+
+    WHY THIS EXISTS AT ALL. Response headers cannot be sent twice, so anything that reports progress
+    has to send them first -- which means everything after that point, including refusals that used
+    to be HTTP statuses, happens inside the body. That is a real cost, paid only by requests that
+    actually have to wait.
+
+    WHY IT IS ONE GENERATOR AND NOT A WRAPPER AROUND `_semaphore_wrapped`. This file records an API
+    that died silently after 20-60 requests when a discarded async-generator wrapper's `finally`
+    never ran and the upstream stream leaked. So this does not wrap: it delegates with `async for`
+    and carries the single `finally` itself, exactly as `_semaphore_wrapped` does for the ordinary
+    path. One layer, one `finally`, one invariant.
+
+    WHAT A QUEUED REQUEST DOES NOT GET. The stage-A diagnosis travels as a response header, and by
+    the time preparation runs here the headers are long gone. A queued debug request therefore
+    carries no `X-VoidCode-Diagnosis`. Left as an asymmetry rather than moved in-band, because
+    moving it would change the frame shape for every client to serve the rarer path.
+    """
+    lease = None
+    prepared = None
+    acquired_semaphore = False
+    consumed = False
+    queued_at = time.monotonic()
+
+    try:
+        # ── The wait, in view of the caller ──────────────────────────────────────────────
+        async for kind, payload in queue_service.wait_for_slot_events(
+            AsyncSessionLocal,
+            caller.user_id,
+            request_id,
+            max_wait_seconds=config.GPU_QUEUE_MAX_WAIT_SECONDS,
+            max_depth=config.GPU_QUEUE_MAX_DEPTH,
+            is_disconnected=http_request.is_disconnected,
+        ):
+            if kind == queue_service.POSITION:
+                state = (
+                    await backend_registry.probe() if USE_SGLANG else backend_registry.READY
+                )
+                yield _queue_frame(request_id, payload, state)
+            else:
+                ticket_id, slot_id = payload
+                lease = queue_service.lease_from_admission(AsyncSessionLocal, ticket_id, slot_id)
+
+        if lease is None:  # pragma: no cover — the generator raises rather than ending
+            yield _stream_error("The queue closed without admitting this request.", "queue_error")
+            return
+
+        metrics.observe_queue_wait(time.monotonic() - queued_at)
+
+        # ── Admitted. Everything from here is what the ordinary path does before headers ──
+        await _inference_semaphore.acquire()
+        acquired_semaphore = True
+
+        prepared = await _prepare_for_generation(request, caller, request_id)
+        inner, _headers = _stream_for(request, request_id, prepared)
+
+        consumed = True
+        async for chunk in inner:
+            yield chunk
+
+    except queue_service.QueueFull:
+        metrics.record_queue_abandoned("full")
+        yield _stream_error(
+            "Too many requests are waiting. Please try again shortly.", "queue_full"
+        )
+    except queue_service.QueueTimeout:
+        metrics.record_queue_abandoned("timeout")
+        yield _stream_error(
+            "No serving slot became free in time. Please try again.", "queue_timeout"
+        )
+    except HTTPException as exc:
+        # A 402 or 401 that arrived too late to be a status code. The detail is already written for
+        # a learner to read -- `_begin_metering` phrases it that way -- so it is passed through.
+        detail = exc.detail
+        if isinstance(detail, dict):
+            detail = detail.get("message", str(detail))
+        yield _stream_error(str(detail), f"http_{exc.status_code}")
+    except Exception as exc:
+        logger.exception(f"[{request_id}] queued stream failed: {exc}")
+        yield _stream_error("The request could not be completed.", "internal_error")
+    finally:
+        # The one `finally`. Releases only what was actually taken: releasing a semaphore that was
+        # never acquired raises its permit count above the cap, which is a capacity leak that gets
+        # worse with every timed-out request rather than announcing itself.
+        if acquired_semaphore:
+            _release_slot(prepared.meter if prepared else None, consumed=consumed, lease=lease)
+        elif lease is not None:
+            lease.release_in_background(AsyncSessionLocal)
+
+
+
 @app.post("/v1/chat/completions")
 async def create_chat_completion(
     request: ChatCompletionRequest,
@@ -2035,31 +2356,33 @@ async def create_chat_completion(
                         headers={"Retry-After": "5"},
                     )
         else:
-            _queued_at = time.monotonic()
-            try:
-                slot_lease = await queue_service.acquire_lease(
-                    AsyncSessionLocal,
-                    caller.user_id,
-                    request_id,
-                    max_wait_seconds=config.GPU_QUEUE_MAX_WAIT_SECONDS,
-                    max_depth=config.GPU_QUEUE_MAX_DEPTH,
-                    is_disconnected=http_request.is_disconnected,
+            # ASK FOR A SLOT WITHOUT WAITING, and branch on the answer. This is what keeps the
+            # common case on the code path it has always been on.
+            #
+            # A slot is free almost every time. Those requests carry on exactly as before: prompt
+            # preparation happens BEFORE any bytes are sent, so a 402 for insufficient credit is a
+            # real 402 and the stage-A diagnosis still travels as a response header.
+            #
+            # When no slot is free the trade reverses. Reporting a queue position means sending
+            # headers first, which means preparation and its refusals move inside the body. That is
+            # a genuine loss -- a late 402 becomes an error event on a 200 -- and it is paid only
+            # by requests that actually wait, in exchange for the learner seeing that they are third
+            # in line rather than staring at a blank panel for two minutes.
+            slot_lease = await queue_service.try_acquire_lease(
+                AsyncSessionLocal, caller.user_id, request_id
+            )
+            if slot_lease is None:
+                return StreamingResponse(
+                    _queued_stream(request, caller, http_request, request_id),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        # Without this nginx buffers the response and the queue frames arrive in
+                        # one lump when the answer does, which defeats the entire point.
+                        "X-Accel-Buffering": "no",
+                    },
                 )
-            except queue_service.QueueFull as exc:
-                metrics.record_queue_abandoned("full")
-                raise HTTPException(
-                    status_code=429,
-                    detail="Too many requests are waiting. Please retry shortly.",
-                    headers={"Retry-After": "10"},
-                ) from exc
-            except queue_service.QueueTimeout as exc:
-                metrics.record_queue_abandoned("timeout")
-                raise HTTPException(
-                    status_code=429,
-                    detail="No serving slot became free in time. Please retry.",
-                    headers={"Retry-After": "15"},
-                ) from exc
-            metrics.observe_queue_wait(time.monotonic() - _queued_at)
     else:
         # Unchanged behaviour while the switch is off: fast feedback rather than silent queuing.
         if _inference_semaphore.locked():
@@ -2080,157 +2403,36 @@ async def create_chat_completion(
 
     # The clock starts HERE, after acquire() returned, so a request never pays for the time it
     # spent waiting for a slot. Queue wait is a throughput problem, not a learner's cost.
-    meter = None
-
-    # Prepare messages with hybrid architecture (mode detection + system prompt injection)
-    # Guard separately: if this throws after acquire(), the permit must be released
-    # or it leaks forever (no outer try/finally covers this section).
-    #
-    # The reservation joins this block rather than getting one of its own: the block already exists
-    # and already releases the permit on every failure, and extending it is strictly less risky than
-    # introducing a second acquire-then-guard.
+    # Preparation, which is where the hold is taken and the prompt is built. Extracted so the
+    # queued path can run the identical steps from inside its generator -- see
+    # `_prepare_for_generation`, which owns the meter it creates and voids it if it throws.
     try:
-        if config.GPU_METERING_ENABLED:
-            meter = await _begin_metering(caller, request_id=request_id)
-        messages, detected_mode = prepare_messages_hybrid(request.messages)
+        prepared = await _prepare_for_generation(request, caller, request_id)
     except HTTPException:
-        # Already the right status -- 401 for an unusable identity, 402 for insufficient credit.
-        # Nothing was consumed, so void rather than settle.
-        _release_slot(meter, consumed=False, lease=slot_lease)
+        # The hold, if there was one, has already been voided by the helper. This releases what the
+        # endpoint owns: the permit and the fleet slot.
+        _release_slot(None, consumed=False, lease=slot_lease)
         raise
-    except Exception as _prep_err:
-        _release_slot(meter, consumed=False, lease=slot_lease)
-        logger.exception(f"[{request_id}] prepare_messages_hybrid failed: {_prep_err}")
-        raise HTTPException(status_code=500, detail=f"Request preparation failed: {_prep_err!s}") from _prep_err
 
-    # Log request. text_of() again: slicing [:60] on a parts list would raise here, in the logging
-    # line, long after the real work — an unhelpful place to discover the request was multimodal.
-    user_messages = [msg for msg in request.messages if msg.role == "user"]
-    latest_user_message = multimodal.text_of(user_messages[-1].content) if user_messages else ""
-    logger.info(f"[{request_id}] Mode: {detected_mode.upper()} | Query: {latest_user_message[:60]}...")
-
-    # ── Two-stage debug (stage A) ────────────────────────────────────────────
-    # First turn only. A later turn is an escalation, where naming the line is the point, and
-    # re-localising would also discard the conversation the student has been having.
-    _reasoning_visible_to_caller.set(bool(request.include_reasoning))
-
-    located_issues: list[dict] | None = None
-    if (USE_TWO_STAGE_DEBUG and USE_SGLANG and detected_mode == "debug"
-            and len(user_messages) <= 1):
-        located_issues = await _localise_bugs(latest_user_message, request_id)
-        if located_issues:
-            # Replace the system prompt: stage B is handed location and symptom and NOT the fix.
-            # Grounding is not reapplied -- `debug` is not in GROUNDED_MODES, so there was none.
-            messages = [{"role": "system", "content": _hint_system_prompt(located_issues)}] + [
-                m for m in messages if m.get("role") != "system"]
+    meter = prepared.meter
+    messages = prepared.messages
+    detected_mode = prepared.detected_mode
+    latest_user_message = prepared.latest_user_message
+    # `located_issues` and `user_messages` are deliberately not unpacked: both moved into
+    # `_prepare_for_generation` and `_stream_for` with the code that used them, and the
+    # non-streaming path below never needed either.
 
     # Handle streaming
     if request.stream:
-        if USE_VLLM:
-            # ── P4: vLLM streaming path ────────────────────────────────────
-            # vLLM takes a plain string prompt (not token IDs).
-            # apply_chat_template converts the messages list to the Qwen chat format.
-            from .vllm_engine import generate_stream_vllm
-            gen_cfg = get_generation_config(detected_mode)
-            actual_max_tokens = min(request.max_tokens, gen_cfg["max_new_tokens"])
-            actual_temp = (
-                request.temperature
-                if request.temperature is not None
-                else gen_cfg["temperature"]
-            )
-            vllm_prompt = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            _semaphore_held_by_wrapper = True
-            return StreamingResponse(
-                _semaphore_wrapped(generate_stream_vllm(
-                    prompt=vllm_prompt,
-                    mode=detected_mode,
-                    max_new_tokens=actual_max_tokens,
-                    temperature=actual_temp,
-                    top_p=request.top_p,
-                    repetition_penalty=request.repetition_penalty,
-                    request_id=request_id,
-                ), meter, slot_lease),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",
-                },
-            )
-
-        if USE_SGLANG:
-            # ── SGLang streaming path ──────────────────────────────────────
-            gen_cfg = get_generation_config(detected_mode)
-            actual_max_tokens = token_budget(
-                detected_mode, latest_user_message, request.max_tokens)
-            actual_temp = (
-                request.temperature
-                if request.temperature is not None
-                else gen_cfg["temperature"]
-            )
-            actual_top_p = (
-                request.top_p
-                if request.top_p is not None
-                else gen_cfg.get("top_p", 0.95)
-            )
-            _semaphore_held_by_wrapper = True
-
-            # Stage A's diagnosis travels as a HEADER, not as a stream frame.
-            #
-            # It was briefly prepended by wrapping the generator in another async generator, and
-            # that wrapper is the only suspect for an API that died silently after 20-60 requests --
-            # three times on this arm, while the one run with the flag off survived. A discarded
-            # wrapper never drives the inner generator to completion, so its `finally` never runs and
-            # the underlying SGLang stream is left open.
-            #
-            # A header avoids the question entirely: it is sent before the body, needs no extra
-            # generator, and cannot be mixed into the answer text under any failure mode.
-            _headers = {
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            }
-            if request.include_diagnosis and located_issues is not None:
-                _headers["X-VoidCode-Diagnosis"] = json.dumps(located_issues)
-
-            return StreamingResponse(
-                _semaphore_wrapped(generate_stream_sglang(
-                    messages=messages,
-                    mode=detected_mode,
-                    max_new_tokens=actual_max_tokens,
-                    temperature=actual_temp,
-                    top_p=actual_top_p,
-                    request_id=request_id,
-                    top_k=gen_cfg.get("top_k", 20),
-                    min_p=gen_cfg.get("min_p", 0.0),
-                    presence_penalty=gen_cfg.get("presence_penalty", 0.0),
-                    thinking_budget_tokens=gen_cfg.get("thinking_budget_tokens", 512),
-                    enable_thinking=gen_cfg.get("enable_thinking", True),
-                ), meter, slot_lease),
-                media_type="text/event-stream",
-                headers=_headers,
-            )
-
-        # ── HF streaming path (USE_VLLM=false, USE_SGLANG=false) ──────────
+        # One return for all three backends. `_stream_for` picks the generator and the headers;
+        # `_semaphore_wrapped` puts the single `finally` around it that releases the permit, the
+        # fleet slot and the meter together.
+        inner, stream_headers = _stream_for(request, request_id, prepared)
         _semaphore_held_by_wrapper = True
         return StreamingResponse(
-            _semaphore_wrapped(generate_stream(
-                messages=messages,
-                mode=detected_mode,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                repetition_penalty=request.repetition_penalty,
-                request_id=request_id,
-            ), meter, slot_lease),
+            _semaphore_wrapped(inner, meter, slot_lease),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            }
+            headers=stream_headers,
         )
 
     # Non-streaming
