@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
@@ -60,7 +60,7 @@ from .. import config
 from ..database import AsyncSessionLocal
 from ..models.gpu_billing import GpuReservation
 from ..models.gpu_queue import STATE_ADMITTED, STATE_WAITING, GpuQueueTicket, GpuSlot
-from . import backend_registry, runpod_client
+from . import activity, backend_registry, runpod_client
 
 logger = logging.getLogger(__name__)
 
@@ -69,19 +69,50 @@ class IdleReport:
     """Why the pod is or is not idle. A structure rather than a bool, so the log says which clause
     held it open -- 'not idle' with no reason is the kind of line nobody can act on."""
 
-    __slots__ = ("held_reservations", "queued_tickets", "leased_slots", "seconds_since_settle")
+    __slots__ = (
+        "activity_known",
+        "held_reservations",
+        "leased_slots",
+        "queued_tickets",
+        "seconds_since_activity",
+        "seconds_since_settle",
+    )
 
-    def __init__(self, held: int, queued: int, leased: int, since: float | None):
+    def __init__(
+        self,
+        held: int,
+        queued: int,
+        leased: int,
+        since: float | None,
+        since_activity: float | None = None,
+        activity_known: bool = True,
+    ):
         self.held_reservations = held
         self.queued_tickets = queued
         self.leased_slots = leased
         self.seconds_since_settle = since
+        self.seconds_since_activity = since_activity
+        self.activity_known = activity_known
 
     def is_idle(self, idle_after_seconds: float) -> bool:
         if self.held_reservations or self.queued_tickets or self.leased_slots:
             return False
+
+        # UNKNOWN HOLDS THE POD OPEN. With metering off, the activity clock is the only clause that
+        # can say "somebody is using this right now", so failing to read it is a reason to be
+        # cautious rather than a licence to stop a machine that might be mid-answer.
+        if not self.activity_known:
+            return False
+        if (
+            self.seconds_since_activity is not None
+            and self.seconds_since_activity < idle_after_seconds
+        ):
+            return False
+
         # None means nothing has ever settled. That is idle: a pod that has served nothing is not
-        # one somebody is waiting on.
+        # one somebody is waiting on. Safe as a default only because the activity clause above has
+        # already spoken -- on its own it reported "idle" through an entire evaluation run, because
+        # settles require `GPU_METERING_ENABLED` and it was off.
         if self.seconds_since_settle is None:
             return True
         return self.seconds_since_settle >= idle_after_seconds
@@ -101,6 +132,14 @@ class IdleReport:
             reasons.append(f"{self.queued_tickets} queued ticket(s)")
         if self.leased_slots:
             reasons.append(f"{self.leased_slots} leased slot(s)")
+        if not reasons and not self.activity_known:
+            reasons.append("the activity clock could not be read")
+        if (
+            not reasons
+            and self.seconds_since_activity is not None
+            and self.seconds_since_activity < idle_after_seconds
+        ):
+            reasons.append(f"gpu used {self.seconds_since_activity:.0f}s ago")
         if (
             not reasons
             and self.seconds_since_settle is not None
@@ -112,7 +151,7 @@ class IdleReport:
 
 async def measure(db) -> IdleReport:
     """The four clauses, in one pass. Reads only; decides nothing."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     held = int(
         (
@@ -148,10 +187,19 @@ async def measure(db) -> IdleReport:
     since = None
     if last_settle is not None:
         if last_settle.tzinfo is None:
-            last_settle = last_settle.replace(tzinfo=timezone.utc)
+            last_settle = last_settle.replace(tzinfo=UTC)
         since = (now - last_settle).total_seconds()
 
-    return IdleReport(held, queued, leased, since)
+    try:
+        since_activity = await activity.seconds_since()
+        activity_known = True
+    except activity.ActivityUnknown as exc:
+        # Recorded rather than swallowed: "not idle because the clock is unreadable" is a different
+        # state from "not idle because somebody is using it", and only one of them needs fixing.
+        logger.warning("activity clock unreadable, holding the pod open: %s", exc)
+        since_activity, activity_known = None, False
+
+    return IdleReport(held, queued, leased, since, since_activity, activity_known)
 
 
 async def consider_stopping() -> bool:

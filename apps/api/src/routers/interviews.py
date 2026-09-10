@@ -521,6 +521,7 @@ async def assess_answer(
     # because the generation is a single `await` -- there is no generator to discard.
     from .. import metering
     from ..main import USE_SGLANG, USE_VLLM, _inference_semaphore
+    from ..services import activity
 
     backend = "sglang" if USE_SGLANG else ("vllm" if USE_VLLM else "hf")
     try:
@@ -536,6 +537,10 @@ async def assess_answer(
             # `generate_once`, not `generate_response`: the latter is the HuggingFace path and
             # has no model to reach under USE_SGLANG, which made this endpoint 503 on every
             # attempt while reporting it as a busy tutor.
+            # Assessment is GPU use too, and it does not go through the chat endpoint -- the
+            # path that was dead for a week for exactly that reason. A learner grading answers
+            # must keep the pod awake.
+            await activity.touch()
             text, _pt, _ct, _think = await generate_once(
                 [{"role": "system", "content": system},
                  {"role": "user", "content": user}],

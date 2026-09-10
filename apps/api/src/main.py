@@ -90,6 +90,7 @@ from .routers.profile import router as profile_router
 from .routers.recommendations import router as recommendations_router
 from .schemas.chat import MessageContent
 from .services import (
+    activity,
     backend_registry,
     gpu_sweep_service,
     gpu_wallet_service,
@@ -2560,6 +2561,11 @@ async def create_chat_completion(
     # the queue frame reports `backendState: "waking"` -- the one channel in this system that can
     # honestly say "this is going to be a while" rather than timing out.
     await spindown.ensure_awake()
+
+    # The clock spin-down reads. Here rather than in middleware, because a health check is not
+    # a use of the GPU and must not hold a pod open; this is the line every real generation
+    # crosses. Never raises -- see `activity.touch`.
+    await activity.touch()
 
     # ── Capacity ─────────────────────────────────────────────────────────────
     #

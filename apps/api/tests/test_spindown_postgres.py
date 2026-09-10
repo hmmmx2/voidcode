@@ -47,6 +47,21 @@ async def sessionmaker_np():
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def quiet_activity_clock(monkeypatch):
+    """The GPU activity clock reads "long ago" unless a test says otherwise.
+
+    Without this every test here fails, and for the right reason: the clock lives in Redis, these
+    tests do not start Redis, and an unreadable clock deliberately HOLDS THE POD OPEN. That is the
+    fail-safe working — but it makes the clock the only thing under test, so it is stubbed to a
+    quiet default and exercised explicitly in `TestTheActivityClock`.
+    """
+    async def long_ago():
+        return 99_999.0
+
+    monkeypatch.setattr(spindown.activity, "seconds_since", long_ago)
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean(sessionmaker_np):
     """Slots and tickets are shared rows; a test that left one held would make every later test
@@ -361,3 +376,73 @@ class TestBothHalvesAreConnected:
         assert not waits, (
             "ensure_awake now waits for the backend; a cold start would block the request that "
             "triggered it for minutes")
+
+
+class TestTheActivityClock:
+    """The clause that was missing, and the reason arming spin-down was wrong until it existed.
+
+    The other four clauses cannot see a busy system. Held reservations, queued tickets and live
+    slot leases are INSTANTANEOUS -- non-zero only while a request is in flight. The one clause
+    tracking recency reads `max(gpu_reservations.settled_at)`, and settles happen only when
+    `GPU_METERING_ENABLED` is on.
+
+    MEASURED 2026-09-11 on the development stack: metering off, last settle 28 hours old, and the
+    full tutor evaluation suite had pushed 91 generations through the backend forty minutes
+    earlier. The predicate said "idle". Arming spin-down would have stopped the pod within one
+    check interval and again after every wake, regardless of who was using it.
+    """
+
+    def _report(self, **kwargs):
+        defaults = {"held": 0, "queued": 0, "leased": 0, "since": 99_999.0}
+        return spindown.IdleReport(**{**defaults, **kwargs})
+
+    def test_recent_gpu_use_holds_the_pod_open_with_no_settles_at_all(self):
+        """THE ONE THAT MATTERS. Metering off, so nothing has ever settled — and somebody is using it."""
+        report = self._report(since=None, since_activity=30.0)
+        assert report.is_idle(3600) is False
+        assert "gpu used 30s ago" in report.why_busy(3600)
+
+    def test_an_old_clock_does_not_hold_it_open(self):
+        report = self._report(since=None, since_activity=7200.0)
+        assert report.is_idle(3600) is True
+        assert report.why_busy(3600) == "idle"
+
+    def test_an_unreadable_clock_holds_the_pod_open(self):
+        """UNKNOWN IS NOT IDLE, and this clause cannot borrow the settle clause's default.
+
+        With metering off this is the only signal that says "somebody is using this right now", so
+        failing to read it is a reason to be cautious rather than a licence to stop a machine that
+        might be mid-answer. Redis being down must not cost a learner their session.
+        """
+        report = self._report(since=None, since_activity=None, activity_known=False)
+        assert report.is_idle(3600) is False
+        assert "could not be read" in report.why_busy(3600)
+
+    def test_a_system_that_never_served_anything_is_still_idle(self):
+        """Readable clock, nothing recorded. Distinct from unreadable, and the opposite verdict:
+        a pod that has served nothing is not one somebody is waiting on."""
+        report = self._report(since=None, since_activity=None, activity_known=True)
+        assert report.is_idle(3600) is True
+
+    def test_an_in_flight_request_still_wins_over_a_quiet_clock(self):
+        """Ordering: the instantaneous clauses are checked first and are not overridden."""
+        report = self._report(held=1, since_activity=99_999.0)
+        assert report.is_idle(3600) is False
+        assert "held reservation" in report.why_busy(3600)
+
+    async def test_measure_reports_the_clock_as_unknown_when_it_raises(self, sessionmaker_np,
+                                                                       monkeypatch):
+        """`measure` must translate the exception rather than let it escape or swallow it.
+
+        A watcher that dies on a Redis blip stops watching forever, and the way that presents is a
+        GPU bill rather than an error.
+        """
+        async def boom():
+            raise spindown.activity.ActivityUnknown("redis is down")
+
+        monkeypatch.setattr(spindown.activity, "seconds_since", boom)
+        async with sessionmaker_np() as db:
+            report = await spindown.measure(db)
+
+        assert report.activity_known is False
+        assert report.is_idle(3600) is False
