@@ -32,25 +32,55 @@ from urllib.parse import urlparse
 
 import pytest
 
+#: 127.0.0.1, NOT `localhost`, and the difference is not cosmetic.
+#:
+#: On Windows, `localhost` resolves to both 127.0.0.1 and ::1, and Docker Desktop publishes an IPv6
+#: listener (`[::]:5433`) that completes the TCP handshake and then never serves. asyncpg picks ::1
+#: and blocks forever; there is no refusal to fall back from. Measured here: 127.0.0.1 connects in
+#: 0.02 s on every attempt, `localhost` and `::1` both hang until the client gives up.
+#:
+#: The symptom is worse than a failure. The probe below is a raw socket, which picks IPv4 and
+#: succeeds, so `requires_postgres` does NOT skip — every database test hangs instead, with no
+#: output and no error, including tests that have nothing to do with whatever you were changing.
+#: Two hours can go into that before anyone suspects name resolution.
+#:
+#: An explicit address costs nothing and cannot resolve to a listener that does not answer. CI
+#: overrides this with the env var, as before.
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor",
+    "postgresql+asyncpg://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor",
 )
 
 
 def _postgres_reachable(url: str, timeout: float = 1.5) -> bool:
-    """A TCP probe, not a connection — we only need to decide skip vs run."""
+    """A TCP probe, not a connection — we only need to decide skip vs run.
+
+    EVERY address the host resolves to must answer, not just one. The original probe opened a
+    default socket, which on a dual-stack `localhost` picks IPv4, succeeds, and reports the database
+    reachable — while the driver picks IPv6 and hangs. "Reachable" then means the opposite of what
+    the caller needs it to mean, and the tests hang rather than skipping.
+
+    Probing every resolved address makes the probe answer the question the tests actually ask: can
+    the thing the driver will connect to be connected to.
+    """
     parsed = urlparse(url.replace("+asyncpg", ""))
-    host, port = parsed.hostname or "localhost", parsed.port or 5432
-    sock = socket.socket()
-    sock.settimeout(timeout)
+    host, port = parsed.hostname or "127.0.0.1", parsed.port or 5432
     try:
-        sock.connect((host, port))
-        return True
-    except OSError:
+        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
         return False
-    finally:
-        sock.close()
+    if not addresses:
+        return False
+    for family, socktype, proto, _canon, sockaddr in addresses:
+        sock = socket.socket(family, socktype, proto)
+        sock.settimeout(timeout)
+        try:
+            sock.connect(sockaddr)
+        except OSError:
+            return False
+        finally:
+            sock.close()
+    return True
 
 
 POSTGRES_AVAILABLE = _postgres_reachable(TEST_DATABASE_URL)
