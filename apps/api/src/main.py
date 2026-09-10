@@ -71,6 +71,7 @@ from .services import gpu_sweep_service, gpu_wallet_service
 from .schemas.chat import MessageContent
 from .routers.auth import router as auth_router
 from .routers.chat import router as chat_router
+from .routers.credits import router as credits_router
 from .routers.dashboard import router as dashboard_router
 from .routers.drafts import router as drafts_router
 from .routers.execution import router as execution_router
@@ -602,6 +603,7 @@ app.add_middleware(CORSMiddleware, **config.cors_settings())
 # --- Routers ---
 app.include_router(execution_router)
 app.include_router(chat_router)
+app.include_router(credits_router)
 app.include_router(problems_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
