@@ -2,48 +2,48 @@
  "summary": {
   "by_bucket": {
    "('debug', 'ALL')": {
-    "passed": 3,
+    "passed": 30,
     "n": 51,
-    "rate": 0.0588,
+    "rate": 0.5882,
     "ci95": [
-     0.0202,
-     0.1592
+     0.4517,
+     0.7125
     ]
    },
    "('debug', 'FROZEN-BASELINE')": {
-    "passed": 2,
+    "passed": 17,
     "n": 33,
-    "rate": 0.0606,
+    "rate": 0.5152,
     "ci95": [
-     0.0168,
-     0.1961
+     0.3522,
+     0.675
     ]
    },
    "('debug', 'easy')": {
-    "passed": 2,
+    "passed": 15,
     "n": 26,
-    "rate": 0.0769,
+    "rate": 0.5769,
     "ci95": [
-     0.0214,
-     0.2414
+     0.3895,
+     0.7446
     ]
    },
    "('debug', 'hard')": {
-    "passed": 0,
+    "passed": 4,
     "n": 9,
-    "rate": 0.0,
+    "rate": 0.4444,
     "ci95": [
-     0.0,
-     0.2992
+     0.1888,
+     0.7334
     ]
    },
    "('debug', 'medium')": {
-    "passed": 1,
+    "passed": 11,
     "n": 16,
-    "rate": 0.0625,
+    "rate": 0.6875,
     "ci95": [
-     0.0111,
-     0.2833
+     0.444,
+     0.8584
     ]
    },
    "('empathy', 'ALL')": {
@@ -193,12 +193,12 @@
     ]
    },
    "bug_localisation": {
-    "passed": 9,
+    "passed": 43,
     "n": 51,
-    "rate": 0.1765,
+    "rate": 0.8431,
     "ci95": [
-     0.0957,
-     0.3025
+     0.7199,
+     0.9183
     ]
    },
    "does_not_agree_with_self_deprecation": {
@@ -264,7 +264,266 @@
    "prompt_layer": "the API's own",
    "mode_source": "detect_mode()"
   },
-  "rescored_note": "Scores recomputed with CHECK_SURFACE routing (commit 0ad8bcd). The generations are unchanged; only which surface each check reads was corrected."
+  "rescored_note": "Scores recomputed with CHECK_SURFACE routing (commit 0ad8bcd). The generations are unchanged; only which surface each check reads was corrected.",
+  "superseded_summary": {
+   "note": "`summary` regenerated from the `results` in this file by scripts/resummarise_evidence.py. No generation was re-run and no record was modified; the block this replaced is kept in `superseded_summary`.",
+   "by_check": {
+    "asks_a_question": {
+     "passed": 56,
+     "n": 57,
+     "rate": 0.9825,
+     "ci95": [
+      0.9071,
+      0.9969
+     ]
+    },
+    "bug_count_accuracy": {
+     "passed": 34,
+     "n": 48,
+     "rate": 0.7083,
+     "ci95": [
+      0.5682,
+      0.8176
+     ]
+    },
+    "bug_localisation": {
+     "passed": 9,
+     "n": 51,
+     "rate": 0.1765,
+     "ci95": [
+      0.0957,
+      0.3025
+     ]
+    },
+    "does_not_agree_with_self_deprecation": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "invites_continuation": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "mentions_required": {
+     "passed": 12,
+     "n": 15,
+     "rate": 0.8,
+     "ci95": [
+      0.5481,
+      0.9295
+     ]
+    },
+    "no_answer_leakage": {
+     "passed": 68,
+     "n": 75,
+     "rate": 0.9067,
+     "ci95": [
+      0.8197,
+      0.9541
+     ]
+    },
+    "no_debug_markers": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "no_invented_code": {
+     "passed": 48,
+     "n": 51,
+     "rate": 0.9412,
+     "ci95": [
+      0.8408,
+      0.9798
+     ]
+    }
+   },
+   "by_bucket": {
+    "('debug', 'ALL')": {
+     "passed": 3,
+     "n": 51,
+     "rate": 0.0588,
+     "ci95": [
+      0.0202,
+      0.1592
+     ]
+    },
+    "('debug', 'FROZEN-BASELINE')": {
+     "passed": 2,
+     "n": 33,
+     "rate": 0.0606,
+     "ci95": [
+      0.0168,
+      0.1961
+     ]
+    },
+    "('debug', 'easy')": {
+     "passed": 2,
+     "n": 26,
+     "rate": 0.0769,
+     "ci95": [
+      0.0214,
+      0.2414
+     ]
+    },
+    "('debug', 'hard')": {
+     "passed": 0,
+     "n": 9,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.2992
+     ]
+    },
+    "('debug', 'medium')": {
+     "passed": 1,
+     "n": 16,
+     "rate": 0.0625,
+     "ci95": [
+      0.0111,
+      0.2833
+     ]
+    },
+    "('empathy', 'ALL')": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "('empathy', 'easy')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('empathy', 'hard')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('empathy', 'medium')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('explain', 'ALL')": {
+     "passed": 4,
+     "n": 5,
+     "rate": 0.8,
+     "ci95": [
+      0.3755,
+      0.9638
+     ]
+    },
+    "('explain', 'hard')": {
+     "passed": 2,
+     "n": 2,
+     "rate": 1.0,
+     "ci95": [
+      0.3424,
+      1.0
+     ]
+    },
+    "('explain', 'medium')": {
+     "passed": 2,
+     "n": 3,
+     "rate": 0.6667,
+     "ci95": [
+      0.2077,
+      0.9385
+     ]
+    },
+    "('followup', 'ALL')": {
+     "passed": 3,
+     "n": 4,
+     "rate": 0.75,
+     "ci95": [
+      0.3006,
+      0.9544
+     ]
+    },
+    "('followup', 'easy')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('followup', 'medium')": {
+     "passed": 0,
+     "n": 1,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.7935
+     ]
+    },
+    "('teaching', 'ALL')": {
+     "passed": 5,
+     "n": 6,
+     "rate": 0.8333,
+     "ci95": [
+      0.4365,
+      0.9699
+     ]
+    },
+    "('teaching', 'easy')": {
+     "passed": 2,
+     "n": 2,
+     "rate": 1.0,
+     "ci95": [
+      0.3424,
+      1.0
+     ]
+    },
+    "('teaching', 'hard')": {
+     "passed": 1,
+     "n": 1,
+     "rate": 1.0,
+     "ci95": [
+      0.2065,
+      1.0
+     ]
+    },
+    "('teaching', 'medium')": {
+     "passed": 2,
+     "n": 3,
+     "rate": 0.6667,
+     "ci95": [
+      0.2077,
+      0.9385
+     ]
+    }
+   }
+  }
  },
  "results": [
   {

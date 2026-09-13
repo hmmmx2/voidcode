@@ -2,48 +2,48 @@
  "summary": {
   "by_bucket": {
    "('debug', 'ALL')": {
-    "passed": 4,
+    "passed": 32,
     "n": 51,
-    "rate": 0.0784,
+    "rate": 0.6275,
     "ci95": [
-     0.0309,
-     0.185
+     0.4902,
+     0.7468
     ]
    },
    "('debug', 'FROZEN-BASELINE')": {
-    "passed": 3,
+    "passed": 20,
     "n": 33,
-    "rate": 0.0909,
+    "rate": 0.6061,
     "ci95": [
-     0.0314,
-     0.2357
+     0.4368,
+     0.7532
     ]
    },
    "('debug', 'easy')": {
-    "passed": 3,
+    "passed": 17,
     "n": 26,
-    "rate": 0.1154,
+    "rate": 0.6538,
     "ci95": [
-     0.04,
-     0.2898
+     0.4622,
+     0.8059
     ]
    },
    "('debug', 'hard')": {
-    "passed": 0,
+    "passed": 4,
     "n": 9,
-    "rate": 0.0,
+    "rate": 0.4444,
     "ci95": [
-     0.0,
-     0.2992
+     0.1888,
+     0.7334
     ]
    },
    "('debug', 'medium')": {
-    "passed": 1,
+    "passed": 11,
     "n": 16,
-    "rate": 0.0625,
+    "rate": 0.6875,
     "ci95": [
-     0.0111,
-     0.2833
+     0.444,
+     0.8584
     ]
    },
    "('empathy', 'ALL')": {
@@ -193,12 +193,12 @@
     ]
    },
    "bug_localisation": {
-    "passed": 8,
+    "passed": 42,
     "n": 51,
-    "rate": 0.1569,
+    "rate": 0.8235,
     "ci95": [
-     0.0817,
-     0.2801
+     0.6975,
+     0.9043
     ]
    },
    "does_not_agree_with_self_deprecation": {
@@ -264,7 +264,266 @@
    "prompt_layer": "the API's own",
    "mode_source": "detect_mode()"
   },
-  "rescored_note": "Scores recomputed with CHECK_SURFACE routing (commit 0ad8bcd). The generations are unchanged; only which surface each check reads was corrected."
+  "rescored_note": "Scores recomputed with CHECK_SURFACE routing (commit 0ad8bcd). The generations are unchanged; only which surface each check reads was corrected.",
+  "superseded_summary": {
+   "note": "`summary` regenerated from the `results` in this file by scripts/resummarise_evidence.py. No generation was re-run and no record was modified; the block this replaced is kept in `superseded_summary`.",
+   "by_check": {
+    "asks_a_question": {
+     "passed": 57,
+     "n": 57,
+     "rate": 1.0,
+     "ci95": [
+      0.9369,
+      1.0
+     ]
+    },
+    "bug_count_accuracy": {
+     "passed": 38,
+     "n": 48,
+     "rate": 0.7917,
+     "ci95": [
+      0.6574,
+      0.8827
+     ]
+    },
+    "bug_localisation": {
+     "passed": 8,
+     "n": 51,
+     "rate": 0.1569,
+     "ci95": [
+      0.0817,
+      0.2801
+     ]
+    },
+    "does_not_agree_with_self_deprecation": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "invites_continuation": {
+     "passed": 8,
+     "n": 9,
+     "rate": 0.8889,
+     "ci95": [
+      0.565,
+      0.9801
+     ]
+    },
+    "mentions_required": {
+     "passed": 10,
+     "n": 15,
+     "rate": 0.6667,
+     "ci95": [
+      0.4171,
+      0.8482
+     ]
+    },
+    "no_answer_leakage": {
+     "passed": 67,
+     "n": 75,
+     "rate": 0.8933,
+     "ci95": [
+      0.8034,
+      0.945
+     ]
+    },
+    "no_debug_markers": {
+     "passed": 9,
+     "n": 9,
+     "rate": 1.0,
+     "ci95": [
+      0.7008,
+      1.0
+     ]
+    },
+    "no_invented_code": {
+     "passed": 47,
+     "n": 51,
+     "rate": 0.9216,
+     "ci95": [
+      0.815,
+      0.9691
+     ]
+    }
+   },
+   "by_bucket": {
+    "('debug', 'ALL')": {
+     "passed": 4,
+     "n": 51,
+     "rate": 0.0784,
+     "ci95": [
+      0.0309,
+      0.185
+     ]
+    },
+    "('debug', 'FROZEN-BASELINE')": {
+     "passed": 3,
+     "n": 33,
+     "rate": 0.0909,
+     "ci95": [
+      0.0314,
+      0.2357
+     ]
+    },
+    "('debug', 'easy')": {
+     "passed": 3,
+     "n": 26,
+     "rate": 0.1154,
+     "ci95": [
+      0.04,
+      0.2898
+     ]
+    },
+    "('debug', 'hard')": {
+     "passed": 0,
+     "n": 9,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.2992
+     ]
+    },
+    "('debug', 'medium')": {
+     "passed": 1,
+     "n": 16,
+     "rate": 0.0625,
+     "ci95": [
+      0.0111,
+      0.2833
+     ]
+    },
+    "('empathy', 'ALL')": {
+     "passed": 8,
+     "n": 9,
+     "rate": 0.8889,
+     "ci95": [
+      0.565,
+      0.9801
+     ]
+    },
+    "('empathy', 'easy')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('empathy', 'hard')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('empathy', 'medium')": {
+     "passed": 2,
+     "n": 3,
+     "rate": 0.6667,
+     "ci95": [
+      0.2077,
+      0.9385
+     ]
+    },
+    "('explain', 'ALL')": {
+     "passed": 5,
+     "n": 5,
+     "rate": 1.0,
+     "ci95": [
+      0.5655,
+      1.0
+     ]
+    },
+    "('explain', 'hard')": {
+     "passed": 2,
+     "n": 2,
+     "rate": 1.0,
+     "ci95": [
+      0.3424,
+      1.0
+     ]
+    },
+    "('explain', 'medium')": {
+     "passed": 3,
+     "n": 3,
+     "rate": 1.0,
+     "ci95": [
+      0.4385,
+      1.0
+     ]
+    },
+    "('followup', 'ALL')": {
+     "passed": 2,
+     "n": 4,
+     "rate": 0.5,
+     "ci95": [
+      0.15,
+      0.85
+     ]
+    },
+    "('followup', 'easy')": {
+     "passed": 2,
+     "n": 3,
+     "rate": 0.6667,
+     "ci95": [
+      0.2077,
+      0.9385
+     ]
+    },
+    "('followup', 'medium')": {
+     "passed": 0,
+     "n": 1,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.7935
+     ]
+    },
+    "('teaching', 'ALL')": {
+     "passed": 3,
+     "n": 6,
+     "rate": 0.5,
+     "ci95": [
+      0.1876,
+      0.8124
+     ]
+    },
+    "('teaching', 'easy')": {
+     "passed": 2,
+     "n": 2,
+     "rate": 1.0,
+     "ci95": [
+      0.3424,
+      1.0
+     ]
+    },
+    "('teaching', 'hard')": {
+     "passed": 1,
+     "n": 1,
+     "rate": 1.0,
+     "ci95": [
+      0.2065,
+      1.0
+     ]
+    },
+    "('teaching', 'medium')": {
+     "passed": 0,
+     "n": 3,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.5615
+     ]
+    }
+   }
+  }
  },
  "results": [
   {

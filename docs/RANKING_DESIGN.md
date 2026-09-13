@@ -138,6 +138,15 @@ alone. Two results that change what may be claimed:
 2. **Baselines and NDCG@5 now exist** — `ranking/eval.py`. Measured, 60 learners against the full
    11,272-problem catalogue:
 
+   > **SUPERSEDED — this is the NINE-feature model. Do not quote it in series with the current
+   > figures.** `catalog_popularity` and `concept_recency_days` are absent from the nine (see item 5
+   > below, *"neither is in the nine"*), and the ablation shows the first of those carries most of
+   > the signal: removing `catalog_popularity` alone drops NDCG@10 from 0.2584 to 0.0367
+   > (`docs/RANKING_ANALYSIS.md`). The current **eleven**-feature model measures NDCG@10
+   > **0.2143 [0.1590, 0.2697]** against popularity **0.0511 [0.0261, 0.0816]**
+   > (`docs/METRICS.md:45-47`) — the same metric, a different model. Both tables are real
+   > measurements; they are two states of the ranker, not two readings of one.
+
    | ranker | NDCG@5 | NDCG@10 | 95% CI | Recall@100 |
    |---|---|---|---|---|
    | LambdaMART | 0.0060 | **0.0059** | [0.0011, 0.0112] | 0.124 |
@@ -145,7 +154,7 @@ alone. Two results that change what may be claimed:
    | difficulty-sorted, well-observed | 0.0000 | 0.0000 | — | 0.026 |
    | popularity | 0.1647 | **0.1757** | [0.1346, 0.2194] | 0.715 |
 
-3. **§5.4 IS NOT MET: the model loses to the popularity baseline by 30×.** Reported as measured. This
+3. **§5.4 WAS NOT MET AT NINE FEATURES: the model lost to the popularity baseline by 30×.** Reported as measured; superseded by the eleven-feature result above. This
    document predicted the possibility before the harness existed, and the prediction is the reason
    the result is trustworthy — nothing was tuned after seeing it.
 

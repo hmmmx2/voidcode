@@ -48,7 +48,7 @@ are diagnostics beneath it.
 
 | | rate | n | 95% CI | gate | status |
 |---|---|---|---|---|---|
-| **USABLE LEARNER OUTCOME** — routed correctly *and* found the bug | **0.761** | 51 × **6 runs** | [0.632, 0.860] | ≥ 0.80 | **FAIL** — see the note on the interval |
+| **USABLE LEARNER OUTCOME** — routed correctly *and* found the bug | **0.761** | 51 × **6 runs** | [0.632, 0.860] **per-scenario**; **run-to-run [0.712, 0.811]** | ≥ 0.80 | **FAIL** — see the note on the interval |
 
 ```
 request arrives
@@ -66,10 +66,10 @@ request arrives
 | stage | per-run | mean | 95% CI |
 |---|---|---|---|
 | routed to debug | 46 × 6 | **0.902** | deterministic, zero spread |
-| localisation, diagnostic surface | 43, 42, 37, 45, 43, 40 | **0.817** | [0.695, 0.898] |
+| localisation, diagnostic surface | 43, 42, 37, 45, 43, 40 | **0.817** | [0.695, 0.898] **per-scenario** (Wilson, n=51) |
 | ↳ frozen 32, **re-authored** to the workspace shape | 27, 28, 26 | **0.844** | was 0.396 |
 | ↳ extended 19, **untouched control** | 16, 14, 11 | 0.719 | was 0.702 — did not move |
-| **JOINT** | 41, 39, 35, 41, 40, 37 | **0.761** | [0.632, 0.860] |
+| **JOINT** | 41, 39, 35, 41, 40, 37 | **0.761** | [0.632, 0.860] **per-scenario** (Wilson, n=51); run-to-run [0.712, 0.811] |
 | debug, all checks | 30, 32, 28, 35, 30, 26 | 0.592 | — |
 | reasoning reaches level 4 | 10, 8, 14, 14, 12, 8, 8, 12, 14 | **0.218** | 9 runs, corrected scorer; published as 0.745 |
 | responses echoing >50% of the source | 22, 23, 21 | **0.431** | was 0.752 — the model cites instead of quoting |
@@ -243,8 +243,8 @@ count moved because the ledger was wrong, which is the least reassuring reason f
 | Path | **streaming** — what the web client uses. Reasoning and answer arrive as separate events |
 | Prompt path | the API's own — `detect_mode` → `_ground` → `get_system_prompt(pe_mode=True)` |
 | Scenarios | 75 (debug 51, empathy 9, teaching 6, explain 5, followup 4) |
-| Runs | headline figures: **3 identical** (v6). Noise floor: **5 identical** (v1) |
-| Evidence | v6 `docs/evidence/eval_stream_v6_run{1..3}.json` · floor `eval_stream_run{1..5}.json` |
+| Runs | headline figures: **9** — v6, v7 and v8, three identical runs each, one config across the arms (see §*Two arms, one config, no drift*). v6 alone is the 3 this block used to claim. Noise floor: **5 identical** (v1) |
+| Evidence | the 9-run pool `docs/evidence/eval_stream_v{6,7,8}_run{1..3}.json` · floor `eval_stream_run{1..5}.json`. **The v6 files' `summary` block was regenerated from their own records** — the CHECK_SURFACE rescore had updated the per-record scores and left the summary stale, so that field read 9/51 where the records read 43/51 |
 | Config | `USE_TWO_STAGE_DEBUG=false` (negative result), deterministic debug pre-classifier ON, grounding and token budget decoupled from routing, debug reasoning withheld from learners, **source line-numbered in the workspace shape for all non-multi-turn scenarios** |
 | Date | 2026-08-16 |
 
@@ -271,6 +271,8 @@ deterministic and has no floor: it returned 55/75 in all five runs.
 
 ## Gates
 
+> **Reading the intervals.** Where a gate reports two, they answer different questions and are not interchangeable. **run-to-run** is a t interval on the per-run means and bounds the mean *on these fixed scenarios* — it is rerun stability. **per-scenario** is a Wilson interval at the scenario count and bounds *generalisation to new scenarios* — it is the wider, honest one. A Wilson interval over runs × scenarios pooled together is neither: repeated runs of one scenario set are not independent trials, and pooling them reports a confidence it has not earned.
+
 | Gate | Threshold | Current (5-run mean) | n | Range | Status |
 |---|---|---|---|---|---|
 | Production parity — harness runs the real path, streaming | required | done | — | — | **PASS** |
@@ -282,7 +284,7 @@ deterministic and has no floor: it returned 55/75 in all five runs.
 | ~~Answer leak rate (binary)~~ | ~~≤ 0.02~~ | **RETIRED** — superseded by the ladder | — | — | — |
 | **Routing accuracy, end to end** | **≥ 0.90** | **0.933** ↑ from 0.707 | 75 | no variance | **PASS** — deterministic pre-classifier |
 | Routing, debug recall | ≥ 0.90 | **0.902** ↑ from 0.569 | 51 | 46,46,46 | **PASS**, marginal |
-| Bug localisation, DIAGNOSTIC surface | ≥ 0.75 | **0.813** | 51 × **9 runs** | 37–45 | **PASS** — *was recorded here as 0.647 while the headline said 0.817; re-measured over the 9 stored runs it is 0.813* |
+| Bug localisation, DIAGNOSTIC surface | ≥ 0.75 | **0.813** | 51 × **9 runs** | 37–45; **run-to-run [0.778, 0.847]**, **per-scenario [0.675, 0.890]** | **PASS** — *was recorded here as 0.647 while the headline said 0.817; re-measured over the 9 stored runs it is 0.813.* The two intervals bound different things — see the legend under **Gates**. Do not quote a Wilson interval computed over the pooled 459: the nine runs repeat the same 51 scenarios, so it is over-narrow |
 | ↳ same check on the HINT surface | n/a | 0.150 | 51 | 7–9 | **not a gate** — the opening withholds line numbers by design |
 | Bug localisation, multi-bug (recall) | ≥ 0.55 | **0.540** | 15 | 0.467–0.567 | **FAIL, marginal** |
 | No invented code, visible answer | ≥ 0.98 | 0.957 | 51 | 47–51 | **FAIL, inside noise** |

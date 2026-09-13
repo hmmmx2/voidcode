@@ -628,7 +628,7 @@ lists genuinely differ; nearly half of each is common core. `docs/RANKING_ANALYS
 
 **§5.2 is met on the research corpus only.** NDCG@10 0.2143 against a best baseline of 0.0511, CI
 clearing it 3×. That is **World A** — 11,267 Codeforces problems, all classic DSA. The product's 64 ML
-concepts are a **disjoint** set, so no model fitted there transfers. `docs/RANKING_DESIGN.md`.
+concepts are a **disjoint** set, so no model fitted there transfers. `docs/METRICS.md:45-47` (eleven features — *not* `docs/RANKING_DESIGN.md`, whose table is the superseded nine-feature model).
 
 **No product-side ranking number is honestly measurable.** 9 users, 2 submissions. `train_ranker`
 returns `None` below two learners and `recommend()` labels the fallback `ranked_by="mastery"`. **Both
