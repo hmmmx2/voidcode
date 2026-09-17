@@ -19,7 +19,6 @@ from .. import config
 from ..models.auth_token import (
     PURPOSE_DESKTOP_SESSION,
     PURPOSE_EMAIL_VERIFY,
-    PURPOSE_PASSWORD_RESET,
     PURPOSE_PASSWORD_RESET_CODE,
     AuthToken,
 )
@@ -60,9 +59,7 @@ async def issue(
         await revoke_all(session, user.id, purpose)
 
     token = generate_token()
-    if purpose == PURPOSE_PASSWORD_RESET:
-        ttl = timedelta(minutes=config.RESET_TOKEN_TTL_MINUTES)
-    elif purpose == PURPOSE_DESKTOP_SESSION:
+    if purpose == PURPOSE_DESKTOP_SESSION:
         ttl = timedelta(days=config.DESKTOP_SESSION_TTL_DAYS)
     else:
         ttl = timedelta(hours=config.VERIFY_TOKEN_TTL_HOURS)
@@ -144,14 +141,6 @@ async def revoke_all(session: AsyncSession, user_id, purpose: str) -> int:
         .values(used_at=datetime.utcnow())
     )
     return result.rowcount or 0
-
-
-async def revoke_password_resets(session: AsyncSession, user_id) -> int:
-    return await revoke_all(session, user_id, PURPOSE_PASSWORD_RESET)
-
-
-async def issue_password_reset(session: AsyncSession, user: User) -> str:
-    return await issue(session, user, PURPOSE_PASSWORD_RESET)
 
 
 async def issue_email_verification(session: AsyncSession, user: User) -> str:

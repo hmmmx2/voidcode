@@ -42,27 +42,13 @@ class Email:
     body: str
 
 
-def password_reset_email(to: str, token: str) -> Email:
-    """The reset mail.
-
-    The link is built from `config.APP_BASE_URL` and never from the request's `Host` header.
-    `config.py:48-53` explains why: nginx forwards whatever the client sent, so a host-header
-    injection would rewrite this link to an attacker's domain — and the user would be typing their
-    new password into it. That is the single most dangerous line in this file.
-    """
-    link = f"{config.APP_BASE_URL}/reset-password?token={token}"
-    minutes = config.RESET_TOKEN_TTL_MINUTES
-    return Email(
-        to=to,
-        subject="Reset your VoidCode password",
-        body=(
-            "Someone asked to reset the password for this address.\n\n"
-            f"{link}\n\n"
-            f"The link works once and expires in {minutes} minutes.\n\n"
-            "If it wasn't you, nothing has happened to your account and you can ignore this "
-            "message. Your current password still works.\n"
-        ),
-    )
+# THERE IS NO RESET-LINK MAIL ANY MORE, and its absence is the safer arrangement.
+#
+# It built `{APP_BASE_URL}/reset-password?token=…` — a page on the public internet that collects a
+# new password. Two things went with the website: that page, and the endpoint that redeemed the
+# token. What replaced it is `password_reset_code_email` below: a 6-digit code, typed into the
+# application that asked for it. No link to mis-click, no password-shaped page to impersonate, and
+# the host-header injection this function's docstring warned about cannot rewrite a code.
 
 
 def password_reset_code_email(to: str, code: str) -> Email:

@@ -37,8 +37,8 @@ def _config(monkeypatch, **env):
     depends on an untracked local file is not a test.
     """
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
-    for key in ("APP_ENV", "ALLOWED_ORIGINS", "INTERNAL_API_SECRET", "APP_BASE_URL",
-                "EMAIL_PROVIDER", "RESEND_API_KEY", "RATELIMIT_PEPPER", "INTERNAL_AUTH_ENFORCE"):
+    for key in ("APP_ENV", "ALLOWED_ORIGINS", "APP_BASE_URL",
+                "EMAIL_PROVIDER", "RESEND_API_KEY", "RATELIMIT_PEPPER"):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -110,23 +110,20 @@ def test_production_refuses_to_start_when_misconfigured(monkeypatch) -> None:
         config.assert_production_config()
     message = str(exc.value)
     # Every problem at once, so one fix does not merely reveal the next on the next deploy.
-    for expected in ("ALLOWED_ORIGINS", "INTERNAL_API_SECRET", "APP_BASE_URL",
-                     "EMAIL_PROVIDER", "RATELIMIT_PEPPER"):
+    # ALLOWED_ORIGINS is deliberately NOT here any more: nothing browser-based calls this API, so
+    # an empty allowlist is the correct production value rather than a misconfiguration.
+    for expected in ("APP_BASE_URL", "EMAIL_PROVIDER", "RATELIMIT_PEPPER", "AUTH_CODE_SECRET"):
         assert expected in message
 
 
 def test_a_correctly_configured_production_starts(monkeypatch) -> None:
-    # `INTERNAL_AUTH_ENFORCE` joined this list when credit metering landed. It was always the
-    # intended end state of the two-phase identity rollout -- ship the header, then require it --
-    # and production had simply never been made to insist on it. Charging made the gap load-bearing:
-    # without enforcement an unsigned `X-User-Id` is accepted on trust, so any caller can spend any
-    # user's credit and the ledger records an ordinary charge. See
-    # `test_billing_requires_real_identity.py`.
+    # `INTERNAL_AUTH_ENFORCE` and `INTERNAL_API_SECRET` were in this list until the website's
+    # server-side proxy was removed. They governed the signed `X-User-Id` header it sent; with no
+    # proxy there is no unsigned path to enforce against and no server to share a secret with.
+    # `tests/test_web_auth_is_gone.py` holds that.
     config = _config(
-        monkeypatch, APP_ENV="production", ALLOWED_ORIGINS="https://voidcode.example",
-        INTERNAL_API_SECRET="x" * 32, APP_BASE_URL="https://voidcode.example",
+        monkeypatch, APP_ENV="production", APP_BASE_URL="https://voidcode.example",
         EMAIL_PROVIDER="resend", RESEND_API_KEY="re_test", RATELIMIT_PEPPER="not-the-default",
-        INTERNAL_AUTH_ENFORCE="true",
         # Required since desktop password reset by code: see `test_desktop_auth_config.py`.
         AUTH_CODE_SECRET="x" * 48)
     config.assert_production_config()          # must not raise
@@ -154,15 +151,11 @@ def test_cors_never_allows_arbitrary_headers_or_methods(monkeypatch) -> None:
                            ALLOWED_ORIGINS="https://a.example").cors_settings()
         assert "*" not in settings["allow_methods"]
         assert "*" not in settings["allow_headers"]
-        # Headers no browser should ever send must not be advertised as acceptable.
+        # Headers no browser should ever send must not be advertised as acceptable. `X-User-Id`
+        # joined this list when the website's proxy — the only thing that ever sent it — was
+        # removed; see `tests/test_web_auth_is_gone.py`.
         assert "X-Internal-Auth" not in settings["allow_headers"]
-
-
-def test_enforcing_internal_auth_without_a_secret_fails_even_in_development(monkeypatch) -> None:
-    """Otherwise every sign-in breaks and the reason is a blank env var."""
-    config = _config(monkeypatch, APP_ENV="development", INTERNAL_AUTH_ENFORCE="true")
-    with pytest.raises(config.ConfigError, match="INTERNAL_API_SECRET"):
-        config.assert_production_config()
+        assert "X-User-Id" not in settings["allow_headers"]
 
 
 # ── the deepest failure of all: the file was never read ──────────────────────
@@ -173,9 +166,6 @@ def test_config_loads_the_env_file() -> None:
     This is the root cause that made three earlier controls inert. Measured against a `.env` that set
     all of them, the running app saw:
 
-        INTERNAL_API_SECRET     empty    -> signature checks always returned False, so identity
-                                            enforcement could not work even with the flag on
-        INTERNAL_AUTH_ENFORCE   false    -> could not be enabled at all
         EMAIL_PROVIDER          console  -> reset mail logged instead of sent, with a valid Resend
                                             key unread in the file
         RATELIMIT_PEPPER        default  -> rate-limit keys guessable from a known email

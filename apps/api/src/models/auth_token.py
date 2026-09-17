@@ -33,7 +33,11 @@ from ..database import Base
 
 #: What a token authorises. Kept as a string column rather than a native enum so adding a purpose
 #: later is a code change and not a migration that locks the table.
-PURPOSE_PASSWORD_RESET = "password_reset"
+#:
+#: `password_reset` — a single-use LINK, mailed to the address — was removed with the website: a
+#: link is only redeemable by a web page that collects a new password, and there is no longer one.
+#: The desktop app uses `password_reset_code` instead, which is redeemed inside the app that asked
+#: for it. Rows written by the old flow expire on their own; nothing issues more.
 PURPOSE_EMAIL_VERIFY = "email_verify"
 
 #: A signed-in desktop client.

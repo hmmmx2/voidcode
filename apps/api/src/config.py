@@ -5,10 +5,10 @@ WHY THIS EXISTS NOW, WHEN EVERYTHING ELSE USES INLINE `os.getenv`
 
 The rest of this codebase reads env vars inline at the point of use, and that
 is fine for `JUDGE0_BASE_URL` — a wrong value produces an obvious connection
-error. It stops being fine for auth. A missing `INTERNAL_API_SECRET` is not a
-crash, it is an open endpoint; a missing `APP_BASE_URL` is not a crash, it is a
-password-reset link pointing somewhere unintended. Those failures are silent and
-they are security failures, so they get a module that can assert.
+error. It stops being fine for auth. A missing `AUTH_CODE_SECRET` is not a crash, it is a
+password-reset code anyone can forge; a missing `APP_BASE_URL` is not a crash, it is a Stripe
+return URL pointing somewhere unintended. Those failures are silent and they are security
+failures, so they get a module that can assert.
 
 Deliberately NOT pydantic-settings: a new dependency for ~15 constants, on a
 container that already fights image size because of torch. A plain module with a
@@ -39,9 +39,6 @@ def _load_env_file() -> None:
     are actually in the environment. Running `uvicorn src.main:app` locally does not put a `.env`
     into it, so measured against a `.env` that set all of them:
 
-        INTERNAL_API_SECRET     empty   -> every signature check returned False, so identity
-                                           enforcement could not work even with the flag on
-        INTERNAL_AUTH_ENFORCE   false   -> could not be turned on at all
         EMAIL_PROVIDER          console -> password-reset mail logged instead of sending, with a
                                            valid Resend key sitting unread in the file
         RATELIMIT_PEPPER        default -> rate-limit keys guessable from a known email
@@ -99,20 +96,18 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8080").rstrip("/")
 
 
 # ── Auth ─────────────────────────────────────────────────────────
-
-# Shared secret for the server-to-server calls Next.js makes into /v1/auth.
-# The browser never sees it — those endpoints are never called from client JS.
-INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
-
-# Two-phase rollout switch. See the plan's §F.3: the header must ship in the web
-# app BEFORE the backend starts rejecting requests without it, or every sign-in
-# breaks in the window between two deploys. Phase 1 runs with this false and
-# counts unheadered requests; phase 2 flips it with no code deploy.
-INTERNAL_AUTH_ENFORCE = _flag("INTERNAL_AUTH_ENFORCE", default=False)
-
-# Master switch for the whole password-auth surface. Off means the endpoints
-# 404 and the UI hides the fields — OAuth is unaffected.
-ENABLE_PASSWORD_AUTH = _flag("ENABLE_PASSWORD_AUTH", default=True)
+#
+# THREE SETTINGS WERE REMOVED HERE, all of them the website's:
+#
+#   * `INTERNAL_API_SECRET` — the shared HMAC key the Next.js proxy signed `X-User-Id` with. A
+#     secret that authenticates a *server* cannot be given to an installable application, which is
+#     exactly why the desktop app was given per-device session tokens instead. With the proxy gone
+#     there is nobody to share it with. See `identity.py`.
+#   * `INTERNAL_AUTH_ENFORCE` — the two-phase rollout switch for requiring that signature. There is
+#     no unsigned path left to enforce against.
+#   * `ENABLE_PASSWORD_AUTH` — documented as the master switch for the password surface, and read by
+#     nothing at all. It never gated an endpoint; deleting it changes no behaviour and removes a
+#     control that looked live.
 
 # How often each replica sweeps for stranded holds, and how old a hold must be before it is
 # considered stranded. The age must be comfortably beyond any legitimate request, or the sweep races
@@ -315,7 +310,7 @@ PASSWORD_RESET_CODE_MAX_ATTEMPTS = int(os.getenv("PASSWORD_RESET_CODE_MAX_ATTEMP
 #
 # Both secrets are read from the environment and never from the database or a request. They are the
 # two values that, if leaked, let someone charge your account or forge a credit grant, so they are
-# handled the way `INTERNAL_API_SECRET` is: env only, never logged, never returned by any endpoint.
+# handled the way every other secret here is: env only, never logged, never returned by any endpoint.
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 
 # Distinct from the secret key, and NOT interchangeable. This one verifies that a webhook body was
@@ -363,7 +358,8 @@ RATELIMIT_PEPPER = os.getenv("RATELIMIT_PEPPER", "voidcode-dev-pepper")
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
 VERIFY_TOKEN_TTL_HOURS = int(os.getenv("VERIFY_TOKEN_TTL_HOURS", "24"))
-RESET_TOKEN_TTL_MINUTES = int(os.getenv("RESET_TOKEN_TTL_MINUTES", "60"))
+# RESET_TOKEN_TTL_MINUTES is gone with the emailed reset LINK. The desktop app's 6-digit code has
+# its own, much shorter lifetime: PASSWORD_RESET_CODE_TTL_MINUTES below.
 
 
 # ── Email ────────────────────────────────────────────────────────
@@ -409,14 +405,20 @@ def cors_settings() -> dict:
     tunnel regex, because free cloudflared hostnames rotate on every restart and
     pinning them is impossible.
 
-    `allow_headers` is an explicit list rather than `*`. `X-Internal-Auth` and
-    `X-Client-IP` are deliberately absent: no browser should ever send either,
-    and listing them would advertise that trying is worthwhile.
+    `allow_headers` is an explicit list rather than `*`, and it is now three entries: `X-User-Id`
+    went with the website's proxy, and `X-Internal-Auth` and `X-Client-IP` were never listed for
+    the same reason it should not have been — no browser should send any of them, and listing one
+    advertises that trying is worthwhile.
+
+    CORS HAS NO REMAINING BROWSER CONSUMER. The desktop renderer loads over `app://` and talks to
+    main over IPC, and the public site never calls this API. The middleware stays because an empty
+    allowlist in production is the safe default rather than an accident, and because a future
+    browser client should have to add itself deliberately.
     """
     common = {
         "allow_credentials": True,
         "allow_methods": ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-User-Id", "Accept"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"],
         # Carried over from the inline block this replaced, which called it "required for SSE
         # streaming through tunnels". Kept so the swap changes nothing observable — but note the
         # wildcard is already inert: the CORS spec forbids `*` when `allow_credentials` is true,
@@ -452,16 +454,8 @@ def assert_production_config() -> None:
     router or reset links pointing at localhost. Silently falling back to a
     development default in production is exactly how this drifts back.
     """
-    # CHECKED IN EVERY ENVIRONMENT, NOT ONLY PRODUCTION.
-    #
-    # `INTERNAL_AUTH_ENFORCE=false` means an unsigned `X-User-Id` header is accepted on trust — the
-    # two-phase rollout that let the header ship before the backend started requiring it. That is a
-    # reasonable trade for read paths. It is not a reasonable trade for a path that spends money:
-    # with billing enforced and identity unenforced, anyone can assert any user id and drain that
-    # user's credit, and the ledger will record it as a perfectly ordinary charge.
-    #
-    # Not production-only, deliberately. A development instance that charges a spoofable identity is
-    # how the combination gets discovered in production instead of here.
+    # CHECKED IN EVERY ENVIRONMENT, NOT ONLY PRODUCTION. A development instance that takes real
+    # money with half a Stripe configuration is how the gap gets discovered in production.
     if PAYMENTS_ENABLED and not (STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET):
         missing = [
             name for name, value in (
@@ -491,45 +485,23 @@ def assert_production_config() -> None:
             "of them."
         )
 
-    if GPU_BILLING_ENFORCE and not INTERNAL_AUTH_ENFORCE:
-        raise ConfigError(
-            "GPU_BILLING_ENFORCE is on while INTERNAL_AUTH_ENFORCE is off. Credit would be spent "
-            "against an identity any caller can assert simply by sending an X-User-Id header. "
-            "Turn on INTERNAL_AUTH_ENFORCE first, confirm "
-            "voidcode_unverified_identity_requests_total is flat at zero, then enable billing."
-        )
+    # THE BILLING/IDENTITY PAIRING IS STRUCTURAL NOW, NOT A CHECK.
+    #
+    # This refused to start when `GPU_BILLING_ENFORCE` was on while `INTERNAL_AUTH_ENFORCE` was
+    # off, because credit would then be spent against an identity any caller could assert with a
+    # header. Both flags are gone with the website's proxy: the only way to be a non-anonymous
+    # caller is a session token this server issued, and `_begin_metering` refuses anonymous
+    # outright. There is no longer a configuration in which billing runs on an unproven identity.
 
     if not IS_PRODUCTION:
-        if INTERNAL_AUTH_ENFORCE and not INTERNAL_API_SECRET:
-            raise ConfigError(
-                "INTERNAL_AUTH_ENFORCE is on but INTERNAL_API_SECRET is empty — "
-                "every /v1/auth request would be rejected and nobody could sign in."
-            )
         return
 
     problems: list[str] = []
 
-    # Production may not run on trust. The flag exists for a staged rollout, and a rollout that is
-    # never completed is just a permanently open door: `resolve_caller` counts every unsigned
-    # request it lets through, and in production that count should be structurally impossible
-    # rather than merely low.
-    if not INTERNAL_AUTH_ENFORCE:
-        problems.append(
-            "INTERNAL_AUTH_ENFORCE is off. An unsigned X-User-Id header is accepted on trust, so "
-            "any caller can act as any user. The web proxy already signs every request, so the "
-            "only callers this turns away are ones bypassing it."
-        )
-
-    if not ALLOWED_ORIGINS:
-        problems.append(
-            "ALLOWED_ORIGINS is empty. In production there is no localhost "
-            "fallback, so CORS would reject the real frontend."
-        )
-    if not INTERNAL_API_SECRET:
-        problems.append(
-            "INTERNAL_API_SECRET is empty. Generate one with "
-            "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`."
-        )
+    # ALLOWED_ORIGINS IS NOT REQUIRED, and empty is the correct production value today. Nothing
+    # browser-based calls this API: the desktop renderer loads over `app://` and reaches main by
+    # IPC, and the public site is static. This used to insist on a non-empty allowlist "or CORS
+    # would reject the real frontend" — there is no frontend to reject.
     if not APP_BASE_URL.startswith("https://"):
         # Stripe sends the buyer here after a payment, and an http:// origin means that redirect —
         # carrying the checkout session id — crosses the network in the clear. The old check only

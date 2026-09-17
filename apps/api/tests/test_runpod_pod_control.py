@@ -259,7 +259,6 @@ class TestStartupRefusesAHalfConfiguredService:
     @pytest.fixture(autouse=True)
     def only_the_pod_guard(self, monkeypatch):
         monkeypatch.setattr(config, "GPU_BILLING_ENFORCE", False)
-        monkeypatch.setattr(config, "INTERNAL_AUTH_ENFORCE", False)
         monkeypatch.setattr(config, "PAYMENTS_ENABLED", False)
         monkeypatch.setattr(config, "IS_PRODUCTION", False)
 

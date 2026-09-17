@@ -450,9 +450,7 @@ async def client(sessionmaker_np, learner):
             yield session
 
     app.dependency_overrides[get_db] = _db
-    app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(
-        user_id=learner, verified=True
-    )
+    app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(user_id=learner)
     app.dependency_overrides[identity.current_user_id] = lambda: learner
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac

@@ -232,13 +232,10 @@ async def start_checkout(
     if not config.PAYMENTS_ENABLED:
         raise HTTPException(status_code=503, detail="Purchases are not available yet.")
 
-    # Both checks, for the reason `_begin_metering` needs both: anonymous is `verified=True` because
-    # there is no id to forge, so `verified` alone would let an unauthenticated visitor buy credit
-    # into the shared anonymous wallet, where anybody could then spend it.
+    # Anonymous is one shared identity, so buying credit as anonymous would put money into a wallet
+    # anybody could spend from. A bad Bearer token never reaches here: `resolve_caller` 401s it.
     if caller.is_anonymous:
         raise HTTPException(status_code=401, detail="Sign in before buying credit.")
-    if not caller.verified:
-        raise HTTPException(status_code=401, detail="This request could not be authenticated.")
 
     pack = credit_packs.pack_by_code(body.pack_code)
     if pack is None or not pack.on_sale:
@@ -287,8 +284,6 @@ async def redeem_voucher(
 
     if caller.is_anonymous:
         raise HTTPException(status_code=401, detail="Sign in before redeeming a voucher.")
-    if not caller.verified:
-        raise HTTPException(status_code=401, detail="This request could not be authenticated.")
 
     code = (body.code or "").strip()
     if not code:

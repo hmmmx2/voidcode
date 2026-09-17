@@ -1,27 +1,37 @@
 """
-Auth Router.
+Auth Router. Every endpoint here serves the desktop application.
 
-Six endpoints. The first three are called server-side by Next.js, never by the
-browser:
+  POST   /v1/auth/desktop/register         create an account and sign this device in
+  POST   /v1/auth/desktop/session          sign in with an email and password
+  DELETE /v1/auth/desktop/session          sign this device out
+  DELETE /v1/auth/desktop/sessions         sign every device out
+  POST   /v1/auth/desktop/oauth/{provider} sign in (or connect) with Google or Microsoft
+  POST   /v1/auth/password-reset/request   mail a 6-digit code
+  POST   /v1/auth/password-reset/confirm   redeem the code and set a new password
+  POST   /v1/auth/change-password          change it while signed in
+  GET    /v1/auth/me                       who this session belongs to
 
-  POST /v1/auth/login            find-or-create by email, for OAuth sign-in
-  POST /v1/auth/register         create an account with a password
-  POST /v1/auth/password-login   verify an email + password pair
-  POST /v1/auth/forgot-password  mail a single-use reset link
-  POST /v1/auth/reset-password   consume a reset token, set a new password
-  POST /v1/auth/change-password  change it while signed in
+FIVE BROWSER ENDPOINTS WERE REMOVED WITH THE WEBSITE, and each one is worth naming because
+re-adding any of them would undo a property the rest of this file now has:
 
-The last three did not exist, and neither did the token table or any mail
-delivery, so a password-authenticated user had NO recovery path whatsoever — while
-`forgot-password/page.tsx` told them to change it from their profile, which had
-only GET and PUT.
+  * `POST /login` — find-or-create by email, UNAUTHENTICATED. It existed so the website's
+    NextAuth server could turn a Google profile into a user row, and it trusted that caller
+    completely: anyone who could reach it could mint or take over an account by naming an address.
+    Google and Microsoft sign-in now happens at `/desktop/oauth/{provider}`, which verifies an ID
+    token from the provider itself. `tests/test_web_auth_is_gone.py` fails if it comes back.
+  * `POST /register` and `POST /password-login` — the web-shaped pair. They answered with a user
+    row and no session, because the website minted its own cookie. `/desktop/register` and
+    `/desktop/session` do the same work and return a session token that the device stores.
+  * `POST /forgot-password` and `POST /reset-password` — reset by emailed LINK, which only works
+    if a web page exists to receive the token. The desktop app uses `/password-reset/request` and
+    `/password-reset/confirm`: a 6-digit code, redeemed inside the app that asked for it, which is
+    also why there is no password-collecting page on the public internet any more.
 
-The last two are what made `/register` and the email/password form work at all.
-Both forms had been shipped against endpoints that did not exist: the browser
-POSTed to `/api/auth/register`, which is swallowed by NextAuth's `[...nextauth]`
-catch-all and answers `400 "Bad request."`, and `signIn("credentials", …)` was
-called with no Credentials provider registered. The failure surfaced as the
-generic "We couldn't create your account" with nothing in any log.
+WHY EMAIL LOOKUPS USE `lower(email)` AND NOT `email`
+`ix_users_email_lower` is a UNIQUE functional index on `lower(email)`, so
+`Ada@x.com` and `ada@x.com` cannot both exist. Querying by the raw column would
+still miss an existing row whose stored casing differs from what was typed, and
+the insert would then fail on the index instead of returning a clean 409.
 
 WHY EMAIL LOOKUPS USE `lower(email)` AND NOT `email`
 `ix_users_email_lower` is a UNIQUE functional index on `lower(email)`, so
@@ -43,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import config, identity, ratelimit
 from ..database import get_db
-from ..models.auth_token import PURPOSE_PASSWORD_RESET, PURPOSE_PASSWORD_RESET_CODE
+from ..models.auth_token import PURPOSE_PASSWORD_RESET_CODE
 from ..models.user import User
 from ..models.user_identity import UserIdentity
 from ..services import account_linking, email_service, oidc, token_service
@@ -60,14 +70,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
-class LoginRequest(BaseModel):
-    email: str
-    name: str
-    provider: str  # "google" | "microsoft-entra-id"
-    avatar_url: str | None = None  # OAuth profile photo URL
+class UserSummary(BaseModel):
+    """The account, as a signed-in device is told about it. Part of every session response."""
 
-
-class LoginResponse(BaseModel):
     id: str
     email: str
     name: str
@@ -75,101 +80,7 @@ class LoginResponse(BaseModel):
     is_active: bool
 
 
-@router.post("/login", response_model=LoginResponse)
-async def find_or_create_user(
-    payload: LoginRequest,
-    db: AsyncSession = Depends(get_db),
-) -> LoginResponse:
-    """
-    Look up user by email. If found, return them.
-    If not found, create a new student account.
-    """
-    result = await db.execute(
-        select(User).where(User.email == payload.email)
-    )
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        user = User(
-            email=payload.email,
-            name=payload.name,
-            role="student",
-            is_active=True,
-            profile_photo_url=payload.avatar_url,
-        )
-        db.add(user)
-        await db.flush()
-        # Create a welcome notification for the new user
-        await create_welcome_notification(db, user.id)
-        logger.info(f"Created new user: {payload.email} via {payload.provider}")
-    else:
-        # Update OAuth avatar if user hasn't set a custom one
-        if user.profile_photo_url is None and payload.avatar_url:
-            user.profile_photo_url = payload.avatar_url
-            await db.flush()
-        logger.info(f"Existing user signed in: {payload.email} via {payload.provider}")
-
-    return LoginResponse(
-        id=str(user.id),
-        email=user.email,
-        name=user.name,
-        role=user.role,
-        is_active=user.is_active,
-    )
-
-
 # ── Password auth ────────────────────────────────────────────────────────────
-
-
-class RegisterRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    email: EmailStr
-    password: str = Field(min_length=1, max_length=4096)
-    terms_accepted: bool
-
-
-class PasswordLoginRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1, max_length=4096)
-
-
-@router.post(
-    "/register",
-    response_model=LoginResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def register(
-    payload: RegisterRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> LoginResponse:
-    """
-    Create an account with a password.
-
-    THIS ENDPOINT DELIBERATELY LEAKS WHETHER AN EMAIL IS REGISTERED, and the
-    sign-in endpoint below deliberately does not. That asymmetry is the accepted
-    trade: a registration form must be able to say "that email is already in
-    use", because the alternative — silently pretending to succeed — leaves the
-    real owner unable to sign in and the new user with no idea why. Attackers can
-    enumerate through any registration form, which is why the *login* path is the
-    one hardened against it.
-    """
-    user = await _create_password_account(
-        db,
-        request,
-        name=payload.name,
-        email=payload.email,
-        password=payload.password,
-        terms_accepted=payload.terms_accepted,
-        terms_version=None,
-    )
-    return LoginResponse(
-        id=str(user.id),
-        email=user.email,
-        name=user.name,
-        role=user.role,
-        is_active=user.is_active,
-    )
 
 
 async def _create_password_account(
@@ -251,64 +162,6 @@ async def _create_password_account(
     return user
 
 
-@router.post("/password-login", response_model=LoginResponse)
-async def password_login(
-    payload: PasswordLoginRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> LoginResponse:
-    """
-    Verify an email and password.
-
-    EVERY FAILURE RETURNS THE SAME 401 WITH THE SAME BODY. Unknown address,
-    wrong password, OAuth-only account, deactivated account — one response.
-    Distinguishing them turns this endpoint into a membership oracle for any
-    email list someone cares to submit.
-
-    `verify_password` is called even when there is no user and even when the
-    account has no password, because returning early on those paths would make
-    them measurably faster than a wrong password and reopen the same oracle
-    through timing. That is why it takes `str | None`: the dummy-hash verify is
-    part of its contract, not a caller-side workaround.
-    """
-    email = payload.email.strip().lower()
-
-    # Per-email AND per-IP, because either alone is bypassable: an attacker spraying one password
-    # across thousands of accounts never trips a per-email limit, and a distributed attempt on one
-    # account never trips a per-IP one.
-    #
-    # Before the lookup, so a throttled request costs no query and no argon2 verify. The 429 body
-    # is identical for a real and a made-up address, so this does not undo the enumeration
-    # resistance the 401 path above is careful about.
-    await ratelimit.check_email_and_ip(ratelimit.LOGIN, request, email)
-
-    result = await db.execute(select(User).where(func.lower(User.email) == email))
-    user = result.scalar_one_or_none()
-
-    ok = await verify_password(
-        user.password_hash if user else None,
-        payload.password,
-    )
-
-    if user is None or not ok or not user.is_active:
-        logger.info("Failed password sign-in for %s", email)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
-        )
-
-    user.last_login_at = func.now()
-    await db.flush()
-
-    return LoginResponse(
-        id=str(user.id),
-        email=user.email,
-        name=user.name,
-        role=user.role,
-        is_active=user.is_active,
-    )
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Password recovery
 #
@@ -319,15 +172,6 @@ async def password_login(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
-    password: str = Field(min_length=1, max_length=4096)
-
-
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=4096)
     new_password: str = Field(min_length=1, max_length=4096)
@@ -335,93 +179,6 @@ class ChangePasswordRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
-
-
-@router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(
-    payload: ForgotPasswordRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    """Mail a single-use reset link, if the address belongs to a password account.
-
-    THE RESPONSE IS IDENTICAL IN EVERY CASE. Unknown address, OAuth-only account,
-    deactivated account, mail provider down — one message. Anything else turns
-    this into a membership oracle for whatever email list someone submits, which
-    is the same reason `password_login` returns one 401 for every failure.
-
-    That is also why the send result is ignored: "we couldn't send it" only
-    happens for addresses that exist. The cost is that a user whose mail genuinely
-    failed is told to check their inbox, and the compensating control is the ERROR
-    log in `email_service`.
-    """
-    await ratelimit.check_email_and_ip(ratelimit.LOGIN, request, payload.email)
-
-    email = payload.email.strip().lower()
-    user = (await db.execute(
-        select(User).where(func.lower(User.email) == email)
-    )).scalar_one_or_none()
-
-    # OAuth-only accounts have no password to reset. Mailing them a reset link
-    # would be actively confusing — the link would set a password on an account
-    # that has never used one.
-    if user is not None and user.is_active and user.password_hash is not None:
-        token = await token_service.issue_password_reset(db, user)
-        await db.flush()
-        await email_service.send(email_service.password_reset_email(user.email, token))
-        logger.info("Issued password reset for %s", email)
-    else:
-        logger.info("Password reset requested for %s — no eligible account", email)
-
-    return MessageResponse(
-        message="If that address has a password account, a reset link is on its way."
-    )
-
-
-@router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(
-    payload: ResetPasswordRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> MessageResponse:
-    """Consume a reset token and set a new password.
-
-    The policy check runs against the SAME `validate_password` the register
-    endpoint uses. A weaker rule here would make the reset flow the cheapest way
-    to get a weak password onto an account.
-    """
-    await ratelimit.check_ip(ratelimit.LOGIN, request)
-
-    try:
-        user = await token_service.redeem(db, payload.token, PURPOSE_PASSWORD_RESET)
-    except token_service.TokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-
-    try:
-        validate_password(payload.password, email=user.email, name=user.name or "")
-    except PasswordPolicyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"field": "password", "detail": str(exc)},
-        ) from exc
-
-    user.password_hash = await hash_password(payload.password)
-    user.password_changed_at = datetime.now(timezone.utc)
-    # Every other reset link in flight dies here. `redeem` already spent the one
-    # used; this kills the rest, so a link an attacker obtained earlier does not
-    # survive the action taken to lock them out.
-    await token_service.revoke_password_resets(db, user.id)
-    await token_service.revoke_all(db, user.id, PURPOSE_PASSWORD_RESET_CODE)
-    # And every signed-in device. A reset is what someone does after losing a laptop; leaving that
-    # laptop signed in for the rest of its 90 days defeats the reason they reset.
-    await token_service.revoke_desktop_sessions(db, user.id)
-    await db.flush()
-
-    logger.info("Password reset completed for %s", user.email)
-    return MessageResponse(message="Your password has been changed. You can sign in with it now.")
 
 
 @router.post("/change-password", response_model=MessageResponse)
@@ -481,7 +238,6 @@ async def change_password(
 
     user.password_hash = await hash_password(payload.new_password)
     user.password_changed_at = datetime.now(timezone.utc)
-    await token_service.revoke_password_resets(db, user.id)
     await token_service.revoke_all(db, user.id, PURPOSE_PASSWORD_RESET_CODE)
     await token_service.revoke_desktop_sessions(
         db, user.id, except_hash=getattr(request.state, "session_token_hash", None)
@@ -497,7 +253,7 @@ class DesktopSessionResponse(BaseModel):
 
     token: str
     expires_at: datetime
-    user: LoginResponse
+    user: UserSummary
     #: True when this sign-in created the account (registration, or a first Google/Microsoft sign-in).
     created: bool = False
     #: True when linking a provider removed a password that was set on this address without the
@@ -521,7 +277,7 @@ async def _session_response(
     return DesktopSessionResponse(
         token=token,
         expires_at=datetime.utcnow() + timedelta(days=config.DESKTOP_SESSION_TTL_DAYS),
-        user=LoginResponse(
+        user=UserSummary(
             id=str(user.id),
             email=user.email,
             name=user.name,
@@ -533,24 +289,34 @@ async def _session_response(
     )
 
 
+class DesktopSessionRequest(BaseModel):
+    """An email and a password, exchanged for a session token.
+
+    This shape was `PasswordLoginRequest`, shared with the website's `/password-login`. That
+    endpoint is gone, so the model is named after the one caller it has.
+    """
+
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=4096)
+
+
 @router.post("/desktop/session", response_model=DesktopSessionResponse)
 async def create_desktop_session(
-    payload: PasswordLoginRequest,
+    payload: DesktopSessionRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionResponse:
     """Sign in from the desktop app and receive a session token.
 
-    SEPARATE FROM `/password-login`, WHICH RETURNS A USER AND NOTHING ELSE. That endpoint serves
-    the web app, where the session lives in a NextAuth cookie and the identity reaching this API is
-    signed server-side. A native client has no server to sign for it, so it needs a credential of
-    its own — and it needs one it can store, present on every request, and have revoked without
-    changing a password.
+    THE ONLY WAY TO SIGN IN WITH A PASSWORD. It used to sit beside the website's `/password-login`,
+    which returned a user row and nothing else because the session lived in a NextAuth cookie and
+    the identity reaching this API was signed server-side. A native client has no server to sign
+    for it, so it needs a credential of its own — one it can store, present on every request, and
+    have revoked without changing a password. That is what this returns.
 
-    EVERY FAILURE RETURNS THE SAME 401, for the reason `/password-login` gives at length: anything
-    that distinguishes "no such address" from "wrong password" is a membership oracle for whatever
-    email list somebody cares to submit. The rate limit is per-email AND per-IP for the same reason
-    it is there.
+    EVERY FAILURE RETURNS THE SAME 401: anything that distinguishes "no such address" from "wrong
+    password" is a membership oracle for whatever email list somebody cares to submit. The rate
+    limit is per-email AND per-IP for the same reason it is there.
     """
     email = payload.email.strip().lower()
     await ratelimit.check_email_and_ip(ratelimit.LOGIN, request, email)
@@ -559,7 +325,7 @@ async def create_desktop_session(
     user = result.scalar_one_or_none()
 
     # Called even when there is no user, so a made-up address is not measurably faster than a real
-    # one with the wrong password. Same contract as `/password-login`.
+    # one with the wrong password: see the docstring above.
     ok = await verify_password(user.password_hash if user else None, payload.password)
     if not ok or user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
@@ -742,7 +508,6 @@ async def confirm_password_reset_code(
     if user.email_verified_at is None:
         # Receiving the code proved the mailbox.
         user.email_verified_at = now
-    await token_service.revoke_password_resets(db, user.id)
     await token_service.revoke_all(db, user.id, PURPOSE_PASSWORD_RESET_CODE)
     await token_service.revoke_desktop_sessions(db, user.id)
 
@@ -817,7 +582,7 @@ async def desktop_oauth(
     # link without proving who is asking.
     link_user: User | None = None
     if identity._bearer_from(authorization) is not None:
-        caller = await identity.resolve_caller(request, None, None, authorization)
+        caller = await identity.resolve_caller(request, authorization)
         link_user = await db.get(User, caller.user_id)
         if link_user is None or not link_user.is_active:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in.")

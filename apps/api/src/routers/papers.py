@@ -88,7 +88,7 @@ async def _progress_by_paper(
     shared record presented as "your progress". The library itself stays public; only the
     per-person overlay needs a person.
     """
-    if caller.is_anonymous or not caller.verified:
+    if caller.is_anonymous:
         return {}
     rows = await db.execute(
         select(PaperProgress).where(PaperProgress.user_id == caller.user_id)

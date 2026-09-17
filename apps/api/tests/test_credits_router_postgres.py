@@ -76,9 +76,7 @@ async def client(sessionmaker_np, learner):
     app.dependency_overrides[identity.current_user_id] = lambda: learner
     # `/checkout` resolves a full Caller rather than a bare id, because it has to refuse an
     # anonymous or unverified buyer. Overriding only `current_user_id` left it 401ing.
-    app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(
-        user_id=learner, verified=True
-    )
+    app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(user_id=learner)
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

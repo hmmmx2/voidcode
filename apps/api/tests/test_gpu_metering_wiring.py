@@ -210,17 +210,25 @@ class TestMeteringIsOffByDefault:
 
 
 class TestTheIdentityGate:
-    def test_anonymous_and_unverified_are_both_refused_when_enforcing(self):
-        """`verified` alone is not a sufficient gate, and that is the subtle part.
+    def test_the_shared_anonymous_identity_is_refused(self):
+        """One condition now, and it is the one that matters.
 
-        `resolve_caller` returns `Caller(ANONYMOUS_USER_ID, verified=True)` for a missing or
-        malformed header — anonymous is "verified" because there is no id to forge. A gate checking
-        only `verified` would pass every unauthenticated visitor.
+        The gate also required `caller.verified` — a signed `X-User-Id` header from the website's
+        server-side proxy. That header is gone (`tests/test_web_auth_is_gone.py`), so a
+        non-anonymous caller got here by presenting a session token this server issued. What still
+        has to be excluded is the anonymous user: it is ONE identity shared by every signed-out
+        caller, so a wallet on it would be one bank account for the whole internet.
         """
         gate = _function("_begin_metering")
-        body = ast.get_source_segment(SOURCE, gate) or ""
-        assert "is_anonymous" in body, "the gate does not exclude the shared anonymous identity"
-        assert "caller.verified" in body, "the gate does not require a signed identity"
+        # Statements only: the docstring explains that `caller.verified` was removed, and a scan of
+        # the raw text would match that explanation.
+        statements = [
+            node for node in gate.body
+            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))
+        ]
+        code = chr(10).join(ast.get_source_segment(SOURCE, node) or "" for node in statements)
+        assert "is_anonymous" in code, "the gate does not exclude the shared anonymous identity"
+        assert "caller.verified" not in code, "the removed `verified` field is being read again"
 
     def test_the_endpoint_actually_resolves_a_caller(self):
         endpoint = _function("create_chat_completion")

@@ -28,7 +28,7 @@ from src import identity
 from src.database import get_db
 from src.models.auth_token import (
     PURPOSE_DESKTOP_SESSION,
-    PURPOSE_PASSWORD_RESET,
+    PURPOSE_EMAIL_VERIFY,
     AuthToken,
 )
 from src.models.user import User
@@ -233,20 +233,21 @@ class TestTheTokenBehavesLikeASessionAndNotALink:
             await db.commit()
             assert await token_service.user_id_for_session(db, token) is None
 
-    async def test_a_password_reset_token_is_not_a_session(self, client, sessionmaker_np, learner):
+    async def test_an_emailed_token_is_not_a_session(self, client, sessionmaker_np, learner):
         """Purposes are not interchangeable, and this is the pairing that would hurt.
 
-        A reset link arrives by email and is therefore visible to anything that can read a mailbox.
-        If it also authenticated API calls, reading somebody's email would be enough to spend their
-        credit.
+        An emailed token is visible to anything that can read a mailbox. If it also authenticated
+        API calls, reading somebody's email would be enough to spend their credit. The purpose used
+        here is email verification because the reset LINK is gone — reset is a 6-digit code now
+        (`test_web_auth_is_gone.py`) — but the rule under test is the purpose filter, not the flow.
         """
         user_id, _ = learner
         async with sessionmaker_np() as db:
             user = await db.get(User, user_id)
-            reset = await token_service.issue(db, user, PURPOSE_PASSWORD_RESET)
+            emailed = await token_service.issue(db, user, PURPOSE_EMAIL_VERIFY)
             await db.commit()
 
-            assert await token_service.user_id_for_session(db, reset) is None
+            assert await token_service.user_id_for_session(db, emailed) is None
 
 
 class TestSigningOut:

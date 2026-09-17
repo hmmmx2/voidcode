@@ -41,7 +41,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..identity import ANONYMOUS_USER_ID
-from ..models.auth_token import PURPOSE_PASSWORD_RESET, PURPOSE_PASSWORD_RESET_CODE
+from ..models.auth_token import PURPOSE_PASSWORD_RESET_CODE
 from ..models.user import User
 from ..models.user_identity import UserIdentity
 from . import token_service
@@ -148,7 +148,6 @@ async def sign_in(
             existing.password_hash = None
             existing.password_changed_at = _now()
             await token_service.revoke_desktop_sessions(db, existing.id)
-            await token_service.revoke_all(db, existing.id, PURPOSE_PASSWORD_RESET)
             await token_service.revoke_all(db, existing.id, PURPOSE_PASSWORD_RESET_CODE)
             password_cleared = True
             logger.warning(

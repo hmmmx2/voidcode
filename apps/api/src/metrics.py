@@ -6,10 +6,13 @@ Request count and latency are the default answer and they are the least useful t
 histogram of every HTTP path tells you the API is up, which `/health` already does. These four exist
 because each one answers a question that has come up in this codebase and could not be answered:
 
-  * **`voidcode_unverified_identity_requests_total`** — the deploy gate for `INTERNAL_AUTH_ENFORCE`.
-    `identity.py` counts unsigned requests in a module global, and the only way to read it was to
-    grep the logs. Flipping that flag safely means watching this reach zero, so it needs to be a
-    series on a dashboard, not a number in a process.
+  * **`voidcode_unverified_identity_requests_total` and `voidcode_internal_auth_enforced` are
+    GONE.** They measured the rollout of signed identity headers for the website's server-side
+    proxy: how much traffic still arrived unsigned, and whether unsigned was still accepted. The
+    proxy, the headers and the flag went with the website (see `identity.py`), so both series
+    could only ever read zero — and a dashboard panel that can only read zero is read as a live
+    risk by whoever opens it next. The panels were removed from
+    `deploy/monitoring/grafana-voidcode.json` in the same change.
 
   * **`voidcode_ratelimit_not_enforced_total`** — the rate limiter fails OPEN when Redis is
     unreachable. That is a deliberate availability trade, and its cost is that the failure is
@@ -60,12 +63,6 @@ except ImportError:  # pragma: no cover - the dependency is declared, this is be
 REGISTRY = CollectorRegistry() if _AVAILABLE else None
 
 if _AVAILABLE:
-    unverified_identity_requests = Counter(
-        "voidcode_unverified_identity_requests_total",
-        "Requests served with an unsigned X-User-Id while INTERNAL_AUTH_ENFORCE is off. "
-        "Must reach zero before that flag is flipped.",
-        registry=REGISTRY,
-    )
     ratelimit_not_enforced = Counter(
         "voidcode_ratelimit_not_enforced_total",
         "Requests allowed through because Redis was unreachable and the limiter failed open.",
@@ -84,12 +81,6 @@ if _AVAILABLE:
         ["status"],
         registry=REGISTRY,
     )
-    enforcement_enabled = Gauge(
-        "voidcode_internal_auth_enforced",
-        "1 when signed identity is required, 0 while unsigned requests are still accepted.",
-        registry=REGISTRY,
-    )
-
     # ── GPU serving budget ───────────────────────────────────────────────────
     #
     # Nothing on the GPU billing or serving path emitted a metric before this. `gpu_sweep_service`
@@ -142,8 +133,8 @@ if _AVAILABLE:
         registry=REGISTRY,
     )
 else:  # pragma: no cover
-    unverified_identity_requests = ratelimit_not_enforced = None
-    recommendations_ranked_by = sandbox_verdicts = enforcement_enabled = None
+    ratelimit_not_enforced = None
+    recommendations_ranked_by = sandbox_verdicts = None
     gpu_reservations_swept = gpu_queue_depth = gpu_slots_in_use = None
     gpu_queue_wait_seconds = gpu_queue_abandoned = solutions_withheld = None
 
@@ -163,10 +154,6 @@ def _bump(metric, labels: dict | None = None) -> None:
         logger.debug("metric update failed: %s", exc)
 
 
-def record_unverified_identity() -> None:
-    _bump(unverified_identity_requests)
-
-
 def record_ratelimit_not_enforced(limit: str) -> None:
     _bump(ratelimit_not_enforced, {"limit": limit})
 
@@ -179,14 +166,6 @@ def record_sandbox_verdict(status: str) -> None:
     # Judge0's descriptions are a closed set, so this label cannot explode. Truncated anyway,
     # because an unexpected value becoming a permanent series is how cardinality problems start.
     _bump(sandbox_verdicts, {"status": (status or "unknown")[:40]})
-
-
-def set_enforcement(enabled: bool) -> None:
-    if enforcement_enabled is not None:
-        try:
-            enforcement_enabled.set(1 if enabled else 0)
-        except Exception as exc:
-            logger.debug("gauge update failed: %s", exc)
 
 
 def record_reservation_swept() -> None:

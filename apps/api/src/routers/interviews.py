@@ -174,15 +174,14 @@ async def _commit(db: AsyncSession) -> None:
     """
     Commit, turning an unknown user into a 400 rather than a 500.
 
-    `X-User-Id` is client-supplied, so a syntactically valid UUID that matches
-    no row is a request anyone can make. Both write paths insert an
-    `interview_attempts` row keyed on it, so without this the header alone
-    produces a foreign-key violation and a stack trace — an uninformative 500
-    for a request that is simply malformed.
+    A caller resolves to a user id, and for a signed-out caller that is the shared anonymous user.
+    Both write paths insert an `interview_attempts` row keyed on it, so a id that matches no row —
+    an anonymous user that was never seeded, say — produces a foreign-key violation and a stack
+    trace: an uninformative 500 for a request that is simply not attributable.
 
-    This is not authentication and does not pretend to be: it converts a bad
-    identifier into a clear error. Verifying that the caller *is* that user is
-    the separate, still-open X-User-Id trust problem.
+    This is not authentication and does not pretend to be; it converts a bad identifier into a
+    clear error. Proving the caller IS that user is `identity.py`'s job, and since the website's
+    unsigned `X-User-Id` header was removed it is done by a session token this server issued.
     """
     try:
         await db.commit()

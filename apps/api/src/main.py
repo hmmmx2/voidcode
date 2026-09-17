@@ -325,8 +325,8 @@ async def lifespan(app: FastAPI):
     #
     # FIRST, before the database, Redis or the model — the point is to fail in the first second
     # with a named variable rather than at 3 a.m. on the first password reset. This call is what
-    # `config.py` exists for and it had never been made, so every guardrail in it was inert: empty
-    # ALLOWED_ORIGINS, empty INTERNAL_API_SECRET, reset links still pointing at localhost, and a
+    # `config.py` exists for and it had never been made, so every guardrail in it was inert: a
+    # Stripe return URL still pointing at localhost, a forgeable password-reset code secret, and a
     # rate-limit pepper still set to the shipped default all passed silently.
     #
     # Deliberately NOT caught. A ConfigError here must stop the process; falling back to a
@@ -1918,34 +1918,23 @@ async def _begin_metering(
 ) -> "metering.Meter | None":
     """Refuse an identity that cannot be charged, then take a hold. None when not enforcing.
 
-    WHY BOTH CHECKS, AND WHY `verified` ALONE IS NOT ENOUGH.
+    ANONYMOUS IS REFUSED rather than given a free tier, because that UUID is a single shared
+    identity handed to every caller who presents no credential: a wallet on it would be one bank
+    account for the whole internet, drained by the first abuser. A free tier, if one is wanted, has
+    to be per-IP or per-device with its own quota, not a wallet.
 
-    `resolve_caller` returns `Caller(ANONYMOUS_USER_ID, verified=True)` when the header is missing or
-    malformed -- anonymous is "verified" because there is no id to forge. So `caller.verified` alone
-    passes every unauthenticated visitor straight through to a wallet lookup. Both conditions are
-    needed, and `Caller.is_anonymous` exists for exactly this.
-
-    Anonymous is refused rather than given a free tier because that UUID is a single shared identity
-    handed to every caller who presents no header: a wallet on it would be one bank account for the
-    whole internet, drained by the first abuser. A free tier, if one is wanted, has to be per-IP or
-    per-device with its own quota, not a wallet.
-
-    `verified` is refused here even though `INTERNAL_AUTH_ENFORCE` still defaults False globally.
-    That flag governs a two-phase rollout for read paths; this is a write path that spends money, and
-    `identity.py` says in as many words that such a path may want to refuse on this basis. The web
-    client's proxy already signs every request, so the only callers this turns away are the ones
-    bypassing it -- which is the population that must be turned away.
+    This also checked `caller.verified`, for a caller who named a user id in an unsigned header.
+    That header went with the website: a non-anonymous caller now got here by presenting a session
+    token this server issued, so naming a user and proving it are the same act.
     """
     if not config.GPU_BILLING_ENFORCE:
         # Shadow mode: measure only. Metering an unusable identity would mean creating wallets for
         # anonymous callers, so there is nothing to measure until an identity can be charged.
-        if caller.is_anonymous or not caller.verified:
+        if caller.is_anonymous:
             return None
     else:
         if caller.is_anonymous:
             raise HTTPException(status_code=401, detail="Sign in to use the tutor.")
-        if not caller.verified:
-            raise HTTPException(status_code=401, detail="This request could not be authenticated.")
 
     backend = "sglang" if USE_SGLANG else ("vllm" if USE_VLLM else "hf")
     try:
@@ -2030,10 +2019,6 @@ async def prometheus_metrics():
     and the deployment does not expose it through the ingress.
     """
     from fastapi import Response
-
-    # Read the live counter out of identity.py rather than mirroring it. Two counters for one fact
-    # drift, and the one on the dashboard would be the one nobody updated.
-    metrics.set_enforcement(config.INTERNAL_AUTH_ENFORCE)
 
     # THE QUEUE GAUGES ARE SAMPLED HERE, AT SCRAPE TIME, AND THEY WERE NOT BEFORE.
     #

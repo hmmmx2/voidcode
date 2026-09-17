@@ -15,8 +15,6 @@ from src import config
 #: A production environment with every other check satisfied, so each test varies exactly one thing.
 VALID_PRODUCTION = {
     "APP_ENV": "production",
-    "INTERNAL_AUTH_ENFORCE": "true",
-    "INTERNAL_API_SECRET": "a-secret",
     "ALLOWED_ORIGINS": "https://voidcode.example",
     "APP_BASE_URL": "https://voidcode.example",
     "EMAIL_PROVIDER": "resend",

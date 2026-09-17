@@ -1,12 +1,17 @@
-"""Password reset. Each rule here is the difference between a recovery flow and a takeover.
+"""Single-use emailed tokens, and changing a password while signed in.
 
-There was no reset, no change, no token table and no mail delivery, so a password-authenticated user
-had no recovery path at all — while `forgot-password/page.tsx` told them to change it from their
-profile, which had only GET and PUT.
+Each rule here is the difference between a recovery flow and a takeover. The tests worth reading are
+the revocation ones: a flow that leaves other tokens live is the failure that turns "I think someone
+got into my account" into "they still are".
 
-The tests worth reading are the revocation ones. A reset that leaves other links live is the failure
-that turns "I think someone got into my account" into "they still are": the owner requests a reset,
-sets a new password, and the link an attacker triggered an hour ago still works.
+THIS FILE USED TO BE ABOUT RESET-BY-LINK, which went with the website. A link is redeemable only by
+a web page that collects a new password, and there is no such page now — the desktop app uses a
+6-digit code redeemed inside the app that asked for it (`test_desktop_accounts_postgres.py` covers
+that flow end to end, and `test_web_auth_is_gone.py` holds the endpoints gone).
+
+What remains here is the machinery both flows share, exercised through the one single-use LINK
+purpose left — email verification — plus the change-password rule. `token_service.redeem`, its
+purpose filter, its single-use semantics and its revocation are the same code either way.
 """
 from __future__ import annotations
 
@@ -15,7 +20,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from src import config
-from src.models.auth_token import PURPOSE_EMAIL_VERIFY, PURPOSE_PASSWORD_RESET, AuthToken
+from src.models.auth_token import PURPOSE_DESKTOP_SESSION, PURPOSE_EMAIL_VERIFY, AuthToken
 from src.services import email_service, token_service
 
 
@@ -100,7 +105,7 @@ def test_token_generation_does_not_use_the_random_module() -> None:
 
 # ── redemption ───────────────────────────────────────────────────────────────
 
-def _token(user, *, purpose=PURPOSE_PASSWORD_RESET, raw="raw-token",
+def _token(user, *, purpose=PURPOSE_EMAIL_VERIFY, raw="raw-token",
            expires_in=timedelta(minutes=30), used=False, sent_to=None):
     return AuthToken(
         user_id=user.id,
@@ -118,7 +123,7 @@ async def test_a_valid_token_redeems_once(monkeypatch) -> None:
     session = FakeSession(users=[user])
     session._next_token = _token(user)
 
-    redeemed = await token_service.redeem(session, "raw-token", PURPOSE_PASSWORD_RESET)
+    redeemed = await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
     assert redeemed is user
     assert session._next_token.used_at is not None, "redeem must spend the token"
 
@@ -133,7 +138,7 @@ async def test_a_spent_token_is_refused_and_says_so() -> None:
     session._next_token = _token(user, used=True)
 
     with pytest.raises(token_service.TokenError, match="already been used"):
-        await token_service.redeem(session, "raw-token", PURPOSE_PASSWORD_RESET)
+        await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
 
 
 @pytest.mark.asyncio
@@ -143,7 +148,7 @@ async def test_an_expired_token_is_refused() -> None:
     session._next_token = _token(user, expires_in=timedelta(minutes=-1))
 
     with pytest.raises(token_service.TokenError, match="expired"):
-        await token_service.redeem(session, "raw-token", PURPOSE_PASSWORD_RESET)
+        await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
 
 
 @pytest.mark.asyncio
@@ -151,7 +156,7 @@ async def test_an_unknown_token_is_refused() -> None:
     session = FakeSession()
     session._next_token = None
     with pytest.raises(token_service.TokenError, match="not valid"):
-        await token_service.redeem(session, "anything", PURPOSE_PASSWORD_RESET)
+        await token_service.redeem(session, "anything", PURPOSE_EMAIL_VERIFY)
 
 
 @pytest.mark.asyncio
@@ -168,7 +173,7 @@ async def test_a_token_is_refused_if_the_account_email_changed_since_it_was_sent
     session._next_token = _token(user, sent_to="old@example.com")
 
     with pytest.raises(token_service.TokenError, match="no longer valid"):
-        await token_service.redeem(session, "raw-token", PURPOSE_PASSWORD_RESET)
+        await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
 
 
 @pytest.mark.asyncio
@@ -178,32 +183,32 @@ async def test_a_deactivated_account_cannot_redeem() -> None:
     session._next_token = _token(user)
 
     with pytest.raises(token_service.TokenError):
-        await token_service.redeem(session, "raw-token", PURPOSE_PASSWORD_RESET)
+        await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
 
 
 @pytest.mark.asyncio
-async def test_a_verification_token_cannot_reset_a_password() -> None:
-    """Purpose is part of the lookup. Otherwise an email-verification link — which is mailed far
-    more freely and lives for 24 hours rather than 60 minutes — doubles as a password reset."""
+async def test_a_token_cannot_be_redeemed_for_another_purpose() -> None:
+    """Purpose is part of the lookup. Otherwise a token mailed for one thing authorises another —
+    a verification link, which is sent far more freely, standing in for a credential."""
     user = FakeUser()
     session = FakeSession(users=[user])
     session._next_token = None          # the purpose-filtered query finds nothing
 
     with pytest.raises(token_service.TokenError):
-        await token_service.redeem(session, "raw-token", PURPOSE_EMAIL_VERIFY)
+        await token_service.redeem(session, "raw-token", PURPOSE_DESKTOP_SESSION)
 
 
 # ── revocation, the rules that matter most ───────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_issuing_a_reset_revokes_the_previous_one() -> None:
-    """Otherwise requesting a second reset leaves the first link live, so an attacker who triggered
-    one earlier still holds a working link after the owner requests their own."""
+async def test_issuing_a_token_revokes_the_previous_one() -> None:
+    """Otherwise requesting a second one leaves the first live, so an attacker who triggered one
+    earlier still holds something that works after the owner requests their own."""
     user = FakeUser()
     old = _token(user, raw="old-token")
     session = FakeSession(users=[user], tokens=[old])
 
-    await token_service.issue_password_reset(session, user)
+    await token_service.issue_email_verification(session, user)
     assert old.used_at is not None
 
 
@@ -215,45 +220,12 @@ async def test_revoke_all_spends_every_outstanding_token() -> None:
     tokens = [_token(user, raw=f"t{i}") for i in range(3)]
     session = FakeSession(users=[user], tokens=tokens)
 
-    count = await token_service.revoke_password_resets(session, user.id)
+    count = await token_service.revoke_all(session, user.id, PURPOSE_EMAIL_VERIFY)
     assert count == 3
     assert all(t.used_at is not None for t in tokens)
 
 
 # ── email ────────────────────────────────────────────────────────────────────
-
-def test_the_reset_link_is_built_from_config_not_a_request_header(monkeypatch) -> None:
-    """The most dangerous line in email_service. nginx forwards the client's Host header, so
-    building the link from the request would let a host-header injection point it at an attacker's
-    domain — and the user would type their new password into it."""
-    monkeypatch.setattr(config, "APP_BASE_URL", "https://voidcode.example")
-    email = email_service.password_reset_email("a@b.com", "tok123")
-    assert "https://voidcode.example/reset-password?token=tok123" in email.body
-
-    # Checked against the executable statements, not the prose. The docstring discusses `Host`
-    # headers at length precisely because they must not be used, so matching raw file text finds
-    # the warning and calls it a violation — which an earlier version of this test did.
-    import ast
-    from pathlib import Path
-
-    source = (Path(__file__).resolve().parents[1] / "src" / "services" / "email_service.py")
-    tree = ast.parse(source.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr in {"headers", "url", "base_url"}:
-            parent = getattr(node.value, "id", "")
-            assert parent != "request", "email_service reads the request — links must come from config"
-    assert "APP_BASE_URL" in {
-        n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)
-    }, "the link is no longer built from config.APP_BASE_URL"
-
-
-def test_the_reset_email_says_the_link_is_single_use_and_expiring(monkeypatch) -> None:
-    monkeypatch.setattr(config, "RESET_TOKEN_TTL_MINUTES", 60)
-    body = email_service.password_reset_email("a@b.com", "t").body
-    assert "once" in body and "60 minutes" in body
-    # Someone who did not request it needs to know they can ignore it safely.
-    assert "ignore" in body
-
 
 @pytest.mark.asyncio
 async def test_the_console_provider_does_not_send_and_reports_success(monkeypatch, caplog) -> None:
@@ -261,8 +233,8 @@ async def test_the_console_provider_does_not_send_and_reports_success(monkeypatc
     start production in this mode — see test_config_is_wired.py."""
     monkeypatch.setattr(config, "EMAIL_PROVIDER", "console")
     with caplog.at_level("INFO"):
-        assert await email_service.send(email_service.password_reset_email("a@b.com", "tok")) is True
-    assert "tok" in caplog.text
+        assert await email_service.send(email_service.password_reset_code_email("a@b.com", "123456")) is True
+    assert "123456" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -270,7 +242,7 @@ async def test_an_unknown_provider_fails_loudly_but_does_not_raise(monkeypatch, 
     """A raise here would break the identical-response property of /forgot-password."""
     monkeypatch.setattr(config, "EMAIL_PROVIDER", "sendgrid")
     with caplog.at_level("ERROR"):
-        assert await email_service.send(email_service.password_reset_email("a@b.com", "t")) is False
+        assert await email_service.send(email_service.password_reset_code_email("a@b.com", "123456")) is False
     assert "EMAIL NOT SENT" in caplog.text
 
 
@@ -279,30 +251,11 @@ async def test_resend_without_a_key_fails_without_calling_out(monkeypatch, caplo
     monkeypatch.setattr(config, "EMAIL_PROVIDER", "resend")
     monkeypatch.setattr(config, "RESEND_API_KEY", "")
     with caplog.at_level("ERROR"):
-        assert await email_service.send(email_service.password_reset_email("a@b.com", "t")) is False
+        assert await email_service.send(email_service.password_reset_code_email("a@b.com", "123456")) is False
     assert "RESEND_API_KEY" in caplog.text
 
 
 # ── the endpoints exist and are shaped correctly ─────────────────────────────
-
-def test_all_three_recovery_endpoints_are_registered() -> None:
-    from src.routers.auth import router
-    paths = {r.path for r in router.routes}
-    for expected in ("/v1/auth/forgot-password", "/v1/auth/reset-password",
-                     "/v1/auth/change-password"):
-        assert expected in paths
-
-
-def test_forgot_password_returns_one_message_for_every_case() -> None:
-    """A membership oracle otherwise: "no such account" tells anyone with an email list who is
-    registered. Same reasoning as password_login's single 401."""
-    from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "src" / "routers" / "auth.py")
-    body = source.read_text(encoding="utf-8").split("async def forgot_password")[1].split(
-        "async def reset_password")[0]
-    # Exactly one MessageResponse construction, on the shared exit path.
-    assert body.count("return MessageResponse(") == 1
-
 
 def test_change_password_requires_the_current_password() -> None:
     """A session is not proof of presence. A borrowed laptop or a stolen cookie must not be enough
@@ -311,21 +264,3 @@ def test_change_password_requires_the_current_password() -> None:
     source = (Path(__file__).resolve().parents[1] / "src" / "routers" / "auth.py")
     body = source.read_text(encoding="utf-8").split("async def change_password")[1]
     assert "verify_password(user.password_hash, payload.current_password)" in body
-
-
-def test_reset_and_change_both_revoke_outstanding_links() -> None:
-    """The failure that turns "someone got in" into "they still are"."""
-    from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "src" / "routers" / "auth.py")
-    text = source.read_text(encoding="utf-8")
-    for handler in ("async def reset_password", "async def change_password"):
-        body = text.split(handler)[1].split("@router.post")[0]
-        assert "revoke_password_resets" in body, f"{handler} leaves other reset links live"
-
-
-def test_reset_uses_the_same_password_policy_as_register() -> None:
-    """A weaker rule on reset would make it the cheapest route to a weak password."""
-    from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "src" / "routers" / "auth.py")
-    body = source.read_text(encoding="utf-8").split("async def reset_password")[1]
-    assert "validate_password(" in body

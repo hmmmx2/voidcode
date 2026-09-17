@@ -2,9 +2,10 @@
 
 `RATELIMIT_PEPPER` and `TRUSTED_PROXY_HOPS` have been defined in `config.py` and documented in
 `.env.example` since the auth work landed, and were read by nothing. `redis_client.py` still
-describes itself as being for "future rate limiting". So `/v1/auth/password-login` and
-`/v1/auth/register` accepted unlimited attempts: unlimited credential stuffing against a real
-password database, and unlimited account creation.
+describes itself as being for "future rate limiting". So the sign-in and registration endpoints —
+`/v1/auth/desktop/session` and `/v1/auth/desktop/register` today, their web-shaped predecessors at
+the time — accepted unlimited attempts: unlimited credential stuffing against a real password
+database, and unlimited account creation.
 
 THE CLIENT IP IS THE HARD PART, AND THE LEFTMOST XFF ENTRY IS A TRAP
 ----------------------------------------------------------------------
