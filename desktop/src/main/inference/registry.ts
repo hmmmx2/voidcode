@@ -6,10 +6,12 @@
  * and a caller needing structured output cannot be silently handed a backend that will
  * return prose instead.
  */
-import { MessageChannelMain, app, type WebContents } from "electron";
+import { MessageChannelMain, type WebContents } from "electron";
 import { OllamaProvider } from "./ollama.js";
 import { OpenAICompatibleProvider } from "./openai.js";
 import { secretValue } from "./vault.js";
+import { handleUnauthorized, sessionToken } from "../account/session.js";
+import { apiBase } from "../platform/config.js";
 import {
   UnsupportedCapabilityError,
   type ChatRequest,
@@ -61,18 +63,15 @@ function providers(): InferenceProvider[] {
  * DEVELOPMENT ONLY: `VOIDCODE_DEV_SESSION_TOKEN`. Replaces the old `VOIDCODE_USER_ID`, which sent
  * a bare, unsigned user id and only worked against an API with identity enforcement off. A dev
  * token is a real session (mint one with `apps/api/scripts/mint_desktop_session.py`), so dev and
- * production exercise the same path. It is read only in an unpackaged build and only when nothing
- * is stored, so a real session always wins and a shipped app can never be told to use one.
+ * production exercise the same path. Resolved by `account/session.ts`, the one owner of "is there a
+ * session", which honours it only where the environment may configure this process.
+ *
+ * NO ADDRESS, NO SESSION. With no acceptable API address configured the provider is unavailable
+ * rather than pointed somewhere, so a build made without one cannot send a conversation anywhere.
  */
 async function hostedToken(): Promise<string | undefined> {
-  const stored = secretValue("voidcode");
-  if (stored !== undefined) return stored;
-
-  // `app` is undefined under the unit-test Electron stub. Unknown is treated as packaged: the
-  // override is the thing that must never apply by accident, so it fails closed.
-  const unpackaged = app !== undefined && app.isPackaged === false;
-  const dev = process.env.VOIDCODE_DEV_SESSION_TOKEN;
-  return unpackaged && dev !== undefined && dev !== "" ? dev : undefined;
+  if (apiBase() === null) return undefined;
+  return sessionToken();
 }
 
 function realProviders(): InferenceProvider[] {
@@ -91,7 +90,7 @@ function realProviders(): InferenceProvider[] {
       label: "VoidCode",
       // The platform API, not a model server. Overridable so a developer can point at a local
       // instance without a rebuild; the default is what a packaged app ships with.
-      baseUrl: process.env.VOIDCODE_API_URL ?? "http://127.0.0.1:8020/v1",
+      baseUrl: apiBase() ?? "",
       // `remote: true` IS THE CONSENT DECISION, not a description.
       //
       // It drives the cloud-active indicator and the upload-consent prompt. Text sent here
@@ -104,6 +103,9 @@ function realProviders(): InferenceProvider[] {
       // paper pipeline pick this provider and get prose where it required JSON.
       capabilities: { tools: false, grammar: false, remote: true },
       authToken: hostedToken,
+      // A 401 from our API means this session is over; end it here so the account UI, credits and
+      // the next chat all agree, instead of each failing on its own.
+      onUnauthorized: handleUnauthorized,
     }),
     new OpenAICompatibleProvider({
       id: "openrouter",
@@ -157,7 +159,7 @@ export function destinationFor(id: ProviderId): string {
     case "llamacpp":
       return "127.0.0.1:8080";
     case "hosted":
-      return new URL(process.env.VOIDCODE_API_URL ?? "http://127.0.0.1:8020/v1").host;
+      return new URL(apiBase() ?? "http://unconfigured.invalid").host;
     case "openrouter":
       return "openrouter.ai";
   }

@@ -21,9 +21,28 @@ interface Section {
  * deletion, staff reviewing conversations for quality assurance, disclosure to cloud hosting
  * vendors, and TLS 1.2+ / AES-256 / MFA protecting a server nobody runs.
  *
- * There is no account, no sign-in, no server, and no "us" that receives anything. A privacy policy
- * that overstates collection is not a harmless placeholder — it is a factual misstatement about the
- * one document a user consults precisely because they cannot read the source.
+ * A privacy policy that overstates collection is not a harmless placeholder — it is a factual
+ * misstatement about the one document a user consults precisely because they cannot read the source.
+ *
+ * ── AND WHY IT CHANGED AGAIN, WHEN THE OPTIONAL ACCOUNT ARRIVED ──────────────────────────────────
+ *
+ * The rewrite said "no account to create, no sign-in, and no VoidCode server" while the Models page
+ * already shipped a sign-in form for the hosted model. So the error flipped direction: it now
+ * UNDERSTATED what happens, which is the unsafe way round. The document is organised around the one
+ * distinction that is actually true — without an account nothing reaches us; with one, section 6
+ * lists what our server keeps — and every server-side claim there was checked against `apps/api`:
+ *
+ *   - account columns ...................... `models/user.py`, `models/auth_token.py` (token HASH,
+ *                                            expiry, no IP or device)
+ *   - credits, ledger, metering records .... `models/gpu_billing.py`, `models/credit_voucher.py`
+ *   - conversations not stored or logged ... no table holds them; `tests/test_prompts_are_not_logged.py`
+ *                                            (two log lines kept 60 characters of each question
+ *                                            until this rewrite found them)
+ *   - hashed attempt counters, ≤ 1 hour .... `ratelimit.py`
+ *   - one kind of email, via Resend ........ `services/email_service.py`, `routers/auth.py`
+ *   - card details never reach us .......... `services/payments.py` (hosted Stripe Checkout)
+ *   - no account deletion endpoint ......... hence "email the Privacy Officer", not a button
+ *   - no log retention period .............. none is configured, so none is claimed
  *
  * Note the direction of the error. Every claim removed here described *more* data handling than
  * happens, which is the safer direction to be wrong in but still wrong. Section 2 already carried a
@@ -32,8 +51,8 @@ interface Section {
  *
  * EVERY FACTUAL CLAIM BELOW WAS CHECKED AGAINST THE CODE, and each is followed here by where:
  *
- *   - no account/auth surface .............. `lib/hooks/useUserId.ts`, and the absence of auth.ts,
- *                                            middleware.ts and /api/auth/*
+ *   - signed out, nothing reaches us ....... `src/main/account/session.ts`, `platform/http.ts`
+ *   - account details held in memory only . `src/main/account/session.ts` (no `store/` import)
  *   - the profile columns .................. the `profile` table in `src/main/store/db.ts`, which
  *                                            deliberately has no email column
  *   - one local SQLite file ................ `src/main/store/db.ts`
@@ -60,20 +79,27 @@ const SECTIONS: Section[] = [
       <>
         <p>
           VoidCode AI ("VoidCode", "we", "our", or "us") publishes the VoidCode application. This
-          Privacy Policy explains what the application stores, where it stores it, and the few
-          circumstances in which anything leaves your computer.
+          Privacy Policy explains what the application stores, where it stores it, when anything
+          leaves your computer, and what we hold if you choose to create an account.
         </p>
         <p>
           <strong className="text-ink-2">
-            One fact shapes everything else in this document: the application runs entirely on your
-            machine.
+            An account is optional, and without one the application runs entirely on your machine.
           </strong>{" "}
-          There is no account to create, no sign-in, and no VoidCode server for it to talk to. We do
-          not receive your profile, your code, your submissions, or your conversations — not because
-          we choose to discard them, but because nothing sends them to us.
+          The editor, the grader, local models and your profile all work without signing in, and a
+          signed-out application sends nothing to a VoidCode server. We do not receive your profile,
+          your code, your submissions, or your local conversations — not because we choose to discard
+          them, but because nothing sends them to us.
         </p>
         <p>
-          That means most of this Policy describes data <em>you</em> hold rather than data we hold,
+          An account exists for one purpose: using the VoidCode model, which runs on our servers and
+          is paid for with credits. If you create one, we hold the account details described in
+          section 6, and conversations you send to the VoidCode model pass through our servers to be
+          answered. Section 3 lists every way anything leaves your computer, with or without an
+          account.
+        </p>
+        <p>
+          Most of this Policy therefore describes data <em>you</em> hold rather than data we hold,
           and several rights that a hosted service would grant you are instead things you can simply
           do yourself. Where that is the case, it says so.
         </p>
@@ -93,11 +119,11 @@ const SECTIONS: Section[] = [
   },
   {
     id: "information-collected",
-    title: "2. What Is Stored, and Where",
+    title: "2. What Is Stored on Your Computer",
     content: (
       <>
         <p>
-          Everything the application records about you is kept in a single database file named{" "}
+          Everything the application records about your work is kept in a single database file named{" "}
           <code className="text-ink-2">voidcode.db</code>, inside the application-data folder your
           operating system allocates to VoidCode. It is an ordinary file on your disk. You can copy
           it, back it up, inspect it, or delete it.
@@ -106,7 +132,7 @@ const SECTIONS: Section[] = [
         <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">2.1 Details you enter</h3>
         <ul>
           <li>
-            A profile, entirely optional: display name, biography, date of birth, country,
+            A local profile, entirely optional: display name, biography, date of birth, country,
             occupation, profile photo, and time zone
           </li>
           <li>Your code submissions, drafts, and which exercises you have solved</li>
@@ -114,9 +140,9 @@ const SECTIONS: Section[] = [
           <li>Notifications the application has generated for you</li>
         </ul>
         <p>
-          <strong className="text-ink-2">There is no email address field</strong>, and no password.
-          The database has no column for either, because there is no account to sign in to and no
-          message we could send you.
+          <strong className="text-ink-2">The local profile has no email address field</strong>, and no
+          password. The database has no column for either. Your local profile is not your VoidCode
+          account, is not sent to us, and is not linked to an account if you create one.
         </p>
 
         <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">2.2 Recorded as you work</h3>
@@ -140,6 +166,15 @@ const SECTIONS: Section[] = [
           token. Browser local storage holds one thing: which panels you have open and how you have
           sized them.
         </p>
+
+        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">2.4 If you sign in</h3>
+        <p>
+          Signing in gives the application a session token. It is encrypted with your operating
+          system&apos;s credential store, like the API key in section 5, and is never shown to you or
+          readable by the interface. Your account&apos;s email address and name are fetched from us
+          while the application is open and held in memory only — they are not written to the local
+          database. Signing out removes the token.
+        </p>
       </>
     ),
   },
@@ -151,8 +186,8 @@ const SECTIONS: Section[] = [
         <p>
           By default, nothing. Models run through a local Ollama or llama.cpp on your own machine,
           and your code is executed inside the application in a WebAssembly sandbox that has no
-          network access at all. There are exactly four ways anything reaches the internet, and all
-          four require you to act first:
+          network access at all. Anything reaching the internet happens in one of these ways, and
+          every one of them requires you to act first:
         </p>
         <ul>
           <li>
@@ -162,14 +197,21 @@ const SECTIONS: Section[] = [
             key, their models are listed and cannot be used. It goes to them, not to us.
           </li>
           <li>
+            <strong className="text-ink-2">Your VoidCode account, if you create one.</strong> Creating
+            an account, signing in, resetting a password, checking your credit balance and buying
+            credits all send what that step needs to us — for example your email address and password
+            when you sign in. While you are signed in, the application also checks with us that your
+            sign-in is still valid and fetches your balance and the list of VoidCode models. Section 6
+            describes what we keep.
+          </li>
+          <li>
             <strong className="text-ink-2">The VoidCode model, if you select it.</strong> This one
-            goes <em>to us</em>, and it is the only thing here that does. Choosing the
-            &ldquo;VoidCode&rdquo; provider sends that conversation — your prompt, and any code or
-            images attached to it — to our servers, where a model we run answers it. We do this
-            because the model is far larger than anything most machines can hold, and running it
-            costs us GPU time, which is why it is metered against credits rather than free. Every
-            other provider in this list is a machine you control or a company you chose; this one
-            is ours. It is never selected for you, and the local providers keep working without it.
+            goes <em>to us</em>. Choosing the &ldquo;VoidCode&rdquo; provider sends that conversation —
+            your prompt, and any code or images attached to it — to our servers, where a model we run
+            answers it. We do this because the model is far larger than anything most machines can
+            hold, and running it costs us GPU time, which is why it needs an account and is metered
+            against credits rather than free. It is never selected for you, and the local providers
+            keep working without it.
           </li>
           <li>
             <strong className="text-ink-2">Downloading a model.</strong> Ollama fetches the weights
@@ -184,10 +226,11 @@ const SECTIONS: Section[] = [
           </li>
         </ul>
         <p>
-          Your submissions, your progress, your profile and your local conversations are not part of
-          any of that. No usage analytics, crash reports, performance metrics, IP addresses or device
-          identifiers are collected or sent anywhere, because the application contains nothing that
-          would send them.
+          Your submissions, your progress, your local profile and your local conversations are not
+          part of any of that. The application collects no usage analytics, crash reports,
+          performance metrics or device identifiers, because it contains nothing that would send
+          them. When it does contact our servers, those servers see the IP address the request came
+          from, as any server does — section 6 says what is kept.
         </p>
       </>
     ),
@@ -200,13 +243,15 @@ const SECTIONS: Section[] = [
         <p>
           Your conversations are rows in the local database described in section 2. They are used to
           give the model the earlier turns of the same conversation, and to let you reopen a
-          conversation later. That is all.
+          conversation later.
         </p>
         <ul>
           <li>
-            <strong className="text-ink-2">Nobody reviews them.</strong> There is no mechanism by
-            which a conversation could reach us, so there is no quality-assurance review, no safety
-            monitoring, and no authorised personnel with access.
+            <strong className="text-ink-2">Nobody reviews them.</strong> A conversation with a local
+            model never reaches us. A conversation sent to the VoidCode model passes through our
+            servers to be answered, and is not stored there: our servers do not write its text to
+            their database or to their logs. There is no quality-assurance review and no safety
+            monitoring of what you write.
           </li>
           <li>
             <strong className="text-ink-2">Nothing is used to train a model.</strong> No aggregate
@@ -218,9 +263,9 @@ const SECTIONS: Section[] = [
             <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
           </svg>
           <p className="text-[12px] leading-relaxed text-ink-2">
-            If you have configured a remote model, treat what you type as leaving your machine. Avoid
-            putting passwords, financial details or health information in a conversation you are
-            sending to a provider.
+            If you have selected a remote model — OpenRouter or the VoidCode model — treat what you type
+            as leaving your machine. Avoid putting passwords, financial details or health information in
+            a conversation you are sending to a provider.
           </p>
         </div>
       </>
@@ -248,52 +293,116 @@ const SECTIONS: Section[] = [
           <li>
             If your system offers no keyring the application can rely on, the key is held only for
             the current session and never written to disk. The model manager tells you which of the
-            two happened when you save it.
+            two happened when you save it. The same applies to a VoidCode sign-in, and the Account
+            page says so when it happens.
           </li>
         </ul>
       </>
     ),
   },
   {
-    id: "disclosure",
-    title: "6. Disclosure of Information",
+    id: "account",
+    title: "6. If You Create an Account",
     content: (
       <>
         <p>
-          We do not sell, rent, trade or disclose your personal information, and the reason is
-          structural rather than a promise about our conduct: we do not have it. There is no cloud
-          hosting to pass it to, no authentication vendor, and no staff with a way to reach it.
+          Everything in this section applies only if you create a VoidCode account. Without one, we
+          hold none of it.
+        </p>
+
+        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">6.1 What we keep</h3>
+        <ul>
+          <li>Your email address and the name you gave</li>
+          <li>
+            Your password as an Argon2id hash — a one-way transformation, so we cannot read the
+            password back
+          </li>
+          <li>
+            When the account was created, when you last signed in, when your password last changed,
+            and when your email address was confirmed by a code we sent it
+          </li>
+          <li>Which version of these documents you accepted, and when</li>
+          <li>
+            For each device you sign in on, a hash of its session token and when that session expires
+            — not the token itself, and not the device&apos;s name, model or IP address
+          </li>
+          <li>A welcome message created with the account</li>
+          <li>
+            Your credit balance, and a ledger of credits added, held and spent. When the VoidCode model
+            is metered, each answer also leaves a record of how long it took, what it cost, and which
+            of our servers answered it — but not what you asked or what it said
+          </li>
+          <li>Which voucher codes you redeemed</li>
+        </ul>
+
+        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">6.2 What our servers record in passing</h3>
+        <ul>
+          <li>
+            <strong className="text-ink-2">Server logs.</strong> Our servers log events such as a
+            sign-in that failed, a password that was changed, or a code that was sent, with the email
+            address involved, so that misuse of an account can be investigated. Like most web servers,
+            they also log the IP address and path of each request they receive.
+          </li>
+          <li>
+            <strong className="text-ink-2">Attempt limits.</strong> To slow down password guessing,
+            our servers count recent attempts per IP address and per email address. Both are stored
+            only as a keyed hash, and each count lapses after at most an hour.
+          </li>
+        </ul>
+
+        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">6.3 What we use it for</h3>
+        <p>
+          Signing you in, sending you the codes you ask for, running the VoidCode model for you,
+          keeping your credit balance, and protecting accounts from misuse. We send an account one
+          kind of email — the 6-digit code you request to reset or set a password — and no newsletters
+          or marketing.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "disclosure",
+    title: "7. Disclosure of Information",
+    content: (
+      <>
+        <p>
+          We do not sell, rent or trade your personal information. Without an account the reason is
+          structural rather than a promise about our conduct: we do not have it.
         </p>
         <p>
-          Two consequences worth stating plainly, because they differ from a hosted service:
+          With an account, a small number of companies handle part of it so the account can work, each
+          named in section 11: a payment processor if you buy credits, an email delivery service for
+          the codes you request, and the providers whose servers our service and the VoidCode model
+          run on.
         </p>
         <ul>
           <li>
-            <strong className="text-ink-2">A legal demand to us produces nothing</strong>, because
-            there is nothing in our possession to produce. A demand directed at you, or at your
-            computer, is between you and whoever makes it.
+            <strong className="text-ink-2">A legal demand to us</strong> can reach only what section 6
+            describes, and only for account holders. Your code, submissions, local conversations and
+            local profile are not in our possession. A demand directed at you, or at your computer, is
+            between you and whoever makes it.
           </li>
           <li>
-            <strong className="text-ink-2">A change of ownership transfers no user data</strong>,
-            since none is held. If that ever ceases to be true, this Policy has to change first, and
-            section 11 says how you would be told.
+            <strong className="text-ink-2">A change of ownership</strong> would carry the account
+            records in section 6 with it, and nothing else, since nothing else is held. If that ever
+            changed, this Policy would have to change first, and section 12 says how you would be told.
           </li>
         </ul>
         <p>
-          Where you have chosen to use a remote model, that provider receives what you send them and
-          handles it under their own policy. See section 3.
+          Where you have chosen to use OpenRouter, it receives what you send it and handles it under
+          its own policy. See section 3.
         </p>
       </>
     ),
   },
   {
     id: "data-retention",
-    title: "7. Retention and Deletion",
+    title: "8. Retention and Deletion",
     content: (
       <>
         <p>
-          We set no retention period, because we hold nothing to retain. Your data stays on your disk
-          until you remove it, and you do not need our involvement — or our permission — to do so.
+          <strong className="text-ink-2">On your computer</strong>, your data stays on your disk until
+          you remove it, and you do not need our involvement — or our permission — to do so.
         </p>
         <ul>
           <li>
@@ -304,33 +413,42 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong className="text-ink-2">Everything:</strong> delete the application-data folder
-            described in section 2, or uninstall the application. Nothing survives elsewhere and
-            nobody else holds a copy.
+            described in section 2, or uninstall the application. Because we hold no copy of it, we
+            also cannot restore any of it for you. If your data matters to you, back up that folder.
           </li>
         </ul>
         <p>
-          The corollary deserves saying: because we hold no copy, we also cannot restore anything for
-          you. If your data matters to you, back up that folder.
+          <strong className="text-ink-2">On our servers</strong>, the account records in section 6 are
+          kept while the account exists. A sign-in session lasts 90 days unless you sign out first,
+          and a password code expires after 15 minutes; expired and signed-out sessions are marked as
+          ended rather than erased. We have not yet set a fixed period for keeping server logs, and
+          until we do, this Policy will not claim one.
+        </p>
+        <p>
+          Signing out does not delete an account. The application does not yet have a button that
+          does; to delete your account, email the Privacy Officer in section 13 from the email address
+          on the account. Deleting it removes the records in section 6.1, except a record that each
+          payment was credited, which is kept so the same payment can never be credited twice. Server
+          logs written before the deletion are not edited. The payment processor keeps its own record
+          of a purchase under its own policy.
         </p>
       </>
     ),
   },
   {
     id: "security",
-    title: "8. Security",
+    title: "9. Security",
     content: (
       <>
         <p>
-          The protections that matter here are the ones that hold on your own machine, so this section
-          lists those rather than the server-side controls a hosted service would describe. There is
-          no VoidCode server, so no TLS configuration, no encryption-at-rest scheme of ours, no
-          role-based staff access and no administrative multi-factor authentication apply.
+          Most of the protections that matter are the ones that hold on your own machine, so this
+          section starts with those.
         </p>
         <ul>
           <li>
-            <strong className="text-ink-2">Your API key</strong> is encrypted with the operating
-            system&apos;s credential store, is never shown back to you, and is not readable by the
-            interface. See section 5.
+            <strong className="text-ink-2">Your API key and your sign-in</strong> are encrypted with
+            the operating system&apos;s credential store, are never shown back to you, and are not
+            readable by the interface. See sections 2.4 and 5.
           </li>
           <li>
             <strong className="text-ink-2">Your code runs in a sandbox</strong> — a WebAssembly Python
@@ -347,6 +465,22 @@ const SECTIONS: Section[] = [
             documentation sites in section 3, and it cannot reach hosts on your local network.
           </li>
         </ul>
+        <p>For an account, on our side:</p>
+        <ul>
+          <li>
+            The application sends your password and session to us only over HTTPS. The one other
+            address it accepts is a server on your own computer, which never crosses a network.
+          </li>
+          <li>
+            Passwords are stored as Argon2id hashes and sessions as hashes of their tokens, so a copy
+            of our database would contain neither.
+          </li>
+          <li>
+            A password code works once, for 15 minutes, and stops working after five wrong guesses.
+            Setting a new password with one signs out every other device, and changing your password
+            signs out every device but the one you changed it on.
+          </li>
+        </ul>
         <p>
           Two limits stated plainly rather than left implied. The restriction on which Python modules
           an exercise may import is there to keep exercises honest, and is not a security boundary
@@ -359,13 +493,13 @@ const SECTIONS: Section[] = [
   },
   {
     id: "your-rights",
-    title: "9. Your Privacy Rights",
+    title: "10. Your Privacy Rights",
     content: (
       <>
         <p>
           Under the Australian Privacy Principles you have rights over personal information an
-          organisation holds about you. Because we hold none, most of these are things you can
-          exercise directly, without asking us and without waiting for us:
+          organisation holds about you. For what is on your computer, you can exercise them directly,
+          without asking us and without waiting for us:
         </p>
         <ul>
           <li>
@@ -379,13 +513,13 @@ const SECTIONS: Section[] = [
           </li>
           <li>
             <strong className="text-ink-2">Deletion</strong> — delete individual items in the
-            application, or remove the application-data folder to delete everything. No retention
-            obligation of ours delays this, because we are not a party to it. See section 7.
+            application, or remove the application-data folder to delete everything. See section 8.
           </li>
           <li>
             <strong className="text-ink-2">Opt-out</strong> — nothing to opt out of. Your data is not
-            used for model training or research, and there is no analytics collection to disable. If
-            you want to stop data reaching a third party, remove your API key (section 5).
+            used for model training or research, and there is no analytics collection to disable. To
+            stop data reaching a third party, remove your API key (section 5) or stop using the
+            VoidCode model.
           </li>
           <li>
             <strong className="text-ink-2">Complaint</strong> — you may lodge a complaint with the
@@ -394,8 +528,10 @@ const SECTIONS: Section[] = [
           </li>
         </ul>
         <p>
-          If you believe we nonetheless hold information about you, or you have a question this Policy
-          does not answer, contact our Privacy Officer at{" "}
+          For an account, the Account page shows the details we hold about you, your balance is on the
+          Models page, and you can change your password in the application. To obtain a copy of your
+          account records, correct something the application cannot, or delete the account, contact our
+          Privacy Officer at{" "}
           <a href="mailto:privacy@swin.edu.au" className="text-ink hover:text-ink transition-colors">
             privacy@swin.edu.au
           </a>
@@ -406,21 +542,22 @@ const SECTIONS: Section[] = [
   },
   {
     id: "third-party",
-    title: "10. Third-Party Services",
+    title: "11. Third-Party Services",
     content: (
       <>
         <p>
           The application has no third-party integrations that are active by default. There is no
-          analytics provider, no error-reporting service, no advertising network, and no
-          authentication provider — sign-in with Microsoft or Google is not offered.
+          analytics provider, no error-reporting service and no advertising network. The application
+          does not offer sign-in with Microsoft or Google; an account uses an email address and
+          password.
         </p>
         <p>
-          One party that can become involved is not a third party at all: it is us. Selecting the
-          VoidCode model sends that conversation to our servers, as section 3 describes. We mention
-          it here because a list of &ldquo;who else might see this&rdquo; that quietly omits the
-          people who wrote the application would be the least useful kind of accurate.
+          One party that can become involved is not a third party at all: it is us. Signing in and
+          selecting the VoidCode model send information to our servers, as sections 3 and 6 describe.
+          We mention it here because a list of &ldquo;who else might see this&rdquo; that quietly omits
+          the people who wrote the application would be the least useful kind of accurate.
         </p>
-        <p>Two third parties can become involved, in both cases because you chose it:</p>
+        <p>Other parties can become involved, in every case because you chose it:</p>
         <ul>
           <li>
             <strong className="text-ink-2">OpenRouter</strong> — only once you add a key. Conversations
@@ -434,6 +571,30 @@ const SECTIONS: Section[] = [
               OpenRouter privacy policy
             </a>
             .
+          </li>
+          <li>
+            <strong className="text-ink-2">Stripe</strong> — only if you buy credits. The purchase is
+            completed on Stripe&apos;s own checkout page in your browser, so your card or bank details go
+            to Stripe and never to us. Stripe receives an identifier for your account so the payment
+            can be credited to it, and handles what you enter under the{" "}
+            <a
+              href="https://stripe.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-ink hover:text-ink transition-colors"
+            >
+              Stripe privacy policy
+            </a>
+            .
+          </li>
+          <li>
+            <strong className="text-ink-2">Resend</strong> — only when you ask for a password code. It
+            delivers that email, so it receives your email address and the message.
+          </li>
+          <li>
+            <strong className="text-ink-2">Server and GPU hosting providers</strong> — only for an
+            account and the VoidCode model. Our service runs on servers we rent, and the VoidCode model
+            on rented GPU servers, so a conversation you send to it passes through them to be answered.
           </li>
           <li>
             <strong className="text-ink-2">The documentation sites in section 3</strong> — reached only
@@ -454,14 +615,14 @@ const SECTIONS: Section[] = [
   },
   {
     id: "changes",
-    title: "11. Changes to This Policy",
+    title: "12. Changes to This Policy",
     content: (
       <>
         <p>
           We may update this Privacy Policy to reflect changes in the application, or in legal
-          requirements. Because we hold no contact details for you,{" "}
-          <strong className="text-ink-2">we cannot email you when it changes</strong> — and this Policy
-          previously said we would, which was not something we were able to do.
+          requirements. Without an account we hold no contact details for you, and with one we use
+          your email address only for the codes described in section 6 —{" "}
+          <strong className="text-ink-2">so we do not email you when this Policy changes</strong>.
         </p>
         <p>How you can actually tell:</p>
         <ul>
@@ -484,7 +645,7 @@ const SECTIONS: Section[] = [
   },
   {
     id: "contact",
-    title: "12. Contact & Complaints",
+    title: "13. Contact & Complaints",
     content: (
       <>
         <p>
@@ -598,14 +759,14 @@ export default function PrivacyClient() {
           <div>
             <h1 className="text-2xl font-semibold text-ink mb-2">Privacy Policy</h1>
             <p className="text-sm text-ink-3">
-              What this application stores on your machine, and the few things that ever leave it.
+              What this application stores on your machine, what leaves it, and what an optional account keeps.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className="text-[11px] text-ink-3/60">Last updated</span>
-            {/* Revised with the rewrite. Section 11 makes this the signal that the Policy changed,
+            {/* Revised with the rewrite. Section 12 makes this the signal that the Policy changed,
                 so it has to move whenever the substance does. */}
-            <span className="text-[12px] text-ink-2 font-medium">7 August 2026</span>
+            <span className="text-[12px] text-ink-2 font-medium">17 September 2026</span>
           </div>
         </div>
 

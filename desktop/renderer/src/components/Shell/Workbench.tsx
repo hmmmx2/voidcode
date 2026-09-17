@@ -11,6 +11,7 @@ import { installErrorReporting } from "@/lib/shell/report-error";
 import ShortcutsDialog from "./ShortcutsDialog";
 import StatusBar from "./StatusBar";
 import { AppBackdrop, ToastProvider } from "@/components/app";
+import { AccountProvider } from "@/lib/account/AccountProvider";
 import { problemPosition, slugAtPosition } from "@/lib/curriculum";
 import { PROJECTS } from "@/lib/projects";
 import { EditorHostProvider } from "@/lib/shell/editor-host";
@@ -65,10 +66,15 @@ const MENUS = MENU_IDS.map((id) => ({ id, label: MENU_LABELS[id] }));
  * A thin wrapper rather than moving the provider into the root layout: this keeps the whole
  * arrangement — who publishes, who consumes — in one file instead of splitting it across a
  * layout that otherwise knows nothing about buffers.
+ *
+ * `AccountProvider` sits directly inside the toasts because it raises them ("Signed in as…", "Your
+ * session ended"), and above everything else because the title bar, the Models page and a failed
+ * chat all open the same sign-in dialog.
  */
 export default function Workbench({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
+      <AccountProvider>
         <EditorHostProvider>
           <BuildActionsProvider>
             <WorkspaceActionsProvider>
@@ -80,6 +86,7 @@ export default function Workbench({ children }: { children: React.ReactNode }) {
             </WorkspaceActionsProvider>
           </BuildActionsProvider>
         </EditorHostProvider>
+      </AccountProvider>
     </ToastProvider>
   );
 }

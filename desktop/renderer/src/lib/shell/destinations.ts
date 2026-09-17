@@ -33,9 +33,9 @@ export interface Destination {
  * Prep was there because it shipped first, not because it is the product — and `/` opened onto
  * its dashboard, so a developer launching a code editor met a list of exercises.
  *
- * `/profile` belongs to neither. It is account management for the whole application rather
- * than a view inside either product, so it is reached from the menu bar and appears in no
- * section list. See `isAccountRoute`.
+ * `/profile` and `/account` belong to neither. They manage the local profile and the optional
+ * VoidCode account for the whole application rather than a view inside either product, so they
+ * are reached from the menu bar and appear in no section list. See `isAccountRoute`.
  */
 export const DESTINATIONS: Destination[] = [
   {
@@ -73,7 +73,9 @@ export const DESTINATIONS: Destination[] = [
  * window it opened in.
  */
 export function isAccountRoute(pathname: string): boolean {
-  return pathname.startsWith("/profile");
+  // `/account` is the optional VoidCode account; `/profile` is the local profile. Both are the
+  // platform's, and a product icon lighting up on either would be wrong in the same way.
+  return pathname.startsWith("/profile") || pathname.startsWith("/account");
 }
 
 /**

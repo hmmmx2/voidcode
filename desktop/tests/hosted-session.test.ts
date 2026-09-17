@@ -22,7 +22,9 @@ const { __safeStorage } = await import("./stubs/electron.js");
 const { secretValue, setSecret, clearSecret, __resetSessionSecrets } = await import(
   "../src/main/inference/vault.js"
 );
-const hosted = await import("../src/main/inference/hosted.js");
+const password = await import("../src/main/account/password.js");
+const { __setOverridesAllowed } = await import("../src/main/platform/config.js");
+const { __resetSessionMemory } = await import("../src/main/account/session.js");
 const { providerById } = await import("../src/main/inference/registry.js");
 const { checkedExternalUrl } = await import("../src/main/net/external.js");
 const { CHANNELS } = await import("../src/main/ipc/contract.js");
@@ -55,10 +57,18 @@ beforeEach(() => {
   __safeStorage.reset();
   calls = [];
   delete process.env.VOIDCODE_DEV_SESSION_TOKEN;
+  // A configured, acceptable API address, so that in every test below the SESSION is the only thing
+  // standing between the app and a request. Without this, "no request" would pass because there is
+  // no address at all — true, and not the property being tested.
+  __setOverridesAllowed(true);
+  process.env.VOIDCODE_API_URL = "http://127.0.0.1:59999/v1";
+  __resetSessionMemory();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  __setOverridesAllowed(undefined);
+  delete process.env.VOIDCODE_API_URL;
 });
 
 describe("signed out means no network", () => {
@@ -86,6 +96,7 @@ describe("signed out means no network", () => {
   it("a dev session token is not honoured when the build cannot be shown to be unpackaged", async () => {
     // Under the unit-test Electron stub `app` does not exist, which must read as "packaged": the
     // override is the thing that may never apply by accident.
+    __setOverridesAllowed(false);
     process.env.VOIDCODE_DEV_SESSION_TOKEN = "dev-token";
     stubFetch(() => ({ status: 200, body: { data: [] } }));
 
@@ -127,7 +138,7 @@ describe("sign-in on a machine with no credential store", () => {
     __safeStorage.available = false;
     stubFetch((url, method) => (method === "POST" ? OK : { status: 200, body: { message: "Signed out." } }));
 
-    const result = await hosted.signIn("a@b.c", "correct horse battery");
+    const result = await password.signInPassword("a@b.c", "correct horse battery");
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toMatch(/credential|keyring|keychain|store/i);
@@ -143,7 +154,7 @@ describe("sign-in on a machine with no credential store", () => {
   it("a healthy machine still keeps the session", async () => {
     stubFetch(() => OK);
 
-    const result = await hosted.signIn("a@b.c", "correct horse battery");
+    const result = await password.signInPassword("a@b.c", "correct horse battery");
 
     expect(result.ok).toBe(true);
     expect(secretValue("voidcode")).toBe("server-issued-token");

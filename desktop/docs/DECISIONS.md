@@ -941,3 +941,56 @@ second card; it is not blocked on code.
 60 authored ML/DL problems, flat in every run attempted. The interview curriculum is that content, so
 serving this policy is an infrastructure capability and not a quality improvement to the tutor. It is
 recorded here so nobody later reads the decision as evidence the tutor got better.
+
+## An optional account, in the desktop app
+
+**Decided:** sign-in moves from the website into the desktop app and stays optional. The IDE, grader,
+local models and local profile never ask for it; an account exists for the VoidCode model and the
+credits that pay for it. The website is to be deleted (plan phases 7–8).
+
+### What "optional" is held to
+
+Not a wording choice — a property with a test on each layer:
+
+- **Main:** `platform/http.ts` answers an authenticated call with no session as a synthetic 401 and
+  never calls `fetch`; the hosted provider's availability uses an auth-token getter, not extra
+  headers. `tests/account-session.test.ts` spies on `fetch` with a configured API address.
+- **The running app:** the smoke points the app at a loopback server and counts requests during a
+  signed-out start and a `/models` render — zero — then sends one sign-in as a positive control.
+  Removing the short-circuit in `http.ts` made it report `GET /v1/credits`.
+- **The legal text:** "An account is optional, and without one the application runs entirely on your
+  machine" is pinned by `honest-copy.test.ts` to both of the above.
+
+### A 401 means the session ended — so nothing else may answer 401
+
+`http.ts` ends the stored session on any 401 from a request that carried it, which is what makes a
+session revoked on another device disappear everywhere. Two API answers used 401 for something else
+and would have signed people out: a mistyped *current* password on `change-password`, and a provider
+token failing verification while connecting Google or Microsoft with a valid session. Both are 400
+now, each with a Postgres test that the session survives.
+
+### What the legal documents now say, and what they refuse to invent
+
+The Privacy Policy lists what the server holds for an account (checked field by field against
+`apps/api`), who else handles it (Stripe, Resend, server and GPU hosting), and what it keeps in
+passing (logs with email addresses on auth events, access logs with IPs, hashed attempt counters that
+lapse within an hour). Writing that section found two log lines keeping the first 60 characters of
+every question sent to the hosted model; they log lengths now, and
+`apps/api/tests/test_prompts_are_not_logged.py` walks the AST of every logger call.
+
+Three things are stated as **not decided** rather than filled in: how long server logs are kept, and —
+in the Terms — refunds, credit expiry, and what happens to credits if the model stops being offered.
+There is also no delete-account button; deletion is by email. These are commercial and legal choices
+for the owner. A document that invented them would repeat the defect the earlier rewrite removed,
+in the other direction.
+
+`TERMS_VERSION` (`src/shared/legal.ts`) is sent at registration and is the "Last updated" date both
+documents print; the test fails if either drifts, because a recorded consent to a version nobody was
+shown is worth nothing.
+
+### Public client IDs are not secrets
+
+For phase 4: the Google and Microsoft client IDs are baked into the build through
+`__VOIDCODE_BUILD__` (`electron.vite.config.ts`). They identify the app to the provider and grant
+nothing on their own; the only secret in that flow, Google's client secret, stays in the API's
+environment because the API — not the app — redeems the authorization code.

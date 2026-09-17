@@ -146,7 +146,9 @@ describe("the title bar stays clickable", () => {
   });
 
   it("draws the account from the set rather than inline", () => {
-    expect(menuBar).toContain("<IconAccount");
+    // The button became a menu (optional VoidCode account + local profile), so the icon moved with it.
+    expect(menuBar).toContain("<AccountMenu />");
+    expect(read("components/Account/AccountMenu.tsx")).toContain("<IconAccount");
     expect(menuBar).not.toMatch(/<svg[^>]*viewBox="0 0 16 16"[^>]*>\s*<circle cx="8" cy="5\.5"/);
   });
 });

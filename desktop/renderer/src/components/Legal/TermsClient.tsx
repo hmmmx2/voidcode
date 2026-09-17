@@ -46,6 +46,14 @@ interface Section {
  * address. The address is now the *same* one the Privacy Policy uses — this page named a second
  * mailbox, which is a defect on its own — but whether either belongs here is a decision for a human.
  *
+ * THE OPTIONAL ACCOUNT. Section 1 said "no account to create, no sign-in, no server of ours" while a
+ * sign-in form for the hosted model already shipped. The document now says what is true for each
+ * case: without an account every word above still holds; with one, section 6 describes the one part
+ * that is a service. It states what the software does — metering, vouchers, Stripe checkout — and
+ * says in so many words what these terms do NOT yet settle (refunds, credit expiry, the service
+ * ending). Those are commercial decisions for a human; inventing them here would repeat the original
+ * defect in a new place.
+ *
  * NO GOVERNING-LAW CLAUSE, and that is a removal rather than an omission. The old §11 asserted
  * exclusive jurisdiction in Victoria over an agreement that is never formed: no acceptance step, no
  * consideration, and Apache-2.0 carries no choice of law. It was the most fictional sentence here.
@@ -61,18 +69,24 @@ const SECTIONS: Section[] = [
       <>
         <p>
           VoidCode is a desktop application you install and run on your own computer. These terms
-          describe how it is licensed, and what it does not promise.
+          describe how it is licensed, what it does not promise, and what an account involves if you
+          choose to create one.
         </p>
         <p>
-          <strong className="text-ink-2">There is no service here.</strong> No account to create, no
-          sign-in, no server of ours for it to talk to, and nothing you write is submitted anywhere.
-          Your code is executed and graded inside the application; your work is stored in a file on
-          your own disk. So there is nothing that can go down, nothing to suspend, and nothing to
-          bill.
+          <strong className="text-ink-2">An account is optional.</strong> Without one there is no
+          service here: nothing you write is submitted anywhere, your code is executed and graded
+          inside the application, and your work is stored in a file on your own disk. So there is
+          nothing that can go down, nothing to suspend, and nothing to bill.
         </p>
         <p>
-          You do not need to agree to anything in order to use it. Apache-2.0 grants you rights; it
-          does not ask for any in return.
+          With an account you can use the VoidCode model, which runs on our servers and is paid for
+          with credits. Section 6 covers that, and it is the only part of these terms that describes a
+          service.
+        </p>
+        <p>
+          You do not need to agree to anything in order to use the application. Apache-2.0 grants you
+          rights; it does not ask for any in return. Creating an account is the one step that asks you
+          to accept these terms and the Privacy Policy.
         </p>
       </>
     ),
@@ -160,22 +174,68 @@ const SECTIONS: Section[] = [
         </p>
         <p>
           If you add an API key for a remote provider, the conversations you send reach that provider
-          under their terms rather than these. If you ask the coding assistant to look something up,
-          it may fetch a page from a fixed list of documentation sites. Our{" "}
+          under their terms rather than these. If you sign in and select the VoidCode model, your
+          conversations are answered on our servers, as section 6 describes. If you ask the coding
+          assistant to look something up, it may fetch a page from a fixed list of documentation
+          sites. Our{" "}
           <Link
             href="/privacy"
             className="text-ink hover:text-ink underline underline-offset-2 transition-colors"
           >
             Privacy Policy
           </Link>{" "}
-          lists both precisely.
+          lists all of these precisely.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "account",
+    title: "6. If You Create an Account",
+    content: (
+      <>
+        <p>
+          Everything else in these terms applies whether or not you have an account. This section
+          applies only if you create one.
+        </p>
+        <ul>
+          <li>
+            <strong className="text-ink-2">What it is for.</strong> An account lets you use the
+            VoidCode model, which runs on our servers, and holds the credits that pay for it. It is not
+            linked to your local profile or to anything stored on your computer, and signing out never
+            touches your local work.
+          </li>
+          <li>
+            <strong className="text-ink-2">Your sign-in.</strong> Keep your password to yourself. If you
+            think someone else has it, change it from the Account page, which signs out every other
+            device, or use &ldquo;Sign out of all devices&rdquo;.
+          </li>
+          <li>
+            <strong className="text-ink-2">Credits.</strong> The VoidCode model is metered by the time
+            it spends writing answers, and that time is paid for from your credit balance. The Models
+            page shows your balance and roughly how much answer time it buys at the current rate.
+            Credits are added by buying a pack — the payment is taken by Stripe in your browser — or by
+            redeeming a voucher code.
+          </li>
+          <li>
+            <strong className="text-ink-2">The service is not the software.</strong> The Apache License
+            in section 2 covers the application&apos;s source. It does not give you rights to our
+            servers or to the VoidCode model running on them; you use those through your account.
+          </li>
+        </ul>
+        <p>
+          <strong className="text-ink-2">What these terms do not yet settle.</strong> They do not yet set
+          out refunds, whether credits expire, or what happens to an account and its credits if the
+          VoidCode model stops being offered. Until they do, write to us at the address in section 8
+          about any of these. Nothing in these terms limits rights you have under the Australian
+          Consumer Law.
         </p>
       </>
     ),
   },
   {
     id: "no-warranty",
-    title: "6. No Warranty, and the Assistant in Particular",
+    title: "7. No Warranty, and the Assistant in Particular",
     content: (
       <>
         <p>
@@ -200,14 +260,14 @@ const SECTIONS: Section[] = [
   },
   {
     id: "changes",
-    title: "7. Changes and Contact",
+    title: "8. Changes and Contact",
     content: (
       <>
         <p>
           These terms ship with the application, so the version you are reading is the one that
           applies to the release you installed. They change when the software does, and that history
-          lives in the repository rather than in a notice we send you — we hold no address for you,
-          and{" "}
+          lives in the repository rather than in a notice we send you — we do not email notices of
+          changes, even to account holders, and{" "}
           <Link
             href="/privacy"
             className="text-ink hover:text-ink underline underline-offset-2 transition-colors"
@@ -312,13 +372,15 @@ export default function TermsClient() {
           <div>
             <h1 className="text-2xl font-semibold text-ink mb-2">Terms of Use</h1>
             <p className="text-sm text-ink-3">
-              How this application is licensed, and what it does not promise.
+              How this application is licensed, what it does not promise, and what an optional account
+              involves.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className="text-[11px] text-ink-3/60">Last updated</span>
-            {/* Moves with the substance, as section 7 says. */}
-            <span className="text-[12px] text-ink-2 font-medium">7 August 2026</span>
+            {/* Moves with the substance, as section 8 says — and is TERMS_VERSION in `src/shared/legal.ts`,
+                which registration records as the version accepted. honest-copy.test.ts pins the two. */}
+            <span className="text-[12px] text-ink-2 font-medium">17 September 2026</span>
           </div>
         </div>
 
@@ -342,7 +404,7 @@ export default function TermsClient() {
           </svg>
           <p className="text-[12px] text-ink/80 leading-relaxed">
             This is free software under the Apache License 2.0. You are not required to accept
-            anything to use it, and there is no account, no service and no fee — see{" "}
+            anything to use it, and an account is optional — see{" "}
             <Link href="#what-this-is" className="text-ink underline underline-offset-2">
               section 1
             </Link>

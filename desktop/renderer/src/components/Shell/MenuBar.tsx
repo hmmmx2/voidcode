@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter, usePathname } from "next/navigation";
 import type { PanelId, PanelState } from "@/lib/shell/usePanels";
 import NotificationBell from "@/components/Layout/NotificationBell";
 import WindowControls from "./WindowControls";
 import { Mark } from "@/components/brand/Mark";
-import { IconAccount, IconTerminal } from "@/components/icons";
+import { IconTerminal } from "@/components/icons";
+import AccountMenu from "@/components/Account/AccountMenu";
 
 /**
  * The workbench's title bar.
@@ -41,8 +41,6 @@ export default function MenuBar({
   onOpenPalette,
   isMac,
 }: MenuBarProps) {
-  const router = useRouter();
-  const pathname = usePathname();
   const popup = useCallback((menu: string, event: React.MouseEvent<HTMLButtonElement>) => {
     // Anchor to the label's bottom-left, so the menu hangs under the word that opened it.
     const rect = event.currentTarget.getBoundingClientRect();
@@ -156,18 +154,9 @@ export default function MenuBar({
           without it a click slides the window instead of navigating.
         */}
         <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties} className="mr-1">
-          <button
-            type="button"
-            onClick={() => router.push("/profile")}
-            title="Account"
-            aria-label="Account"
-            aria-current={pathname.startsWith("/profile") ? "page" : undefined}
-            className={`flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-ide-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink ${
-              pathname.startsWith("/profile") ? "text-ink" : "text-ink-3 hover:text-ink"
-            }`}
-          >
-            <IconAccount size={16} />
-          </button>
+          {/* A menu rather than a link now that there are two things behind it — the optional
+              VoidCode account and the local profile. See `AccountMenu`. */}
+          <AccountMenu />
         </div>
 
         {(["left", "bottom", "right"] as const).map((panel) => (

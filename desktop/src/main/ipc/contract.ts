@@ -91,23 +91,70 @@ export const CHANNELS = {
     input: z.undefined(),
     modes: BOTH,
   },
+  // ── The VoidCode account ──────────────────────────────────────────────────
+  //
+  // Every account channel is BOTH-mode: a Study window is exactly where someone signs in to use the
+  // VoidCode tutor. And every one returns an outcome, never a credential — the session token lives
+  // in the OS keychain and is read only in main (`account/session.ts`).
+  //
+  // Passwords cross these channels once and are never stored. Emails are bounded at 320 (the RFC
+  // maximum) and passwords at 4096, matching the API, so an absurd payload is refused here rather
+  // than forwarded.
+
   /**
-   * Sign in to the VoidCode platform from this device.
-   *
-   * The password crosses this channel once and is never stored; main exchanges it for a session
-   * token and keeps that in the keychain. The renderer is told who signed in, never the token —
-   * a credential in the renderer is a credential in a devtools console and a crash dump.
+   * Whether this device has a session, who it belongs to if known, and whether the last server check
+   * failed for want of a connection. Signed out, answered from the keychain with NO network request.
    */
-  "voidcode:signIn": {
+  "account:session": { input: z.undefined(), modes: BOTH },
+  /** Ask the server who this session belongs to. Signed out: no request. */
+  "account:refresh": { input: z.undefined(), modes: BOTH },
+  "account:signInPassword": {
     input: z.object({
       email: z.string().min(3).max(320),
       password: z.string().min(1).max(4096),
     }),
     modes: BOTH,
   },
-  "voidcode:signOut": { input: z.undefined(), modes: BOTH },
-  /** Whether this device has a session, for deciding what to render. Carries no credential. */
-  "voidcode:session": { input: z.undefined(), modes: BOTH },
+  /**
+   * Create an account and sign in.
+   *
+   * `acceptTerms` is a literal `true`: an account cannot be requested without the box ticked, and the
+   * renderer cannot send a terms VERSION at all — main adds the one this build displays
+   * (`shared/legal.ts`), so a compromised renderer cannot record consent to a document nobody saw.
+   */
+  "account:register": {
+    input: z.object({
+      name: z.string().min(1).max(200),
+      email: z.string().min(3).max(320),
+      password: z.string().min(1).max(4096),
+      acceptTerms: z.literal(true),
+    }),
+    modes: BOTH,
+  },
+  /** Email a six-digit reset code. The answer is the same whether or not the address has an account. */
+  "account:requestPasswordCode": {
+    input: z.object({ email: z.string().min(3).max(320) }),
+    modes: BOTH,
+  },
+  /** Set a new password with the emailed code; signs this device in and every other device out. */
+  "account:resetPassword": {
+    input: z.object({
+      email: z.string().min(3).max(320),
+      code: z.string().regex(/^\d{6}$/),
+      newPassword: z.string().min(1).max(4096),
+    }),
+    modes: BOTH,
+  },
+  "account:changePassword": {
+    input: z.object({
+      currentPassword: z.string().min(1).max(4096),
+      newPassword: z.string().min(1).max(4096),
+    }),
+    modes: BOTH,
+  },
+  "account:signOut": { input: z.undefined(), modes: BOTH },
+  "account:signOutEverywhere": { input: z.undefined(), modes: BOTH },
+
   "voidcode:credits": { input: z.undefined(), modes: BOTH },
   "voidcode:packs": { input: z.undefined(), modes: BOTH },
   /**

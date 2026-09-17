@@ -221,6 +221,23 @@ const subscriptions = {
     return () => ipcRenderer.removeListener("notifications:new", listener);
   },
   /**
+   * The VoidCode account changed: signed in, signed out, a session that ended on the server, or
+   * fresh details for the person signed in.
+   *
+   * A push because the change often does not come from this window. Signing in from the Models
+   * page in one window has to update the title bar in another, and a session revoked from another
+   * computer is discovered by whichever request happens to hit it — possibly a chat in a window the
+   * account menu is not in.
+   *
+   * Both modes, and it carries no credential: whether someone is signed in, and their name and
+   * address, which the window was going to show anyway.
+   */
+  onAccountChanged(cb: (payload: unknown) => void): () => void {
+    const listener = (_e: unknown, payload: unknown) => cb(payload);
+    ipcRenderer.on("account:changed", listener);
+    return () => ipcRenderer.removeListener("account:changed", listener);
+  },
+  /**
    * Whether this window is maximised, so the renderer's own control draws the right glyph.
    *
    * **Outside the Build block on purpose.** Every window in the app is frameless, so a Study

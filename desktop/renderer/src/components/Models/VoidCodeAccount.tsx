@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Sign in to VoidCode, see what credit is left, and buy more.
+ * The VoidCode model's card: what credit is left, and buying more.
  *
  * WHY THIS SITS BESIDE THE MODEL LIST RATHER THAN IN ITS OWN SETTINGS SCREEN
  *
@@ -11,11 +11,16 @@
  * "connect something and get more models" control, means the page reads as one decision rather
  * than two unrelated ones.
  *
- * NOTHING HERE EVER HOLDS THE CREDENTIAL
+ * SIGNING IN HAPPENS IN THE ONE SIGN-IN DIALOG, NOT HERE
  *
- * The password crosses one IPC call and is not kept. The session token lives in the OS keychain and
- * is only ever read in main. This component knows whether somebody is signed in and what their
- * balance is, which is everything it needs to render and nothing worth stealing.
+ * This card had its own email-and-password form. It now opens the dialog `AccountProvider` owns, so
+ * signing in means the same thing from here, the title bar and a failed chat — including creating
+ * an account and recovering a password, which this form never offered. Whether someone is signed
+ * in comes from that provider too, so signing out in another window updates this card.
+ *
+ * The session token lives in the OS keychain and is only ever read in main. This component knows
+ * whether somebody is signed in and what their balance is, which is everything it needs to render
+ * and nothing worth stealing.
  *
  * THE BUY BUTTON DOES NOT NAVIGATE
  *
@@ -24,6 +29,8 @@
  * operating system has a handler for.
  */
 import { useCallback, useEffect, useState } from "react";
+import { Pill } from "@/components/ui/Pill";
+import { useAccount } from "@/lib/account/AccountProvider";
 
 interface Balance {
   availableCredits: number;
@@ -47,9 +54,8 @@ function formatGenerationTime(minutes: number): string {
 }
 
 export default function VoidCodeAccount() {
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { state, available, openSignIn } = useAccount();
+  const signedIn = state === null ? null : state.signedIn;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
@@ -60,10 +66,10 @@ export default function VoidCodeAccount() {
 
   const host = () => window.host as NonNullable<Window["host"]>;
 
+  // Signed out, nothing is fetched: the balance and the pack list are both account calls, and a
+  // signed-out launch makes no request to our server at all.
   const refresh = useCallback(async () => {
-    const session = await host().voidcode.session();
-    setSignedIn(session.signedIn);
-    if (!session.signedIn) {
+    if (!signedIn) {
       setBalance(null);
       setPacks([]);
       return;
@@ -73,32 +79,13 @@ export default function VoidCodeAccount() {
       host().voidcode.packs(),
     ]);
     setBalance(credits.ok ? credits.balance : null);
-    if (!credits.ok) setError(credits.message);
+    setError(credits.ok ? null : credits.message);
     setPacks(packList.packs);
-  }, []);
+  }, [signedIn]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await host().voidcode.signIn({ email, password });
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      // Cleared immediately on success. It is not needed again and a password sitting in component
-      // state survives into a React devtools inspection and a heap snapshot.
-      setPassword("");
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function redeem(event: React.FormEvent) {
     event.preventDefault();
@@ -146,7 +133,8 @@ export default function VoidCodeAccount() {
     }
   }
 
-  if (signedIn === null) return null;
+  // Outside the desktop app there is no account to show; before main answers there is nothing yet.
+  if (!available || signedIn === null) return null;
 
   return (
     <section className="flex flex-col gap-3">
@@ -163,46 +151,27 @@ export default function VoidCodeAccount() {
             free.
           </p>
 
-          <form onSubmit={(e) => void submit(e)} className="mt-3 flex flex-col gap-2">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="rounded border border-line bg-transparent px-3 py-2 text-sm text-ink"
-            />
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="rounded border border-line bg-transparent px-3 py-2 text-sm text-ink"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="self-start rounded border border-line px-4 py-2 text-sm text-ink transition-colors hover:border-ink-3 disabled:opacity-50"
-            >
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Pill variant="solid" size="sm" type="button" onClick={() => openSignIn("signIn")}>
+              Sign in to use the VoidCode model
+            </Pill>
+            <Pill variant="ghost" size="sm" type="button" onClick={() => openSignIn("register")}>
+              Create an account
+            </Pill>
+          </div>
         </div>
       ) : (
         <div className="rounded border border-line p-4">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline justify-between gap-3">
             <p className="text-2xl font-semibold text-ink">
               {balance ? balance.availableCredits.toLocaleString() : "—"}
               <span className="ml-2 text-sm font-normal text-ink-3">credits</span>
             </p>
-            <button
-              type="button"
-              onClick={() => void host().voidcode.signOut().then(refresh)}
-              className="text-xs text-ink-3 transition-colors hover:text-ink-2"
-            >
-              Sign out
-            </button>
+            {state?.user && (
+              // Who is paying, so a shared computer does not spend the wrong person's credit.
+              // Signing out lives in the account menu and on the Account page.
+              <p className="truncate text-xs text-ink-3">{state.user.email}</p>
+            )}
           </div>
 
           {typeof balance?.estimatedMinutes === "number" && (

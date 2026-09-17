@@ -366,6 +366,15 @@ describe("the privacy policy describes this application", () => {
       "as available",
       "you have paid to VoidCode",
       "assist in operating",
+
+      // Retracted when the optional account shipped. Each was true of a build with no sign-in form
+      // and became false the moment the Models page had one — see "an account is optional" below.
+      "no account to create",
+      "no sign-in",
+      "no VoidCode server",
+      "There is no service here",
+      "we hold no address for you",
+      "Because we hold none",
     ]) {
       for (const file of LEGAL_SOURCES) {
         expect(legalText(file), `${file} still claims: ${claim}`).not.toContain(claim);
@@ -374,9 +383,22 @@ describe("the privacy policy describes this application", () => {
   });
 
   it("states the fact the rest of it depends on", () => {
-    // If this sentence goes, every "we hold nothing" claim below it loses its justification.
+    /**
+     * If these go, every "we hold nothing" claim below them loses its justification.
+     *
+     * It was "no account to create", which stopped being true when a sign-in form shipped. The claim
+     * that replaced it is narrower and kept honest by code rather than by wording: signed out, main
+     * makes no request to our server (`platform/http.ts` answers an authenticated call without a
+     * session with a synthetic 401, and `account-session.test.ts` spies on `fetch` to prove it).
+     */
+    expect(rendered).toMatch(/an account is optional/i);
     expect(rendered).toMatch(/runs entirely on your machine/i);
-    expect(rendered).toMatch(/no account to create/i);
+
+    const http = code(readSource(path.join(root, "src/main/platform/http.ts"), "utf8"));
+    expect(http, "http.ts no longer refuses to send an authenticated call without a session").toContain(
+      "Not signed in."
+    );
+    expect(fs.existsSync(path.join(root, "tests/account-session.test.ts"))).toBe(true);
   });
 
   it("is right that no email address is stored", () => {
@@ -387,7 +409,24 @@ describe("the privacy policy describes this application", () => {
     expect(profile, "profile gained an email column — section 2 says there is none").not.toMatch(
       /^\s*email/m
     );
-    expect(rendered).toMatch(/no email address field/i);
+    expect(rendered).toMatch(/local profile has no email address field/i);
+
+    /**
+     * Wider than the profile now that an account exists: section 2.4 says the account's email is held
+     * in memory only. A copy in ANY local table would outlive signing out, so no table may declare one,
+     * and nothing in `account/` may reach the store at all.
+     */
+    const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+) \(([\s\S]*?)\n\);/g)];
+    expect(tables.length, "found no tables — the pattern is broken").toBeGreaterThan(3);
+    const withEmail = tables.filter((m) => /^\s*\w*email\w*\s/im.test(m[2] as string)).map((m) => m[1]);
+    expect(withEmail, "a local table stores an email address").toEqual([]);
+
+    const accountDir = path.join(root, "src/main/account");
+    const reachesStore = fs
+      .readdirSync(accountDir)
+      .filter((name) => /from\s+["'][./]*store\//.test(readSource(path.join(accountDir, name), "utf8")))
+      ;
+    expect(reachesStore, "account code imports the local store").toEqual([]);
   });
 
   it("is right that the application sets no cookies", () => {
@@ -469,6 +508,99 @@ describe("the privacy policy describes this application", () => {
 });
 
 /**
+ * What the documents say about an account is what the account code does.
+ *
+ * The retired copy's failure was never a typo; it was a true sentence that the code moved out from
+ * under. So each account claim with a number or a name in it is pinned to the file that makes it
+ * true, and changing that file breaks this test before it breaks the promise.
+ */
+describe("the legal documents agree with the account code", () => {
+  const privacy = legalText("PrivacyClient.tsx");
+  const api = (rel: string): string => code(readSource(path.join(root, "..", "apps/api", rel), "utf8"));
+
+  it("dates both documents with the version registration records", () => {
+    const legal = readSource(path.join(root, "src/shared/legal.ts"), "utf8");
+    const version = /TERMS_VERSION = "(\d{4})-(\d{2})-(\d{2})"/.exec(legal);
+    const display = /TERMS_DISPLAY_DATE = "([^"]+)"/.exec(legal)?.[1];
+    expect(version, "TERMS_VERSION is not an ISO date").not.toBeNull();
+    expect(display).toBeDefined();
+
+    const [, y, m, d] = version as RegExpExecArray;
+    const month = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d))).toLocaleString("en-AU", {
+      month: "long",
+      timeZone: "UTC",
+    });
+    expect(display, "TERMS_DISPLAY_DATE is not TERMS_VERSION").toBe(`${Number(d)} ${month} ${y}`);
+
+    for (const file of LEGAL_SOURCES) {
+      const shown = /Last updated<\/span>[\s{}]*<span[^>]*>([^<]+)<\/span>/.exec(legalText(file))?.[1];
+      expect(shown, `${file} shows no "Last updated" date`).toBeDefined();
+      expect(shown?.trim(), `${file} is dated differently from the terms version recorded at sign-up`).toBe(
+        display
+      );
+    }
+  });
+
+  it("is right about where the sign-in is kept", () => {
+    const session = code(readSource(path.join(root, "src/main/account/session.ts"), "utf8"));
+    expect(session).toContain('setSecret("voidcode"');
+    expect(privacy).toMatch(/session token\. It is encrypted with your operating system&apos;s credential store/);
+  });
+
+  it("is right about the durations and limits it names", () => {
+    const config = api("src/config.py");
+    const setting = (name: string): string | undefined =>
+      new RegExp(`${name} = int\\(os\\.getenv\\("${name}", "(\\d+)"\\)\\)`).exec(config)?.[1];
+
+    expect(setting("DESKTOP_SESSION_TTL_DAYS")).toBe("90");
+    expect(privacy).toContain("A sign-in session lasts 90 days");
+    expect(setting("PASSWORD_RESET_CODE_TTL_MINUTES")).toBe("15");
+    expect(privacy).toContain("expires after 15 minutes");
+    expect(setting("PASSWORD_RESET_CODE_MAX_ATTEMPTS")).toBe("5");
+    expect(privacy).toContain("after five wrong guesses");
+
+    // "each count lapses after at most an hour": the longest window any limit uses.
+    const windows = [...api("src/ratelimit.py").matchAll(/window_seconds=(\d+)/g)].map((w) => Number(w[1]));
+    expect(windows.length).toBeGreaterThan(3);
+    expect(Math.max(...windows), "a rate-limit window outlasts the hour the policy names").toBeLessThanOrEqual(3600);
+    expect(privacy).toContain("lapses after at most an hour");
+  });
+
+  it("names how passwords are stored, and who sends email and takes payment", () => {
+    expect(api("src/services/password_service.py")).toContain("from argon2 import PasswordHasher");
+    expect(privacy).toContain("Argon2id");
+
+    expect(api("src/services/email_service.py")).toContain('provider == "resend"');
+    expect(privacy).toContain("Resend");
+
+    const hosted = code(readSource(path.join(root, "src/main/inference/hosted.ts"), "utf8"));
+    expect(hosted).toContain("/credits/checkout");
+    expect(api("src/services/payments.py")).toMatch(/checkout\.stripe\.com|api\.stripe\.com/);
+    for (const file of LEGAL_SOURCES) expect(legalText(file), `${file} names the payment processor`).toContain("Stripe");
+  });
+
+  it("is backed by a test when it says conversations are not logged", () => {
+    // The only claim here about a log rather than a table, and a log line is invisible to a schema
+    // check: two of them kept 60 characters of every question until this sentence was written.
+    expect(privacy).toContain("do not write its text to their database or to their logs");
+    expect(fs.existsSync(path.join(root, "..", "apps/api/tests/test_prompts_are_not_logged.py"))).toBe(true);
+  });
+
+  it("says Google and Microsoft sign-in is not offered only while it is not", () => {
+    // Phase 4 adds them; that change must rewrite section 11 rather than leave this sentence behind.
+    const offered = fs
+      .readdirSync(path.join(root, "src/main/account"))
+      .some((name) =>
+        /accounts\.google\.com|login\.microsoftonline\.com/.test(
+          readSource(path.join(root, "src/main/account", name), "utf8")
+        )
+      );
+    expect(offered).toBe(false);
+    expect(privacy).toContain("does not offer sign-in with Microsoft or Google");
+  });
+});
+
+/**
  * The Terms of Use describes software you run, not a service you access.
  *
  * It was a hosted-service agreement: accounts, an age warranty, suspension, a liability cap against
@@ -533,16 +665,18 @@ describe("the terms of use describes this application", () => {
     );
   });
 
-  it("agrees with the schema that there is no account", () => {
-    // The same `profile`-table reasoning the privacy block uses, from the other direction: no email
-    // column and no password means a document with account obligations describes a system that
-    // cannot exist.
+  it("keeps the account optional and in its own section", () => {
+    // The `profile`-table reasoning the privacy block uses, from the other direction: the local
+    // profile has no email and no password, so account obligations can only belong to the separate,
+    // optional account — and they live in one section, so the rest of the document stays about
+    // software you run.
     const schema = readSource(path.join(root, "src/main/store/db.ts"), "utf8");
     const profile = /CREATE TABLE IF NOT EXISTS profile \(([\s\S]*?)\n\);/.exec(schema)?.[1];
     expect(profile).toBeDefined();
     expect(profile).not.toMatch(/^\s*(email|password)/m);
 
-    expect(terms).toMatch(/no account to create/i);
+    expect(terms).toMatch(/an account is optional/i);
+    expect(terms).toContain('id: "account"');
   });
 
   it("gives one contact address across both documents", () => {

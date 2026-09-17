@@ -7,6 +7,8 @@
  */
 import { app, BrowserWindow, session } from "electron";
 import path from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   registerAppScheme,
   handleAppScheme,
@@ -21,6 +23,7 @@ import { createWindow } from "./windows.js";
 import { installApplicationMenu } from "./menu.js";
 import { openDatabase } from "./store/db.js";
 import { onNotificationCreated, seedWelcomeNotification } from "./store/notifications.js";
+import { setAccountBroadcaster } from "./account/session.js";
 import { logInfo, logFile } from "./log.js";
 import { installCrashHandlers, crashDumpDir } from "./crash.js";
 import { startTelemetry, stopTelemetry } from "./hardware/telemetry.js";
@@ -112,6 +115,19 @@ async function onReady(): Promise<void> {
   onNotificationCreated((notification) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send("notifications:new", notification);
+    }
+  });
+
+  /**
+   * The account, pushed to every window the moment it changes.
+   *
+   * Broadcast for the reason notifications are: whether someone is signed in is a property of the
+   * application, not of a window. A session that ended on the server is often discovered by a
+   * request in one window while the account menu is open in another.
+   */
+  setAccountBroadcaster((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send("account:changed", event);
     }
   });
 
@@ -429,6 +445,7 @@ async function runSmokeChecks(window: Electron.BrowserWindow): Promise<void> {
   failures.push(...(await runStoreSmoke()));
   failures.push(...(await runRestrictedWindowSmoke()));
   failures.push(...(await runTransportSmoke(window)));
+  failures.push(...(await runSignedOutSmoke(window)));
   failures.push(...(await runBuildSmoke()));
 
   if (failures.length > 0) {
@@ -440,6 +457,81 @@ async function runSmokeChecks(window: Electron.BrowserWindow): Promise<void> {
 
   console.log("[smoke] PASS — privilege boundary, Tier A execution, Build Mode");
   app.exit(0);
+}
+
+/**
+ * Signed out, the app does not contact our server — checked in the real app, against a real listener.
+ *
+ * The Privacy Policy's founding sentence is "An account is optional, and without one the application
+ * runs entirely on your machine". Unit tests prove each module short-circuits; only the running app
+ * can show that nothing ELSE does — a provider probe on startup, a Models page fetching a balance, a
+ * refresh on focus. So a loopback server stands in for the API, the app is pointed at it, and every
+ * request it receives is counted while the signed-out app starts up and renders `/models`.
+ *
+ * The positive control matters as much as the zero: one sign-in attempt must arrive. Without it, a
+ * wrong port or an unread environment variable would count zero for the wrong reason.
+ */
+async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string[]> {
+  const failures: string[] = [];
+  const hits: string[] = [];
+  const server = createServer((request, response) => {
+    hits.push(`${request.method ?? "?"} ${request.url ?? "?"}`);
+    response.writeHead(401, { "content-type": "application/json" });
+    response.end(JSON.stringify({ detail: "Invalid email or password." }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const previous = process.env.VOIDCODE_API_URL;
+  process.env.VOIDCODE_API_URL = `http://127.0.0.1:${port}/v1`;
+
+  try {
+    await window.loadURL(`${APP_ORIGIN}/models`);
+    const state = (await window.webContents.executeJavaScript(`
+      (async () => {
+        const session = await window.host.account.session();
+        const refreshed = await window.host.account.refresh();
+        const providers = await window.host.providers.list();
+        const credits = await window.host.voidcode.credits();
+        // Long enough for the Models page's own effects — provider probes, the account card — to run.
+        await new Promise((r) => setTimeout(r, 1500));
+        return {
+          signedIn: session.signedIn,
+          refreshedSignedIn: refreshed.signedIn,
+          providers: Array.isArray(providers) ? providers.length : Array.isArray(providers?.providers) ? providers.providers.length : -1,
+          creditsOk: credits.ok,
+          signInButton: [...document.querySelectorAll("button")].some((b) => /sign in to use the voidcode model/i.test(b.textContent ?? "")),
+        };
+      })()
+    `)) as { signedIn: boolean; refreshedSignedIn: boolean; providers: number; creditsOk: boolean; signInButton: boolean };
+
+    if (state.signedIn || state.refreshedSignedIn) failures.push("signed-out: a fresh profile reported a session");
+    // Only reachable providers are listed, so an empty list is fine on a machine with no Ollama. What
+    // matters is that the call ran: it asks every provider, the hosted one included, if it is available.
+    if (state.providers < 0) failures.push("signed-out: providers:list did not answer with a list");
+    if (state.creditsOk) failures.push("signed-out: credits answered ok with no session");
+    if (!state.signInButton) failures.push("signed-out: /models did not render the VoidCode sign-in call to action");
+    if (hits.length !== 0) {
+      failures.push(`signed-out: the app contacted the API ${hits.length} time(s) with nobody signed in: ${hits.join(", ")}`);
+    }
+
+    // Positive control: an explicit sign-in is the first request, and it arrives.
+    const signIn = (await window.webContents.executeJavaScript(
+      `window.host.account.signInPassword({ email: "smoke@example.com", password: "not-a-real-password" })`
+    )) as { ok: boolean };
+    if (signIn.ok) failures.push("signed-out: a rejected sign-in reported success");
+    if (hits.length !== 1 || hits[0] !== "POST /v1/auth/desktop/session") {
+      failures.push(`signed-out: expected exactly the sign-in request, got [${hits.join(", ")}]`);
+    }
+
+    console.log(`[smoke] signed out: ${hits.length - 1} request(s) before sign-in; control request arrived`);
+  } catch (err) {
+    failures.push(`signed-out smoke threw: ${(err as Error).message}`);
+  } finally {
+    if (previous === undefined) delete process.env.VOIDCODE_API_URL;
+    else process.env.VOIDCODE_API_URL = previous;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  return failures;
 }
 
 /**
@@ -3230,6 +3322,10 @@ async function runBuildSmoke(): Promise<string[]> {
         // pointing the capture at it photographed a 404 for a question that does not
         // exist, which looks exactly like a broken route.
         ["interview-question", "/interviews/why-cross-entropy-not-mse"],
+        // The optional account's two surfaces, signed out: the Models card's call to action and
+        // the Account page's empty state.
+        ["models", "/models"],
+        ["account", "/account"],
       ] as const) {
         // Renderer errors are otherwise invisible here: a component that throws during
         // render unmounts the whole tree, and `capturePage` happily photographs the empty
@@ -3283,6 +3379,22 @@ async function runBuildSmoke(): Promise<string[]> {
         `);
         console.log(`[smoke] ${name} geometry: ${JSON.stringify(geometry)}`);
 
+        const image = await window.webContents.capturePage();
+        await writeFile(`${directory}/${name}.png`, image.toPNG());
+      }
+
+      // The sign-in dialog is not a route, so it is opened the way a person opens it — from the
+      // Models card — and photographed in both of its entry views.
+      await window.loadURL(`${APP_ORIGIN}/models`);
+      await waitFor(window, `[...document.querySelectorAll("button")].some((b) => /sign in to use the voidcode model/i.test(b.textContent ?? ""))`);
+      for (const [name, script] of [
+        ["sign-in", `[...document.querySelectorAll("button")].find((b) => /sign in to use the voidcode model/i.test(b.textContent ?? ""))?.click()`],
+        ["register", `[...document.querySelectorAll("dialog[open] button")].find((b) => /^create an account$/i.test((b.textContent ?? "").trim()))?.click()`],
+      ] as const) {
+        await window.webContents.executeJavaScript(script);
+        const opened = await waitFor(window, `document.querySelector("dialog[open]") !== null`);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        if (!opened) failures.push(`build/${name} dialog did not open`);
         const image = await window.webContents.capturePage();
         await writeFile(`${directory}/${name}.png`, image.toPNG());
       }

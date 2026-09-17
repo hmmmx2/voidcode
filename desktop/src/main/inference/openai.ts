@@ -62,6 +62,17 @@ export interface OpenAICompatibleOptions {
    * would survive a sign-out. Nothing here holds the value.
    */
   extraHeaders?: () => Promise<Record<string, string>>;
+  /**
+   * Told which token a request carried when the server answered 401.
+   *
+   * For the hosted provider this ends the VoidCode session (`account/session.ts`), so an expired or
+   * revoked session is cleared the first time any request discovers it — chat included — instead of
+   * each subsequent request failing on its own while the account menu still says "signed in". The
+   * token is passed so a stale request cannot end a newer session.
+   *
+   * Its presence also changes the wording: a session that ended is not "a rejected API key".
+   */
+  onUnauthorized?: (tokenThatFailed: string) => void;
 }
 
 export class OpenAICompatibleProvider implements InferenceProvider {
@@ -104,10 +115,12 @@ export class OpenAICompatibleProvider implements InferenceProvider {
     }
 
     try {
+      const { headers, token } = await this.auth();
       const response = await fetch(`${this.options.baseUrl}/models`, {
-        headers: await this.headers(),
+        headers,
         signal: AbortSignal.timeout(this.capabilities.remote ? 4_000 : 1_500),
       });
+      this.noteStatus(response.status, token);
       return response.ok;
     } catch {
       return false;
@@ -116,10 +129,12 @@ export class OpenAICompatibleProvider implements InferenceProvider {
 
   async listModels(): Promise<ModelInfo[]> {
     try {
+      const { headers, token } = await this.auth();
       const response = await fetch(`${this.options.baseUrl}/models`, {
-        headers: await this.headers(),
+        headers,
         signal: AbortSignal.timeout(8_000),
       });
+      this.noteStatus(response.status, token);
       if (!response.ok) return [];
 
       const body = (await response.json()) as { data?: Array<{ id: string }> };
@@ -131,10 +146,13 @@ export class OpenAICompatibleProvider implements InferenceProvider {
 
   async *chat(request: ChatRequest): AsyncIterable<ChatChunk> {
     let response: Response;
+    let sentToken: string | undefined;
     try {
+      const { headers, token } = await this.auth();
+      sentToken = token;
       response = await fetch(`${this.options.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { ...(await this.headers()), "content-type": "application/json" },
+        headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
           model: request.model,
           messages: toOpenAIMessages(request.messages),
@@ -157,10 +175,14 @@ export class OpenAICompatibleProvider implements InferenceProvider {
     }
 
     if (!response.ok || response.body === null) {
-      // 401 is worth distinguishing: retrying will not help, the key is wrong.
+      this.noteStatus(response.status, sentToken);
+      // 401 is worth distinguishing: retrying will not help, the key is wrong — or, for a provider
+      // that holds a session rather than a key, the session has ended.
       const message =
         response.status === 401
-          ? `${this.label} rejected the API key`
+          ? this.options.onUnauthorized !== undefined
+            ? `Your ${this.label} session has ended. Sign in again to keep using it.`
+            : `${this.label} rejected the API key`
           : `${this.label} returned ${response.status}`;
       yield { kind: "error", message, retryable: response.status >= 500 };
       return;
@@ -242,12 +264,20 @@ export class OpenAICompatibleProvider implements InferenceProvider {
     }
   }
 
-  private async headers(): Promise<Record<string, string>> {
+  /** Headers for a request, and the token they carry, so a 401 can name the token that failed. */
+  private async auth(): Promise<{ headers: Record<string, string>; token: string | undefined }> {
     const token = await this.options.authToken?.();
     return {
-      ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
-      ...(await this.options.extraHeaders?.() ?? {}),
+      headers: {
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        ...(await this.options.extraHeaders?.() ?? {}),
+      },
+      token,
     };
+  }
+
+  private noteStatus(status: number, token: string | undefined): void {
+    if (status === 401 && token !== undefined) this.options.onUnauthorized?.(token);
   }
 }
 

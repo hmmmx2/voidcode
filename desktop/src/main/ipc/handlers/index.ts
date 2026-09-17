@@ -13,6 +13,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { BrowserWindow, MessageChannelMain, app, dialog, shell } from "electron";
 import * as hosted from "../../inference/hosted.js";
+import * as password from "../../account/password.js";
+import * as session from "../../account/session.js";
 import { checkedExternalUrl } from "../../net/external.js";
 import { write, logError } from "../../log.js";
 import { setHandler, IpcError } from "../broker.js";
@@ -155,9 +157,10 @@ import {
  * Snake_case because `parseProfile` reads `birth_date` and `profile_photo_url`; the transport
  * swap is meant to be invisible to the UI.
  *
- * `email` is null — there is no account server an address could have been registered with. It
- * stays in the payload because the renderer's type declares it nullable and `TopNavigation`
- * renders it when present; null is the honest value for something a local install cannot know,
+ * `email` is null, because the LOCAL profile has no email. An account is optional, and when there is
+ * one its address lives on our server and reaches the renderer through `account:session` — it is
+ * never copied into this payload or the `profile` table, so signing out cannot leave it behind. It
+ * stays in the payload because the renderer's type declares it nullable; null is the honest value,
  * and it is different from the empty string a user typed.
  *
  * `role` was here too, synthesised as `"learner"` to satisfy a field the renderer's type declared.
@@ -1236,17 +1239,31 @@ export function registerHandlers(): void {
   // Every one of these is a thin pass to `inference/hosted.ts`, which owns the credential. The
   // renderer learns outcomes — signed in, this balance, this refusal — and never the token.
 
-  setHandler("voidcode:signIn", async (input) => {
-    // The password crosses the broker once and is not logged, not stored, and not returned.
-    return hosted.signIn(input.email.trim(), input.password);
-  });
+  // ── The account ────────────────────────────────────────────────────────────
+  //
+  // Thin passes to `account/`, which owns the session. Passwords cross the broker once and are not
+  // logged, stored or returned; the renderer learns outcomes and who is signed in, never the token.
 
-  setHandler("voidcode:signOut", async () => {
-    await hosted.signOut();
-    return { ok: true };
+  setHandler("account:session", async () => session.state());
+  setHandler("account:refresh", async () => session.refresh());
+  setHandler("account:signInPassword", async (input) =>
+    password.signInPassword(input.email, input.password)
+  );
+  setHandler("account:register", async (input) =>
+    password.register({ name: input.name, email: input.email, password: input.password })
+  );
+  setHandler("account:requestPasswordCode", async (input) => password.requestPasswordCode(input.email));
+  setHandler("account:resetPassword", async (input) =>
+    password.resetPassword({ email: input.email, code: input.code, newPassword: input.newPassword })
+  );
+  setHandler("account:changePassword", async (input) =>
+    password.changePassword({ currentPassword: input.currentPassword, newPassword: input.newPassword })
+  );
+  setHandler("account:signOut", async () => {
+    await session.signOut();
+    return { ok: true as const };
   });
-
-  setHandler("voidcode:session", async () => ({ signedIn: hosted.isSignedIn() }));
+  setHandler("account:signOutEverywhere", async () => session.signOutEverywhere());
 
   setHandler("voidcode:credits", async () => hosted.credits());
 

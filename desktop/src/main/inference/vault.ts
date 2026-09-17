@@ -133,6 +133,19 @@ export function hasSecret(name: SecretName): boolean {
   return secretValue(name) !== undefined;
 }
 
+/**
+ * Whether a stored secret will still be here after a restart.
+ *
+ * False for a secret held only in memory because the backend is not safe to persist (see the
+ * header), and for no secret at all. The account page reads this so it can tell someone on a Linux
+ * desktop without a keyring that they will have to sign in again next launch, rather than letting
+ * them discover it.
+ */
+export function secretIsDurable(name: SecretName): boolean {
+  if (sessionOnly.has(name)) return false;
+  return readSecret(name) !== undefined;
+}
+
 /** Forget a secret in both places. `false` means there was nothing to forget. */
 export function clearSecret(name: SecretName): boolean {
   const hadSession = sessionOnly.delete(name);

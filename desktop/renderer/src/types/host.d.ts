@@ -50,6 +50,11 @@ interface VoidCodeHost {
    */
   onNotification(cb: (payload: unknown) => void): () => void;
   /**
+   * The VoidCode account changed — in this window or another, or because the server ended the
+   * session. Carries the new state, so a listener never has to ask again.
+   */
+  onAccountChanged?(cb: (event: HostAccountChange) => void): () => void;
+  /**
    * Something in the project changed on disk, from outside the editor.
    *
    * The preload has exposed this since Build Mode existed and it was never declared here, so
@@ -77,13 +82,39 @@ interface VoidCodeHost {
    * keychain and is read only in main — a renderer holding it would be a renderer whose devtools
    * console and crash dumps hold it too.
    */
+  /**
+   * The VoidCode account. Optional: nothing else in the application needs it.
+   *
+   * Every call returns an OUTCOME, never a credential. The session token lives in the OS keychain
+   * and is read only in main. Signed out, `session()` answers without any network request.
+   */
+  account: {
+    session(): Promise<HostAccountState>;
+    refresh(): Promise<HostAccountState>;
+    signInPassword(input: { email: string; password: string }): Promise<HostSignedIn | HostAccountFailure>;
+    /** `acceptTerms` must be `true`; main adds which terms version this build displays. */
+    register(input: {
+      name: string;
+      email: string;
+      password: string;
+      acceptTerms: true;
+    }): Promise<HostSignedIn | HostAccountFailure>;
+    /** The same answer whether or not the address has an account. */
+    requestPasswordCode(input: { email: string }): Promise<{ ok: true; message: string } | HostAccountFailure>;
+    resetPassword(input: {
+      email: string;
+      code: string;
+      newPassword: string;
+    }): Promise<HostSignedIn | HostAccountFailure>;
+    changePassword(input: {
+      currentPassword: string;
+      newPassword: string;
+    }): Promise<{ ok: true; message: string } | HostAccountFailure>;
+    signOut(): Promise<{ ok: true }>;
+    signOutEverywhere(): Promise<{ ok: true } | { ok: false; message: string }>;
+  };
+
   voidcode: {
-    signIn(input: { email: string; password: string }): Promise<
-      | { ok: true; user: { id: string; email: string; name: string } }
-      | { ok: false; message: string }
-    >;
-    signOut(): Promise<{ ok: boolean }>;
-    session(): Promise<{ signedIn: boolean }>;
     credits(): Promise<
       | {
           ok: true;
@@ -1069,6 +1100,46 @@ interface InterviewFacetRow {
   key: string;
   label: string;
   total: number;
+}
+
+/** Who is signed in to VoidCode on this device. Details are in memory in main, never stored locally. */
+interface HostAccountUser {
+  id: string;
+  email: string;
+  name: string;
+  hasPassword: boolean;
+  emailVerified: boolean;
+  providers: string[];
+}
+
+interface HostAccountState {
+  signedIn: boolean;
+  /** Null until the server has confirmed the session this launch. */
+  user: HostAccountUser | null;
+  /** The last attempt to check with the server could not connect. */
+  offline: boolean;
+  /** False when the session lasts only until the app quits (no usable keyring). */
+  durable: boolean;
+}
+
+interface HostAccountChange {
+  reason: "signedIn" | "signedOut" | "expired" | "updated";
+  state: HostAccountState;
+}
+
+interface HostSignedIn {
+  ok: true;
+  user: { id: string; email: string; name: string };
+}
+
+interface HostAccountFailure {
+  ok: false;
+  /** Stable, to branch on: `offline`, `not_configured`, `rate_limited`, or the server's own code. */
+  code: string;
+  /** Written to be shown as it is. */
+  message: string;
+  /** The form field the message belongs to, when the server named one. */
+  field?: string;
 }
 
 interface Window {

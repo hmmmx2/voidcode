@@ -10,6 +10,7 @@ interface SidebarItem {
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
     { label: "Profile", href: "/profile" },
+    { label: "Account", href: "/account" },
     { label: "Terms of Use", href: "/terms" },
     { label: "Privacy Policy", href: "/privacy" },
 ];
@@ -22,16 +23,14 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
  * second one scoped to a 192px column cut a visible vertical seam through it.
  * A hairline on the right is the separator, as everywhere else.
  *
- * NO "LOG OUT", BECAUSE THERE IS NOTHING TO LOG OUT OF. This build has no auth
- * at all: `useUserId` returns a fixed local id, and `auth.ts`, `middleware.ts`,
- * `/api/auth/*` and the login and register forms are absent. The button was
- * still here with `onClick: () => undefined` — a control that looked live,
- * responded to hover and focus, and did nothing when pressed. A dead control is
- * worse than a missing one: it makes the user doubt the click rather than the
- * app, and it implies an account they do not have.
+ * NO "LOG OUT" IN THE RAIL. There was once a button here with
+ * `onClick: () => undefined` — a control that looked live and did nothing. The
+ * VoidCode account is optional and separate from the local profile these pages
+ * edit, so signing out lives with that account, on the Account page and in the
+ * title-bar menu. A "Log out" beside "Profile" would suggest it touched the
+ * local profile, and it does not.
  *
- * Removing it took `onClick` and `isSeparated` with it — it was the only item
- * that used either — so `href` is now required and every entry is a link.
+ * Every entry is a link, so `href` is required.
  */
 export default function ProfileSidebar() {
     const pathname = usePathname();

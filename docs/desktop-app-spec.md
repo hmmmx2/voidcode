@@ -654,7 +654,11 @@ the UI says so rather than dead-ending on a missing model.
 | 16 GB+ GPU | 14B, or FIM + chat resident together |
 | Apple Silicon | Unified-memory path (§2.5); Metal via Ollama/llama.cpp |
 
-No account, no network after install, no telemetry. An offline first run must reach a working IDE.
+No account required, and no telemetry. Nothing leaves the machine after install unless the user
+signs in or uses a network feature (the VoidCode model, credits, the research library, a remote
+provider key, a model download). An offline first run must reach a working IDE, and a signed-out run
+makes no request to a VoidCode server — `npm run smoke` counts the requests a loopback API receives
+while a signed-out app starts and renders `/models`, and fails on any.
 
 ### 4.5 What must not be in an open-source build
 
