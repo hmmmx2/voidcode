@@ -527,9 +527,20 @@ export const CHANNELS = {
     input: z.undefined(),
     modes: BOTH,
   },
+  /**
+   * THE RENDERER MAY ONLY TOUCH KEYS THE USER PASTES IN — never the VoidCode session.
+   *
+   * The session token is minted by our API and written only by main, after main itself made the
+   * sign-in call. When these enums also accepted `"voidcode"`, a compromised renderer could not
+   * read the token but could OVERWRITE it — planting an attacker's session so the learner's
+   * questions and purchases went to someone else's account — or clear it without revoking it on
+   * the server. Reading was never the only threat; writing is how a session gets swapped.
+   * `renderer/src/types/host.d.ts` already declared only `"openrouter"`; this makes the boundary
+   * that is actually enforced agree with the one that was documented.
+   */
   "vault:set": {
     input: z.object({
-      key: z.enum(["openrouter", "voidcode"]),
+      key: z.enum(["openrouter"]),
       value: z.string().min(1).max(4096),
     }),
     modes: BOTH,
@@ -540,7 +551,7 @@ export const CHANNELS = {
    * channel through which to exfiltrate a key — only to ask whether one exists.
    */
   "vault:has": {
-    input: z.object({ key: z.enum(["openrouter", "voidcode"]) }),
+    input: z.object({ key: z.enum(["openrouter"]) }),
     modes: BOTH,
   },
   /**
@@ -552,7 +563,7 @@ export const CHANNELS = {
    * it was the only remedy, and that requires having another key to hand.
    */
   "vault:clear": {
-    input: z.object({ key: z.enum(["openrouter", "voidcode"]) }),
+    input: z.object({ key: z.enum(["openrouter"]) }),
     modes: BOTH,
   },
 

@@ -115,9 +115,18 @@ def test_hidden_test_cases_are_actually_used(slugs: set[str]) -> None:
 
 
 #: Client-side content authored per problem and keyed by slug. The API never sends hidden cases
-#: (`routers/problems.py` filters them, `execution.py:redact_for_response` strips them), but this
-#: file is compiled into the bundle and bypasses all of it.
-VIZ = Path(__file__).resolve().parents[1] / "apps" / "web" / "src" / "lib" / "visualizations" / "index.ts"
+#: (`routers/problems.py` filters them, `execution.py:redact_for_response` strips them), but these
+#: files are compiled into a bundle and bypass all of it.
+#:
+#: EVERY COPY, NOT ONE. This used to name only the web copy. The desktop renderer carries its own,
+#: the two drifted, and the leak this test was written for was fixed on the web and kept shipping
+#: inside the desktop installer — with this test green the whole time, because it never opened the
+#: file that still had it. `test_every_visualization_copy_is_guarded` stops a copy going unwatched.
+_ROOT = Path(__file__).resolve().parents[1]
+VIZ_COPIES = (
+    _ROOT / "desktop" / "renderer" / "src" / "lib" / "visualizations" / "index.ts",
+    _ROOT / "apps" / "web" / "src" / "lib" / "visualizations" / "index.ts",
+)
 _SLUG_BLOCK = re.compile(r'^  "([a-z0-9][a-z0-9-]*)":\s*\{', re.M)
 
 
@@ -152,7 +161,8 @@ def _leaked(blocks: dict[str, str], raw: dict) -> list[tuple[str, str]]:
     return found
 
 
-def test_no_hidden_expected_output_reaches_the_client() -> None:
+@pytest.mark.parametrize("viz", VIZ_COPIES, ids=["desktop", "web"])
+def test_no_hidden_expected_output_reaches_the_client(viz: Path) -> None:
     """A hidden case's answer in the bundle is the held-out grading signal, published.
 
     `cross-entropy-loss` rendered its only hidden expected output, to six decimals, in a caption
@@ -163,12 +173,19 @@ def test_no_hidden_expected_output_reaches_the_client() -> None:
     The decoy below is the point. This assertion passes trivially the moment the detector stops
     detecting, and a green test that checks nothing is how the leak survived authoring in the first
     place — so the same detector must be shown firing on the value that was actually there.
+
+    A missing copy FAILS rather than skips. A guard that quietly skips the file it cannot find is
+    the same guard that quietly read the wrong file for as long as the desktop leak shipped.
     """
     from features.content import load_raw
 
+    assert viz.is_file(), (
+        f"{viz} is gone. If that copy was deliberately deleted, remove it from VIZ_COPIES in the "
+        "same change — do not let this test go quiet about a file it can no longer see.")
+
     raw = load_raw()
-    blocks = _slug_blocks(VIZ.read_text(encoding="utf-8"))
-    assert blocks, f"no slug-keyed blocks parsed from {VIZ.name}; the detector reads nothing"
+    blocks = _slug_blocks(viz.read_text(encoding="utf-8"))
+    assert blocks, f"no slug-keyed blocks parsed from {viz}; the detector reads nothing"
 
     leaked = _leaked(blocks, raw)
     assert not leaked, (
@@ -181,6 +198,31 @@ def test_no_hidden_expected_output_reaches_the_client() -> None:
     assert _leaked(decoy, raw) == [("cross-entropy-loss", "27.631021")], (
         "the detector no longer catches the leak it was written for, so the assertion above "
         "proves nothing")
+
+
+def test_every_visualization_copy_is_guarded() -> None:
+    """Any `lib/visualizations/index.ts` in the tree must be in VIZ_COPIES.
+
+    The leak survived in the desktop copy because nothing said a second copy existed. Found by
+    walking the tree rather than listing expected paths, so a third copy added next quarter fails
+    here on the day it lands instead of being discovered in a shipped bundle.
+    """
+    import os
+
+    # Pruned walk, not `rglob`: rglob descends into every node_modules before a filter can reject
+    # it, which on Windows turns a sub-second check into minutes.
+    skip = {"node_modules", ".next", "out", "dist", "release", ".git", "vendor", "__pycache__"}
+    found = set()
+    for dirpath, dirnames, filenames in os.walk(_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in skip]
+        here = Path(dirpath)
+        if "index.ts" in filenames and here.name == "visualizations" and here.parent.name == "lib":
+            found.add((here / "index.ts").resolve())
+    guarded = {p.resolve() for p in VIZ_COPIES}
+    assert found, "found no visualization copies at all; the walk is broken"
+    assert found == guarded, (
+        f"unguarded: {sorted(map(str, found - guarded))}; "
+        f"listed but absent: {sorted(map(str, guarded - found))}")
 
 
 MOCK_DATA = Path(__file__).resolve().parents[1] / "apps" / "web" / "src" / "lib" / "mock-data.ts"

@@ -6,7 +6,7 @@
  * and a caller needing structured output cannot be silently handed a backend that will
  * return prose instead.
  */
-import { MessageChannelMain, type WebContents } from "electron";
+import { MessageChannelMain, app, type WebContents } from "electron";
 import { OllamaProvider } from "./ollama.js";
 import { OpenAICompatibleProvider } from "./openai.js";
 import { secretValue } from "./vault.js";
@@ -39,7 +39,7 @@ function providers(): InferenceProvider[] {
 
 
 /**
- * Who the hosted backend is told is asking.
+ * The session the hosted backend is shown, or `undefined` when there is none.
  *
  * A per-user, per-device session token minted by `/v1/auth/desktop/session` and kept in the OS
  * keychain beside the OpenRouter key. Read at the moment of use, never held, so signing out stops
@@ -51,16 +51,28 @@ function providers(): InferenceProvider[] {
  * the key to assert any identity. A token is per-person, revocable on its own, and worth exactly
  * one account if it leaks.
  *
- * `VOIDCODE_USER_ID` remains as a development-only escape hatch for running against an API with
- * identity enforcement off. It is checked second so a real session always wins, and it grants
- * nothing that signing in would not.
+ * WHY A TOKEN GETTER AND NOT EXTRA HEADERS. This used to be passed as `extraHeaders`. That looked
+ * equivalent and was not: `OpenAICompatibleProvider.available()` only short-circuits on a missing
+ * `authToken`, so with headers the provider probed `GET {api}/models` on every availability check
+ * — signed out, with nothing to send. Harmless against loopback; against a production URL it meant
+ * every signed-out launch of a local-first app reached our server, which is the promise the app
+ * spec makes it not break. With a getter, no session means not available, and no request at all.
+ *
+ * DEVELOPMENT ONLY: `VOIDCODE_DEV_SESSION_TOKEN`. Replaces the old `VOIDCODE_USER_ID`, which sent
+ * a bare, unsigned user id and only worked against an API with identity enforcement off. A dev
+ * token is a real session (mint one with `apps/api/scripts/mint_desktop_session.py`), so dev and
+ * production exercise the same path. It is read only in an unpackaged build and only when nothing
+ * is stored, so a real session always wins and a shipped app can never be told to use one.
  */
-async function hostedIdentity(): Promise<Record<string, string>> {
-  const token = secretValue("voidcode");
-  if (token !== undefined) return { authorization: `Bearer ${token}` };
+async function hostedToken(): Promise<string | undefined> {
+  const stored = secretValue("voidcode");
+  if (stored !== undefined) return stored;
 
-  const userId = process.env.VOIDCODE_USER_ID;
-  return userId === undefined || userId === "" ? {} : { "x-user-id": userId };
+  // `app` is undefined under the unit-test Electron stub. Unknown is treated as packaged: the
+  // override is the thing that must never apply by accident, so it fails closed.
+  const unpackaged = app !== undefined && app.isPackaged === false;
+  const dev = process.env.VOIDCODE_DEV_SESSION_TOKEN;
+  return unpackaged && dev !== undefined && dev !== "" ? dev : undefined;
 }
 
 function realProviders(): InferenceProvider[] {
@@ -91,7 +103,7 @@ function realProviders(): InferenceProvider[] {
       // chat completion with a curriculum system prompt, and claiming otherwise would let the
       // paper pipeline pick this provider and get prose where it required JSON.
       capabilities: { tools: false, grammar: false, remote: true },
-      extraHeaders: hostedIdentity,
+      authToken: hostedToken,
     }),
     new OpenAICompatibleProvider({
       id: "openrouter",

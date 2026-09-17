@@ -79,17 +79,26 @@ def _summary(paper: Paper, progress: PaperProgress | None) -> dict:
 
 
 async def _progress_by_paper(
-    db: AsyncSession, user_id: uuid.UUID
+    db: AsyncSession, caller: identity.Caller
 ) -> dict[uuid.UUID, PaperProgress]:
+    """Reading progress for a real, authenticated person — and nothing for anyone else.
+
+    Signed-out callers all resolve to ONE anonymous user. When their progress was read and written
+    like anybody's, every signed-out reader wrote into the same row and saw each other's ticks: a
+    shared record presented as "your progress". The library itself stays public; only the
+    per-person overlay needs a person.
+    """
+    if caller.is_anonymous or not caller.verified:
+        return {}
     rows = await db.execute(
-        select(PaperProgress).where(PaperProgress.user_id == user_id)
+        select(PaperProgress).where(PaperProgress.user_id == caller.user_id)
     )
     return {p.paper_id: p for p in rows.scalars()}
 
 
 @router.get("")
 async def list_papers(
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    caller: identity.Caller = Depends(identity.resolve_caller),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -106,7 +115,7 @@ async def list_papers(
         .order_by(Paper.order_index)
     )
     papers = list(result.scalars())
-    progress = await _progress_by_paper(db, user_id)
+    progress = await _progress_by_paper(db, caller)
 
     summaries = [_summary(p, progress.get(p.id)) for p in papers]
     total_sections = len(papers) * len(SECTION_ORDER)
@@ -139,12 +148,12 @@ async def _load(db: AsyncSession, slug: str) -> Paper:
 @router.get("/{slug}")
 async def get_paper(
     slug: str,
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    caller: identity.Caller = Depends(identity.resolve_caller),
     db: AsyncSession = Depends(get_db),
 ):
     """One paper, with every section body."""
     paper = await _load(db, slug)
-    progress = (await _progress_by_paper(db, user_id)).get(paper.id)
+    progress = (await _progress_by_paper(db, caller)).get(paper.id)
 
     return {
         **_summary(paper, progress),
@@ -165,11 +174,12 @@ async def get_paper(
 async def mark_section_read(
     slug: str,
     body: ReadRequest,
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    user_id: uuid.UUID = Depends(identity.require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Record that a section has been read. Idempotent.
+    Record that a section has been read. Idempotent. Requires a signed-in person — see
+    `_progress_by_paper` for what happened when it did not.
 
     `completed_at` is set the moment all four are read and then never moved, so
     it means "when you first finished this", not "when you last touched it".

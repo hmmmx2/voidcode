@@ -15,13 +15,21 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT, ROOT / "scripts"):
     sys.path.insert(0, str(p))
 
 import run_evals as R  # noqa: E402
 
-PANEL = ROOT / "apps" / "web" / "src" / "components" / "VoidCodeAI" / "VoidCodeAIPanel.tsx"
+#: Every client that sends the tutor a message. The desktop app carries its own copy of the panel,
+#: and it is the one learners will use once the web app is gone — a check that reads only the web
+#: copy would keep passing while the product it describes drifted away from it.
+PANELS = {
+    "desktop": ROOT / "desktop" / "renderer" / "src" / "components" / "VoidCodeAI" / "VoidCodeAIPanel.tsx",
+    "web": ROOT / "apps" / "web" / "src" / "components" / "VoidCodeAI" / "VoidCodeAIPanel.tsx",
+}
 SCENARIO = {"user_message": "it returns the wrong value",
             "source_code": "def f(n):\n    total = 0\n    return total\n"}
 
@@ -37,11 +45,16 @@ def test_the_source_is_line_numbered():
     assert "  3 |     return total" in body
 
 
-def test_the_format_matches_the_frontend_exactly():
+@pytest.mark.parametrize("client", sorted(PANELS))
+def test_the_format_matches_the_frontend_exactly(client):
     """Two independent implementations of the same wire format. If they drift, the eval measures a
     message shape production does not send — which is how the unnumbered version survived.
+
+    A missing copy fails rather than skips: remove it from PANELS in the change that deletes it.
     """
-    src = PANEL.read_text(encoding="utf-8")
+    panel = PANELS[client]
+    assert panel.is_file(), f"{panel} is gone; drop '{client}' from PANELS in the same change"
+    src = panel.read_text(encoding="utf-8")
     assert 'String(i + 1).padStart(3, " ")' in src and '} | ${line}' in src, (
         "the frontend's addLineNumbers changed; update build_messages to match")
     assert "lines total]" in src

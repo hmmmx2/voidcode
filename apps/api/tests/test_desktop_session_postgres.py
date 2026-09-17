@@ -155,6 +155,35 @@ class TestSigningIn:
 
         assert (await _sign_in(client, email)).status_code == 401
 
+    async def test_deactivating_an_account_ends_the_sessions_it_already_has(
+        self, client, sessionmaker_np, learner
+    ):
+        """The half the test above does not cover, and the half that was broken.
+
+        `is_active` used to be checked only when a session was ISSUED. A device signed in yesterday
+        kept working after the account was switched off today, for the rest of its 90 days — so
+        deactivating a compromised or abusive account stopped nobody who was already in.
+        """
+        user_id, email = learner
+        token = (await _sign_in(client, email)).json()["token"]
+
+        async with sessionmaker_np() as db:
+            assert await token_service.user_id_for_session(db, token) == user_id
+            await db.execute(update(User).where(User.id == user_id).values(is_active=False))
+            await db.commit()
+
+        async with sessionmaker_np() as db:
+            assert await token_service.user_id_for_session(db, token) is None, (
+                "a deactivated account's existing session still resolves"
+            )
+
+        # And it comes back when the account does: the session was refused, not destroyed.
+        async with sessionmaker_np() as db:
+            await db.execute(update(User).where(User.id == user_id).values(is_active=True))
+            await db.commit()
+        async with sessionmaker_np() as db:
+            assert await token_service.user_id_for_session(db, token) == user_id
+
 
 class TestTheTokenBehavesLikeASessionAndNotALink:
     async def test_using_it_does_not_consume_it(self, client, sessionmaker_np, learner):

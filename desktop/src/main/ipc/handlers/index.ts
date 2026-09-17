@@ -11,8 +11,9 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BrowserWindow, MessageChannelMain, dialog, shell } from "electron";
+import { BrowserWindow, MessageChannelMain, app, dialog, shell } from "electron";
 import * as hosted from "../../inference/hosted.js";
+import { checkedExternalUrl } from "../../net/external.js";
 import { write, logError } from "../../log.js";
 import { setHandler, IpcError } from "../broker.js";
 import { popupMenu, setMenuState } from "../../menu.js";
@@ -1262,15 +1263,11 @@ export function registerHandlers(): void {
     // `shell.openExternal` will open anything — a file:// path, a custom scheme another
     // application has registered. Handing that to a renderer is handing it the ability to launch
     // things. So the renderer asks to buy a pack by code, and what gets opened is a URL this
-    // process received from our own API over TLS and has just checked is https.
-    let parsed: URL;
-    try {
-      parsed = new URL(started.url);
-    } catch {
-      return { ok: false as const, message: "The payment provider returned an unusable address." };
-    }
-    if (parsed.protocol !== "https:" && parsed.hostname !== "127.0.0.1") {
-      return { ok: false as const, message: "Refused to open a non-HTTPS payment page." };
+    // process received from our own API over TLS and has just checked — see `net/external.ts`
+    // for the rule, and for the looser check this replaced.
+    const parsed = checkedExternalUrl(started.url, { allowLoopbackHttp: !app.isPackaged });
+    if (parsed === null) {
+      return { ok: false as const, message: "Refused to open that payment page: it is not a secure HTTPS address." };
     }
 
     await shell.openExternal(parsed.toString());

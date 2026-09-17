@@ -24,6 +24,15 @@ openai>=1.52.0
 # ── HTTP client ───────────────────────────────────────────────────────────────
 httpx==0.28.1
 
+# ── Accounts and metrics ──────────────────────────────────────────────────────
+# The auth router imports all of these at module load. This image shipped without
+# them, so it could not import `routers/auth.py` at all — see
+# `tests/test_requirements_cover_the_api.py`, which now holds every API image to it.
+argon2-cffi==23.1.0
+email-validator==2.2.0
+PyJWT[crypto]==2.10.1
+prometheus-client==0.22.0
+
 # ── Database (PostgreSQL + async SQLAlchemy) ──────────────────────────────────
 sqlalchemy[asyncio]>=2.0.25
 asyncpg==0.31.0

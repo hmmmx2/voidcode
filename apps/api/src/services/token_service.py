@@ -171,12 +171,21 @@ async def user_id_for_session(session: AsyncSession, token: str) -> uuid.UUID | 
     Returns None for every refusal rather than raising or distinguishing them. A client holding a
     token that has expired, been revoked, or never existed does the same thing in all three cases:
     sign in again. Telling them which would only help somebody probing tokens.
+
+    A DEACTIVATED ACCOUNT'S SESSIONS STOP WORKING HERE, not only at sign-in. Before this join,
+    `is_active` was checked when a session was issued and never again, so switching an account off
+    stopped new sign-ins and left every device already signed in fully working for up to 90 days —
+    which is the opposite of what deactivating an account is for. Joined rather than looked up
+    separately so it stays one indexed query on a path every authenticated request takes.
     """
     row = (
         await session.execute(
-            select(AuthToken).where(
+            select(AuthToken)
+            .join(User, User.id == AuthToken.user_id)
+            .where(
                 AuthToken.token_hash == hash_token(token),
                 AuthToken.purpose == PURPOSE_DESKTOP_SESSION,
+                User.is_active.is_(True),
             )
         )
     ).scalar_one_or_none()

@@ -20,7 +20,7 @@
  * who never signs in should see the local providers behave exactly as they always have, so these
  * return a shaped failure rather than throwing into a renderer that has no way to recover.
  */
-import { clearSecret, secretValue, setSecret } from "./vault.js";
+import { EncryptionUnavailableError, clearSecret, secretValue, setSecret } from "./vault.js";
 
 /** Where the platform lives. Overridable so a developer can point at a local instance. */
 function apiBase(): string {
@@ -101,7 +101,31 @@ export async function signIn(email: string, password: string): Promise<SignInRes
     return { ok: false, message: "VoidCode returned an unexpected response." };
   }
 
-  setSecret("voidcode", body.token);
+  // THE SERVER HAS ALREADY ISSUED A SESSION BY THIS POINT, which is why a storage failure cannot
+  // simply be reported. Before this guard, a machine with no usable credential store threw out of
+  // here: the renderer read the masked "voidcode:signIn failed", and a live 90-day token sat on the
+  // server that no device held and nobody could sign out of. So the token is revoked with its own
+  // header — it was never stored, so `auth: true` would find nothing to send — and the user is told
+  // the reason they can act on.
+  try {
+    setSecret("voidcode", body.token);
+  } catch (err) {
+    try {
+      await call("/auth/desktop/session", {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${body.token}` },
+      });
+    } catch {
+      // Unreachable now is fine: the orphan still expires on its own.
+    }
+    return {
+      ok: false,
+      message:
+        err instanceof EncryptionUnavailableError
+          ? err.message
+          : "VoidCode could not keep your sign-in on this computer.",
+    };
+  }
   return { ok: true, user: body.user };
 }
 

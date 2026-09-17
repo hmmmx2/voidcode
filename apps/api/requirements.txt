@@ -45,6 +45,10 @@ argon2-cffi>=23.1.0
 # EmailStr validation for the auth request models.
 email-validator>=2.1.0
 
+# Verifying Google and Microsoft ID tokens (RS256 against the provider's JWKS). `[crypto]` pulls in
+# `cryptography`, without which PyJWT cannot verify an RSA signature at all.
+PyJWT[crypto]>=2.8
+
 # Prometheus scrape endpoint (spec 6.2). Installed in this environment already but
 # undeclared, which means a fresh container would have shipped without /metrics.
 prometheus-client>=0.20.0

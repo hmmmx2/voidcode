@@ -48,6 +48,19 @@ try {
   process.exit(0);
 }
 
+// ── And when there is no session to queue as ────────────────────────────────
+// The hosted provider is only available with a real session now, so a bare user id no longer
+// gets this far. Mint one against the same API:
+//   cd apps/api && python -m scripts.mint_desktop_session --email you@example.com
+const DEV_TOKEN = process.env.VOIDCODE_DEV_SESSION_TOKEN;
+if (DEV_TOKEN === undefined || DEV_TOKEN === "") {
+  console.log(
+    "[queue] SKIP: set VOIDCODE_DEV_SESSION_TOKEN — mint one with " +
+      "`cd apps/api && python -m scripts.mint_desktop_session --email you@example.com`",
+  );
+  process.exit(0);
+}
+
 const profile = mkdtempSync(join(tmpdir(), "voidcode-queue-"));
 
 // An isolated --user-data-dir: this must not write into the conversations, settings or vault of
@@ -61,10 +74,10 @@ const electron = spawn(
     env: {
       ...process.env,
       VOIDCODE_API_URL: API,
-      // No sign-in exists yet, so the hosted provider sends a bare id and the API must have
-      // enforcement off. See `hostedIdentity` in the registry for why it does not invent one.
-      VOIDCODE_USER_ID:
-        process.env.VOIDCODE_USER_ID ?? "22222222-2222-2222-2222-222222222222",
+      // A real desktop session, read by `hostedToken` in the registry only because this runs an
+      // unpackaged build. Same credential path as a signed-in learner, so the queue is exercised
+      // as the product actually reaches it rather than through an unsigned header.
+      VOIDCODE_DEV_SESSION_TOKEN: DEV_TOKEN,
     },
   },
 );

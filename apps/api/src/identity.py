@@ -226,3 +226,23 @@ def current_user_id(caller: Caller = Depends(resolve_caller)) -> uuid.UUID:
     handler.
     """
     return caller.user_id
+
+
+def require_user(caller: Caller = Depends(resolve_caller)) -> uuid.UUID:
+    """The id of a real, authenticated person — or 401. For writes that belong to one account.
+
+    `current_user_id` hands back the shared anonymous user for a caller with no credential, which is
+    right for reading a public catalogue and wrong for anything that WRITES per-person state: every
+    signed-out caller then writes into the same row, and every other signed-out caller reads it
+    back. That is how reading progress became a single progress record shared by everyone.
+
+    BOTH CHECKS, in this order, for the reason `routers/credits.py` spells out: an anonymous caller is
+    `verified=True` (there is no id to forge), so `verified` alone would admit them; and a
+    non-anonymous caller may be unverified (an unsigned `X-User-Id`), which names somebody without
+    proving it.
+    """
+    if caller.is_anonymous:
+        raise HTTPException(status_code=401, detail="Sign in to do this.")
+    if not caller.verified:
+        raise HTTPException(status_code=401, detail="This request could not be authenticated.")
+    return caller.user_id

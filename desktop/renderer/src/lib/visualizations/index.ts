@@ -3,9 +3,24 @@ import type { Visualization } from "./types";
 /**
  * Step data per problem, keyed by slug.
  *
- * Every number here was taken from the problem's own test cases, so what the
- * learner watches is the case they are about to run. See `types.ts` for why the
- * values are pre-computed strings rather than arithmetic done at render time.
+ * Every number here was taken from the problem's own VISIBLE test cases, so what
+ * the learner watches is the case they are about to run. See `types.ts` for why
+ * the values are pre-computed strings rather than arithmetic done at render time.
+ *
+ * VISIBLE, AND THE WORD IS LOAD-BEARING. This file is compiled into the renderer
+ * bundle that ships inside the installer, where anyone can unpack and read it. The
+ * API is careful about hidden cases (`routers/problems.py` filters them out of the
+ * read path, `execution.py:redact_for_response` strips them from grading
+ * responses, and both call it a security boundary) and none of that reaches here.
+ * A hidden case's expected output pasted into a caption is published, and the
+ * held-out grading signal for that problem is gone.
+ *
+ * That is not hypothetical: this file rendered `cross-entropy-loss`'s only hidden
+ * expected output, to six decimals, in a caption about the 1e-12 clamp — and did so
+ * for a while after the web copy was fixed, because the two copies drifted and the
+ * test only read the web one. The value is deliberately not repeated here — a
+ * comment explaining the leak that quotes it is still the leak.
+ * `tests/test_catalog_coverage.py` asserts the general rule against this file.
  */
 
 const c = (value: string, state?: "idle" | "active" | "changed" | "muted", label?: string) => ({
@@ -104,12 +119,15 @@ export const VISUALIZATIONS: Record<string, Visualization> = {
         rows: [{ title: "loss", cells: [c("0.289909", "changed")] }],
       },
       {
+        // The lesson is that the clamp turns a crash into a number, NOT what that
+        // number is. Showing the value would publish this problem's only hidden
+        // expected output — see the note at the top of this file.
         caption: "The clamp exists for this case: a probability of exactly 0.",
-        detail: "log(0) is undefined, so p is floored at 1e-12 → loss 27.63, not a crash.",
+        detail: "log(0) is undefined. Flooring p at 1e-12 makes the loss large but finite, so a confidently wrong prediction is penalised rather than crashing the batch.",
         rows: [
           { title: "p", cells: [c("0.0", "muted")] },
           { title: "max(p, 1e-12)", cells: [c("1e-12", "changed")] },
-          { title: "−log(p)", cells: [c("27.631021", "changed")] },
+          { title: "−log(p)", cells: [c("large, and finite", "changed")] },
         ],
       },
     ],
