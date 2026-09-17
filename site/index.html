@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VoidCode — a local-first editor for ML interview preparation</title>
+    <meta
+      name="description"
+      content="Download VoidCode for macOS and Windows. An editor and grader for machine-learning interview preparation that runs on your own machine. Free and open source."
+    />
+    <!--
+      Content-Security-Policy in a meta tag, on every page.
+
+      `_headers` and `vercel.json` send the same policy for the hosts that support them, but a
+      static site can be served from anywhere — a colleague's `python -m http.server`, a bucket, a
+      fork's GitHub Pages — and the meta tag is the copy that travels with the file. `connect-src`
+      is exactly api.github.com because that is where the release list comes from (see
+      assets/download.js) and nothing else is contacted; `default-src 'none'` means a typo'd asset
+      URL fails visibly instead of quietly loading from somewhere unexpected.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'"
+    />
+    <!--
+      Which GitHub repository publishes the releases this page offers.
+
+      EMPTY UNTIL THE OWNER SETS IT. There is no git remote on this project yet, so there is no
+      honest value to hard-code, and a guessed one would send every visitor's browser to a
+      stranger's repository. `download.js` treats an empty value as "not published yet" and says so
+      on the page rather than drawing a button that 404s. See README.md.
+    -->
+    <meta name="voidcode:repo" content="" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="wrap">
+        <a class="brand" href="./">
+          <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="butt" aria-hidden="true">
+            <path d="M20.384 7.012A10 10 0 1 1 11.616 7.012" />
+          </svg>
+          VoidCode
+        </a>
+        <nav class="links">
+          <a href="#download">Download</a>
+          <a href="terms/">Terms</a>
+          <a href="privacy/">Privacy</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <div class="wrap">
+          <p class="eyebrow">ML &amp; systems interview preparation</p>
+          <h1>An editor that runs the whole thing on your machine.</h1>
+          <p>
+            VoidCode is a desktop editor for machine-learning interview preparation. Problems,
+            projects and mock interviews, with a grader that runs your Python locally, and a tutor
+            you can point at a model on your own hardware.
+          </p>
+
+          <div class="cta">
+            <!--
+              The one auto-detected control. It is a link, not a button, so middle-click and
+              "copy link address" work; `download.js` fills in the href and the label once it
+              knows what the latest release contains. Until then it says so — a primary action
+              that looks ready and isn't is worse than one that admits it is loading.
+            -->
+            <a id="primary" class="btn primary" href="#download" aria-disabled="true" data-state="loading">
+              Checking for the latest release…
+            </a>
+            <p id="primary-note" class="small muted" style="margin: 0">
+              Free and open source, under the Apache License 2.0.
+            </p>
+          </div>
+
+          <noscript>
+            <div class="note" style="margin-top: 1.5rem">
+              <p>
+                This page reads the download links from the release list when JavaScript runs. With
+                it off, the files are listed on the project's own releases page — see
+                <a href="#download">Downloads</a> below.
+              </p>
+            </div>
+          </noscript>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="grid">
+            <div class="card">
+              <h3>Nothing leaves your computer by default</h3>
+              <p class="small">
+                Your code, your solutions and your conversations are stored in one file on your own
+                disk. There is no telemetry, and an account is optional — see the
+                <a href="privacy/">Privacy Policy</a>.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Your Python, graded locally</h3>
+              <p class="small">
+                Submissions run inside the app in a WebAssembly Python sandbox with no network
+                access, so a problem set works on a plane and a laptop with no GPU is enough.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Bring your own model, or ours</h3>
+              <p class="small">
+                Point the tutor at Ollama or llama.cpp on your own machine, add an OpenRouter key,
+                or sign in and use the hosted VoidCode model, which is metered by the second it
+                spends answering.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="download">
+        <div class="wrap">
+          <h2>Downloads</h2>
+          <p id="release-note" class="muted small">Reading the latest release…</p>
+
+          <!-- Filled in by assets/download.js: one table per operating system. -->
+          <div id="files"></div>
+
+          <div class="note" style="margin-top: 2rem">
+            <h3>Which Mac do I have?</h3>
+            <p class="small">
+              Apple menu &rsaquo; About This Mac. A line reading <strong>Chip: Apple M1</strong> (or
+              M2, M3, M4) means Apple silicon — take the arm64 download. A line reading
+              <strong>Processor: Intel</strong> means the x64 one. Browsers cannot tell these apart,
+              which is why both are listed.
+            </p>
+          </div>
+
+          <h3 style="margin-top: 2rem">Installing on macOS</h3>
+          <p class="small">
+            Open the .dmg and drag VoidCode to Applications. The app is not signed with an Apple
+            developer certificate, so the first launch is refused: open
+            <strong>System Settings &rsaquo; Privacy &amp; Security</strong>, scroll to the message
+            about VoidCode and choose <strong>Open Anyway</strong>. (Control-clicking the app and
+            choosing Open no longer works on macOS 15 and later.) If macOS calls the app damaged,
+            clearing the quarantine flag is the equivalent step from a terminal:
+          </p>
+          <pre>xattr -dr com.apple.quarantine /Applications/VoidCode.app</pre>
+
+          <h3>Installing on Windows</h3>
+          <p class="small">
+            Run the .exe. The installer is not signed, so SmartScreen shows "Windows protected your
+            PC": choose <strong>More info</strong>, then <strong>Run anyway</strong>. Nothing else
+            is needed — the app carries its own Python runtime.
+          </p>
+
+          <h3>Checking what you downloaded</h3>
+          <p class="small">
+            Each file's SHA-256 is listed above. Compare it with the file you received:
+          </p>
+          <pre>macOS:    shasum -a 256 ~/Downloads/VoidCode-*.dmg
+Windows:  Get-FileHash $HOME\Downloads\VoidCode-*.exe -Algorithm SHA256</pre>
+
+          <p class="small muted" id="other-downloads">
+            Linux builds (AppImage and .deb) and older versions are published alongside these files.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>VoidCode AI</span>
+        <nav>
+          <a href="terms/">Terms of Use</a>
+          <a href="privacy/">Privacy Policy</a>
+          <a href="#download">Download</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="assets/download.js"></script>
+  </body>
+</html>

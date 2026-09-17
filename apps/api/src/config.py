@@ -84,13 +84,18 @@ def _flag(name: str, default: bool = False) -> bool:
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 
-# The origin the FRONTEND is served from. Every emailed link is built from this.
+# The origin of the PUBLIC SITE — the landing and download page, the legal documents, and the two
+# pages Stripe redirects a buyer's browser to. Every URL we hand to a browser is built from this.
+#
+# It used to mean "where the Next.js frontend is served from". The frontend is being deleted; what
+# remains at this origin is the static site in `site/`, which is why the local default is the port
+# its README serves it on rather than a dev server's 3000.
 #
 # Never from the request `Host` header: `nginx.conf` does
 # `proxy_set_header Host $host`, forwarding whatever the client sent, so a
 # host-header injection would rewrite password-reset links to an attacker's
 # domain — a classic, and trivially exploitable behind this proxy config.
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8080").rstrip("/")
 
 
 # ── Auth ─────────────────────────────────────────────────────────
@@ -525,10 +530,13 @@ def assert_production_config() -> None:
             "INTERNAL_API_SECRET is empty. Generate one with "
             "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`."
         )
-    if APP_BASE_URL.startswith("http://localhost"):
+    if not APP_BASE_URL.startswith("https://"):
+        # Stripe sends the buyer here after a payment, and an http:// origin means that redirect —
+        # carrying the checkout session id — crosses the network in the clear. The old check only
+        # caught `http://localhost`, so any other plain-http origin passed.
         problems.append(
-            f"APP_BASE_URL is still {APP_BASE_URL!r} — every verification and "
-            "password-reset link would point at localhost."
+            f"APP_BASE_URL is {APP_BASE_URL!r}. It must be the public site's https:// origin: "
+            "Stripe redirects buyers to it, and emailed links are built from it."
         )
     if EMAIL_PROVIDER == "console":
         problems.append(

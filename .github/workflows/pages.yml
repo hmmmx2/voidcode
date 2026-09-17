@@ -1,0 +1,84 @@
+name: site
+
+# The public site — landing page with the downloads on it, the legal documents, and the two pages
+# Stripe returns a buyer's browser to.
+#
+# There is no build step and nothing to compile: `site/` is served as files (see site/README.md).
+# So this workflow does two things — it runs the checks that keep those files honest, and on `main`
+# it publishes them to GitHub Pages.
+#
+# INERT UNTIL THE OWNER ENABLES PAGES. Without Pages turned on for the repository the deploy step
+# fails, which is why it is gated on the repository variable below rather than left to fail red on
+# every push. Cloudflare Pages and Vercel need no workflow at all — they read `site/` directly; the
+# headers for each live in `site/_headers` and `site/vercel.json`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "tests/test_site.py"
+      - ".github/workflows/pages.yml"
+      # The legal pages are generated from the application's own documents, and the site's colours
+      # are checked against its stylesheet — so a change to either can break this gate.
+      - "desktop/renderer/src/components/Legal/**"
+      - "desktop/renderer/src/app/globals.css"
+      - "desktop/src/shared/legal.ts"
+      - "desktop/electron-builder.yml"
+      - "apps/api/src/services/payments.py"
+  pull_request:
+    paths:
+      - "site/**"
+      - "tests/test_site.py"
+      - ".github/workflows/pages.yml"
+      - "desktop/renderer/src/components/Legal/**"
+      - "desktop/renderer/src/app/globals.css"
+      - "desktop/src/shared/legal.ts"
+      - "desktop/electron-builder.yml"
+      - "apps/api/src/services/payments.py"
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: site checks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        # Nothing else is needed: these tests read files. No API, no database, no node.
+        run: python -m pip install --quiet pytest
+      - name: Check the site
+        run: python -m pytest tests/test_site.py -v
+      - name: The legal pages match the application's own documents
+        # Redundant with the test above by design — this step names the remedy in its own line of
+        # the log, because "run the generator" is not obvious from a diff of two HTML files.
+        run: python site/scripts/generate_legal.py --check
+
+  deploy:
+    name: publish to GitHub Pages
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.PUBLISH_TO_GITHUB_PAGES == '1'
+    runs-on: ubuntu-22.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          # The directory itself, unmodified. GitHub Pages serves neither `_headers` nor
+          # `vercel.json`, so the pages' own Content-Security-Policy meta tags are what protects
+          # them there — which is why every page carries one.
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

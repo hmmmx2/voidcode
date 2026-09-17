@@ -211,7 +211,12 @@ def test_every_visualization_copy_is_guarded() -> None:
 
     # Pruned walk, not `rglob`: rglob descends into every node_modules before a filter can reject
     # it, which on Windows turns a sub-second check into minutes.
-    skip = {"node_modules", ".next", "out", "dist", "release", ".git", "vendor", "__pycache__"}
+    # `.claude` holds git worktrees — whole checkouts of this repository. Their copies of the file
+    # are the same file on another branch, not a third copy to guard, and a session that happens to
+    # have one open would otherwise fail this test for everybody.
+    skip = {
+        "node_modules", ".next", "out", "dist", "release", ".git", "vendor", "__pycache__", ".claude",
+    }
     found = set()
     for dirpath, dirnames, filenames in os.walk(_ROOT):
         dirnames[:] = [d for d in dirnames if d not in skip]

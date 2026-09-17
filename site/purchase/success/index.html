@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payment received — VoidCode</title>
+    <!--
+      Where Stripe sends a buyer's browser after a successful checkout (`success_url` in
+      apps/api/src/services/payments.py).
+
+      NO SCRIPTS AND NO REQUESTS. This page is reached with the payment's session id in the URL, so
+      it is the last place to load anything that could read it. The policy below drops `script-src`
+      and `connect-src` entirely rather than narrowing them.
+
+      IT DOES NOT SAY THE CREDITS ARE THERE. This page is a redirect target: it knows the buyer
+      came back, not that the payment cleared. Credits are added when Stripe's webhook reaches the
+      API, which is usually seconds later but is not guaranteed to have happened yet. The app shows
+      the balance and is the thing that can actually tell.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="../../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../assets/site.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="wrap">
+        <a class="brand" href="../../">
+          <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="butt" aria-hidden="true">
+            <path d="M20.384 7.012A10 10 0 1 1 11.616 7.012" />
+          </svg>
+          VoidCode
+        </a>
+      </div>
+    </header>
+
+    <main class="wrap centred">
+      <h1>Payment received</h1>
+      <p>
+        You can close this tab and go back to VoidCode. Your credits appear there as soon as the
+        payment confirms, usually within a minute — the Models page shows the balance.
+      </p>
+      <p class="small muted">
+        If the balance has not moved after a few minutes, the payment did not complete. Nothing is
+        charged twice if you try again.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>VoidCode AI</span>
+        <nav>
+          <a href="../../terms/">Terms of Use</a>
+          <a href="../../privacy/">Privacy Policy</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

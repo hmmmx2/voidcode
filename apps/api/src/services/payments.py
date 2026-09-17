@@ -108,8 +108,15 @@ async def create_checkout(
 
     form = {
         "mode": "payment",
-        "success_url": f"{config.APP_BASE_URL}/credits?purchase=success",
-        "cancel_url": f"{config.APP_BASE_URL}/credits?purchase=cancelled",
+        # Two pages on the public static site (`site/purchase/…`), not a route in an app.
+        #
+        # A buyer finishes a payment in their own browser, and after the desktop app replaced the
+        # website there is nothing for the browser to come back to — the old `/credits?purchase=…`
+        # was a page in a web app that is being deleted. These two pages are deliberately
+        # script-free and say nothing about the balance: this is a redirect target, so it knows the
+        # buyer returned and not that the webhook has landed. The app shows the credits.
+        "success_url": f"{config.APP_BASE_URL}/purchase/success/",
+        "cancel_url": f"{config.APP_BASE_URL}/purchase/cancelled/",
         "client_reference_id": str(user_id),
         "payment_method_types[0]": "card",
         "payment_method_types[1]": "fpx",

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terms of Use — VoidCode</title>
+    <meta name="description" content="How this application is licensed, what it does not promise, and what an optional account involves." />
+    <!-- No scripts and nothing external on this page; see index.html for why the policy travels
+         in the file rather than only in a header. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../assets/site.css" />
+  </head>
+  <body>
+    <!-- GENERATED FILE — do not edit.
+         Source: desktop/renderer/src/components/Legal/TermsClient.tsx
+         Regenerate: python site/scripts/generate_legal.py
+         tests/test_site.py fails if this file and that component disagree. -->
+    <header class="bar">
+      <div class="wrap">
+        <a class="brand" href="../">
+          <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="butt" aria-hidden="true">
+            <path d="M20.384 7.012A10 10 0 1 1 11.616 7.012" />
+          </svg>
+          VoidCode
+        </a>
+        <nav class="links">
+          <a href="../#download">Download</a>
+          <a href="../terms/" aria-current="page">Terms</a>
+          <a href="../privacy/">Privacy</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap doc">
+      <div class="doc-head">
+        <div>
+          <h1>Terms of Use</h1>
+          <p class="muted small" style="margin: 0">How this application is licensed, what it does not promise, and what an optional account involves.</p>
+        </div>
+        <p class="updated" style="margin: 0">Last updated <strong>17 September 2026</strong></p>
+      </div>
+
+        <section id="what-this-is">
+          <h2>1. What This Is</h2>
+          <p>
+            VoidCode is a desktop application you install and run on your own computer. These terms
+            describe how it is licensed, what it does not promise, and what an account involves if you
+            choose to create one.
+          </p>
+          <p>
+            <strong>An account is optional.</strong> Without one there is no
+            service here: nothing you write is submitted anywhere, your code is executed and graded
+            inside the application, and your work is stored in a file on your own disk. So there is
+            nothing that can go down, nothing to suspend, and nothing to bill.
+          </p>
+          <p>
+            With an account you can use the VoidCode model, which runs on our servers and is paid for
+            with credits. Section 6 covers that, and it is the only part of these terms that describes a
+            service.
+          </p>
+          <p>
+            You do not need to agree to anything in order to use the application. Apache-2.0 grants you
+            rights; it does not ask for any in return. Creating an account is the one step that asks you
+            to accept these terms and the Privacy Policy.
+          </p>
+        </section>
+
+        <section id="licence">
+          <h2>2. Your Licence to the Software</h2>
+          <p>
+            The application is free and open-source software under the
+            <strong>Apache License 2.0</strong>. The full text ships with it,
+            under <code>resources/licenses</code>, and Help &rsaquo; Open Licences
+            opens that directory.
+          </p>
+          <p>Among other things, that licence means you may:</p>
+          <ul>
+            <li>Use the application for any purpose, including commercially</li>
+            <li>Read, modify and redistribute the source, including as part of something else</li>
+            <li>Reverse-engineer it — though the source is published, which is usually easier</li>
+          </ul>
+          <p>
+            An earlier version of this page prohibited the last two. That was narrower than the licence
+            in the same distribution, so it misstated your rights; it is corrected here rather than
+            softened.
+          </p>
+        </section>
+
+        <section id="content">
+          <h2>3. Exercise Content</h2>
+          <p>
+            The exercises — problem statements, hints, test cases, reference implementations and the
+            visualisers written for them — are licensed separately from the code, under
+            <strong>CC-BY-SA-4.0</strong> (Creative Commons
+            Attribution-ShareAlike 4.0 International).
+          </p>
+          <p>
+            Two licences rather than one is deliberate: contributing a problem does not entangle you
+            with the application&rsquo;s terms, and the content can be reused in a course or another
+            tool. In practice it means attribution and share-alike — keep the credit, and license what
+            you build from it the same way.
+          </p>
+        </section>
+
+        <section id="third-party">
+          <h2>4. Components It Bundles</h2>
+          <p>
+            The application ships third-party software under its own licences, and each licence is
+            installed alongside it rather than merely listed:
+          </p>
+          <ul>
+            <li>
+              <strong>Pyodide</strong> — the Python runtime your code is graded
+              in, under MPL-2.0
+            </li>
+            <li>
+              <strong>Monaco</strong> — the code editor, under MIT, with its own
+              third-party notices
+            </li>
+            <li>Every other dependency&rsquo;s licence, copied verbatim into the same directory</li>
+          </ul>
+          <p>
+            Model weights are not bundled and are not ours: a model you download is governed by whoever
+            published it. Research papers are not redistributed at all.
+          </p>
+        </section>
+
+        <section id="models">
+          <h2>5. Models and Networks</h2>
+          <p>
+            By default nothing leaves your machine. Models run through a local Ollama or llama.cpp, and
+            your code executes in a sandbox with no network access at all.
+          </p>
+          <p>
+            If you add an API key for a remote provider, the conversations you send reach that provider
+            under their terms rather than these. If you sign in and select the VoidCode model, your
+            conversations are answered on our servers, as section 6 describes. If you ask the coding
+            assistant to look something up, it may fetch a page from a fixed list of documentation
+            sites. Our
+            <a href="../privacy/">Privacy Policy</a>
+            lists all of these precisely.
+          </p>
+        </section>
+
+        <section id="account">
+          <h2>6. If You Create an Account</h2>
+          <p>
+            Everything else in these terms applies whether or not you have an account. This section
+            applies only if you create one.
+          </p>
+          <ul>
+            <li>
+              <strong>What it is for.</strong> An account lets you use the
+              VoidCode model, which runs on our servers, and holds the credits that pay for it. It is not
+              linked to your local profile or to anything stored on your computer, and signing out never
+              touches your local work.
+            </li>
+            <li>
+              <strong>Your sign-in.</strong> Keep your password to yourself. If you
+              think someone else has it, change it from the Account page, which signs out every other
+              device, or use &ldquo;Sign out of all devices&rdquo;.
+            </li>
+            <li>
+              <strong>Credits.</strong> The VoidCode model is metered by the time
+              it spends writing answers, and that time is paid for from your credit balance. The Models
+              page shows your balance and roughly how much answer time it buys at the current rate.
+              Credits are added by buying a pack — the payment is taken by Stripe in your browser — or by
+              redeeming a voucher code.
+            </li>
+            <li>
+              <strong>The service is not the software.</strong> The Apache License
+              in section 2 covers the application&apos;s source. It does not give you rights to our
+              servers or to the VoidCode model running on them; you use those through your account.
+            </li>
+          </ul>
+          <p>
+            <strong>What these terms do not yet settle.</strong> They do not yet set
+            out refunds, whether credits expire, or what happens to an account and its credits if the
+            VoidCode model stops being offered. Until they do, write to us at the address in section 8
+            about any of these. Nothing in these terms limits rights you have under the Australian
+            Consumer Law.
+          </p>
+        </section>
+
+        <section id="no-warranty">
+          <h2>7. No Warranty, and the Assistant in Particular</h2>
+          <p>
+            Apache-2.0 §§7&ndash;8 apply, and in plain language they say: the software is provided
+            as-is, with no warranty of any kind, and the contributors are not liable for damages arising
+            from using it. Nothing on this page narrows that or adds to it.
+          </p>
+          <p>
+            <strong>One thing is worth saying specifically.</strong> The coding
+            assistant proposes changes to files in a folder you open, and applying a batch requires you
+            to confirm a dialogue that names every file. It is a language model: it can be wrong, and it
+            can be wrong in a way that looks right. Review what it proposes, and keep your work in
+            version control. We are not liable for what it writes to your files, and a confirmation
+            dialogue does not make that our judgement rather than yours.
+          </p>
+          <p>
+            The same holds for the tutor. It is an aid to learning rather than an authority — verify what
+            it tells you, particularly anything you are relying on in an interview.
+          </p>
+        </section>
+
+        <section id="changes">
+          <h2>8. Changes and Contact</h2>
+          <p>
+            These terms ship with the application, so the version you are reading is the one that
+            applies to the release you installed. They change when the software does, and that history
+            lives in the repository rather than in a notice we send you — we do not email notices of
+            changes, even to account holders, and
+            <a href="../privacy/">the Privacy Policy</a>
+            explains why.
+          </p>
+          <div>
+            <p>VoidCode AI</p>
+            <p>John Street, Hawthorn VIC 3122, Australia</p>
+            <p>
+              Email:
+              <a href="mailto:privacy@swin.edu.au">privacy@swin.edu.au</a>
+            </p>
+          </div>
+        </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>VoidCode AI</span>
+        <nav>
+          <a href="../terms/">Terms of Use</a>
+          <a href="../privacy/">Privacy Policy</a>
+          <a href="../#download">Download</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

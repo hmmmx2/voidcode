@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payment cancelled — VoidCode</title>
+    <!-- Stripe's `cancel_url`. Script-free for the same reason as the success page beside it. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="../../favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../assets/site.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="wrap">
+        <a class="brand" href="../../">
+          <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="butt" aria-hidden="true">
+            <path d="M20.384 7.012A10 10 0 1 1 11.616 7.012" />
+          </svg>
+          VoidCode
+        </a>
+      </div>
+    </header>
+
+    <main class="wrap centred">
+      <h1>Payment cancelled</h1>
+      <p>Nothing was charged. You can close this tab and go back to VoidCode.</p>
+      <p class="small muted">
+        Everything except the VoidCode model keeps working without credits — local models, the
+        editor and the grader are unaffected.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>VoidCode AI</span>
+        <nav>
+          <a href="../../terms/">Terms of Use</a>
+          <a href="../../privacy/">Privacy Policy</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+# The landing page and the legal documents are meant to be found. The two pages Stripe redirects to
+# are not: they are reached with a payment session id in the URL and say nothing useful out of
+# context. They also carry a noindex meta tag, which is the half that works when this file is not
+# served (a bucket, a fork, a local server).
+User-agent: *
+Allow: /
+Disallow: /purchase/
