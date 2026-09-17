@@ -458,8 +458,21 @@ class TestProviderSignIn:
     async def test_a_forged_token_is_refused_through_the_endpoint(self, client, sessionmaker_np, provider):
         provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", aud="someone-else", azp=DROP)
         response = await oauth(client)
-        assert response.status_code == 401
+        assert response.status_code == 400
         assert response.json()["detail"]["code"] == "invalid_token"
+
+    async def test_a_forged_token_while_connecting_leaves_the_session_alone(self, client, sessionmaker_np, provider):
+        """400, not 401: the app signs a device out on a 401 from a request that carried its session,
+        and here the session is valid — only the provider's token is not."""
+        email = address("forged-link-")
+        await make_user(sessionmaker_np, email)
+        token = (await sign_in(client, email)).json()["token"]
+        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", aud="someone-else", azp=DROP)
+
+        response = await oauth(client, headers=bearer(token), terms_version=DROP)
+
+        assert response.status_code == 400
+        assert (await me(client, token)).status_code == 200
 
     async def test_microsoft_signs_in_by_tenant_and_object_id(self, client, sessionmaker_np, provider):
         oid = str(uuid.uuid4())
@@ -530,6 +543,21 @@ class TestTheAccount:
         assert response.status_code == 200
         assert (await me(client, this_device)).status_code == 200
         assert (await me(client, other_device)).status_code == 401
+
+    async def test_a_wrong_current_password_is_a_form_error_not_an_ended_session(self, client, sessionmaker_np):
+        """The desktop app signs a device out on any 401 from a request that carried its session.
+        A mistyped current password is a field error; answering it with 401 signed out the very
+        person who was signed in."""
+        email = address("wrong-current-")
+        await make_user(sessionmaker_np, email)
+        token = (await sign_in(client, email)).json()["token"]
+
+        response = await client.post("/v1/auth/change-password", headers=bearer(token),
+                                     json={"current_password": "not-" + PASSWORD, "new_password": NEW_PASSWORD})
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["field"] == "current_password"
+        assert (await me(client, token)).status_code == 200
 
     async def test_sign_out_everywhere(self, client, sessionmaker_np):
         email = address("everywhere-")

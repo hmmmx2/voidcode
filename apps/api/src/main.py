@@ -1041,7 +1041,11 @@ def prepare_messages_hybrid(messages: list[ChatMessage]) -> tuple[list[dict], st
     # One pure function, so the routing decision can be tested without a server. It had zero
     # tests while every mode's prompt had a gold set -- and routing is upstream of all of them.
     mode, user_intent = decide_mode(latest_user_message, len(user_messages))
-    logger.info(f"[route] mode={mode} intent={user_intent[:60]!r} "
+    # Lengths, never the words. A learner's question is the most private thing this server handles,
+    # and a log line is kept, shipped and read far more widely than the request it came from. The
+    # Privacy Policy says conversations are not stored; `tests/test_prompts_are_not_logged.py`
+    # holds that true for logs as well as tables.
+    logger.info(f"[route] mode={mode} intent_chars={len(user_intent)} "
                 f"turns={len(user_messages)}")
 
     # Select appropriate system prompt using centralized function.
@@ -2226,12 +2230,12 @@ async def _prepare_for_generation(
             status_code=500, detail=f"Request preparation failed: {_prep_err!s}"
         ) from _prep_err
 
-    # Log request. text_of() again: slicing [:60] on a parts list would raise here, in the logging
-    # line, long after the real work — an unhelpful place to discover the request was multimodal.
+    # Log the request's shape, not its text — see the `[route]` line for why. text_of() still, so a
+    # multimodal message is measured by its words rather than by its list of parts.
     user_messages = [msg for msg in request.messages if msg.role == "user"]
     latest_user_message = multimodal.text_of(user_messages[-1].content) if user_messages else ""
     logger.info(
-        f"[{request_id}] Mode: {detected_mode.upper()} | Query: {latest_user_message[:60]}..."
+        f"[{request_id}] Mode: {detected_mode.upper()} | query_chars={len(latest_user_message)}"
     )
 
     # ── Two-stage debug (stage A) ────────────────────────────────────────────

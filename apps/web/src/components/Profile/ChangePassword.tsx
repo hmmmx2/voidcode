@@ -89,9 +89,15 @@ export function ChangePassword({ hasPassword }: { hasPassword: boolean }) {
       }
 
       const body = await response.json().catch(() => null);
-      if (response.status === 401) {
+      // 400 with `field: "current_password"` since the API stopped answering a mistyped password
+      // with 401, which the desktop app reads as a session that has ended.
+      if (response.status === 401 || body?.detail?.field === "current_password") {
         setCurrentError(
-          typeof body?.detail === "string" ? body.detail : "That is not your current password.",
+          typeof body?.detail === "string"
+            ? body.detail
+            : typeof body?.detail?.detail === "string"
+              ? body.detail.detail
+              : "That is not your current password.",
         );
         return;
       }

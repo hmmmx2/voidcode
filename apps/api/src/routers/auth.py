@@ -459,9 +459,16 @@ async def change_password(
 
     if not await verify_password(user.password_hash, payload.current_password):
         logger.info("Failed password change for %s — wrong current password", user.email)
+        # 400, NOT 401. A 401 means "this session is not valid", and the desktop app acts on it by
+        # signing the device out — so a mistyped current password used to end the session of the
+        # person who was, by definition, signed in. The session is fine; the form field is wrong.
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="That is not your current password.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "field": "current_password",
+                "code": "wrong_password",
+                "detail": "That is not your current password.",
+            },
         )
 
     try:
@@ -765,12 +772,16 @@ class LinkedResponse(BaseModel):
     provider: str
 
 
+# No 401 for a provider token that fails verification. 401 means "the session you sent is not
+# valid", and the desktop app signs the device out on it — so in connect mode, where the request
+# carries a perfectly good session, a rejected Google token would have ended it. The caller's own
+# credential is judged separately, above, and that one does answer 401.
 _OIDC_STATUS = {
     "provider_unavailable": status.HTTP_503_SERVICE_UNAVAILABLE,
     "expired": status.HTTP_400_BAD_REQUEST,
     "rejected": status.HTTP_400_BAD_REQUEST,
     "upstream": status.HTTP_502_BAD_GATEWAY,
-    "invalid_token": status.HTTP_401_UNAUTHORIZED,
+    "invalid_token": status.HTTP_400_BAD_REQUEST,
 }
 _LINK_STATUS = {
     "unverified_email": status.HTTP_422_UNPROCESSABLE_ENTITY,
