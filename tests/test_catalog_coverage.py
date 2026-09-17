@@ -118,14 +118,17 @@ def test_hidden_test_cases_are_actually_used(slugs: set[str]) -> None:
 #: (`routers/problems.py` filters them, `execution.py:redact_for_response` strips them), but these
 #: files are compiled into a bundle and bypass all of it.
 #:
-#: EVERY COPY, NOT ONE. This used to name only the web copy. The desktop renderer carries its own,
-#: the two drifted, and the leak this test was written for was fixed on the web and kept shipping
-#: inside the desktop installer — with this test green the whole time, because it never opened the
-#: file that still had it. `test_every_visualization_copy_is_guarded` stops a copy going unwatched.
+#: EVERY COPY, NOT ONE — and there is one copy again.
+#:
+#: This named only the web copy once. The desktop renderer carried its own, the two drifted, and the
+#: leak this test was written for was fixed on the web and kept shipping inside the desktop
+#: installer — with this test green the whole time, because it never opened the file that still had
+#: it. The website's copy is now deleted along with its workspace UI, so the tuple is back to one
+#: entry; `test_every_visualization_copy_is_guarded` walks the tree, so a new copy anywhere fails
+#: here rather than going unwatched.
 _ROOT = Path(__file__).resolve().parents[1]
 VIZ_COPIES = (
     _ROOT / "desktop" / "renderer" / "src" / "lib" / "visualizations" / "index.ts",
-    _ROOT / "apps" / "web" / "src" / "lib" / "visualizations" / "index.ts",
 )
 _SLUG_BLOCK = re.compile(r'^  "([a-z0-9][a-z0-9-]*)":\s*\{', re.M)
 
@@ -161,7 +164,7 @@ def _leaked(blocks: dict[str, str], raw: dict) -> list[tuple[str, str]]:
     return found
 
 
-@pytest.mark.parametrize("viz", VIZ_COPIES, ids=["desktop", "web"])
+@pytest.mark.parametrize("viz", VIZ_COPIES, ids=lambda path: path.parents[3].name)
 def test_no_hidden_expected_output_reaches_the_client(viz: Path) -> None:
     """A hidden case's answer in the bundle is the held-out grading signal, published.
 
@@ -230,6 +233,8 @@ def test_every_visualization_copy_is_guarded() -> None:
         f"listed but absent: {sorted(map(str, guarded - found))}")
 
 
+#: The landing page's demo runner still uses this; the editor that used to is gone with the
+#: website's workspace UI, so `defaultCode` is now read by the demo alone.
 MOCK_DATA = Path(__file__).resolve().parents[1] / "apps" / "web" / "src" / "lib" / "mock-data.ts"
 _DEFAULT_CODE = re.compile(r"export const defaultCode = `(.*?)`;", re.S)
 
@@ -240,8 +245,8 @@ def test_the_editors_default_code_still_matches_the_catalogue() -> None:
     It has to be a copy: it renders before any request resolves, so it cannot be fetched. But the
     exports that used to sit beside it drifted badly enough that `mockProblem` ended up with the ML
     curriculum's title on Two Sum's body — a problem no longer in the catalogue at all. Those had no
-    importers and are deleted; this one is imported by `Editor/MonacoWrapper.tsx` and is the first
-    thing a new learner sees, so it gets an assertion instead of a comment asking nicely.
+    importers and are deleted; this one is read by the landing page's demo, which is now the first
+    VoidCode code a visitor ever sees, so it gets an assertion instead of a comment asking nicely.
     """
     from features.content import load_raw
 

@@ -31,7 +31,9 @@ const repoRoot = path.join(desktopRoot, "..");
 
 const PANELS: Array<[string, string]> = [
   ["desktop", path.join(desktopRoot, "renderer/src/components/VoidCodeAI/VoidCodeAIPanel.tsx")],
-  ["web", path.join(repoRoot, "apps/web/src/components/VoidCodeAI/VoidCodeAIPanel.tsx")],
+  // The website's copy is gone with its logged-in UI: apps/web is a landing page and two legal
+  // documents now. The list stays a list, because the duplication it guards against is the kind
+  // that comes back.
 ];
 
 /** Strip comments, so a note *about* the invariant is never mistaken for the invariant. */

@@ -66,7 +66,7 @@ both halves resolve their root as `Path(__file__).resolve().parents[1]` — `fea
 taxonomy join, and the RL catalogue lookup. **Do not "tidy" these into subfolders.**
 
 ```
-apps/{web,api}     web client and API          packages/shared   shared TS types
+apps/{web,api}     landing site and API        packages/shared   shared TS types (unused)
 features/          content, taxonomy, IRT,     ranking/          LambdaMART, fairness,
                    mastery, retrieval                            course builder
 content/           200 problem YAML            llm/              SFT pipeline + adapters
@@ -109,8 +109,13 @@ already, which is why each is named separately here.
 
 ```bash
 docker compose up -d postgres redis judge0-server   # infrastructure
-pnpm install && pnpm dev                            # web client on :3000
+cd desktop && npm ci && npm --prefix renderer ci && npm run dev   # the app itself
+pnpm install && pnpm dev                            # the landing site on :3000
 ```
+
+The desktop app is the product: the editor, the problem sets, the tutor and the optional account
+all live there. `apps/web` is the landing page that hands out the installer, plus the legal
+documents and Stripe's two return pages.
 
 The `Makefile` targets are written to run **inside WSL2 Ubuntu** (JDK, venv and Spark data live on
 ext4); they will not work from Git Bash. RL targets are prefixed `rl-` — `make rl-test`,
@@ -125,7 +130,8 @@ cd apps/api && python -m scripts.verify_problems \
             && python -m scripts.verify_interview_problems    # 125 items, 699 cases
 pytest tests -q                                               # both halves' suites
 pytest apps/api/tests -q                                      # needs Postgres up
-pnpm typecheck && pnpm build                                  # web
+pnpm typecheck && pnpm build                                  # landing site
+cd desktop && npm run typecheck && npm test && npm run smoke  # the app
 ```
 
 ---

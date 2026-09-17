@@ -6,7 +6,6 @@ import type { Metadata } from "next";
 // Inter at weight 200–300, which is also what the reference sites use.
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import Providers from "@/components/Providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -42,7 +41,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
-        <Providers>{children}</Providers>
+        {/*
+          NO PROVIDER WRAPPER. This held `SessionProvider` and a user-profile context for the
+          logged-in application. Both went with it: sign-in is in the desktop app, and what is left
+          here — the landing page, the legal documents and Stripe's two return pages — has neither a
+          session nor a profile. `SessionProvider` was worse than unused: it polls
+          `/api/auth/session` on every page load, and that route no longer exists.
+        */}
+        {children}
       </body>
     </html>
   );

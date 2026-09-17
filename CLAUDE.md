@@ -50,12 +50,20 @@ docker restart voidcode-vllm-api   # pick up code changes (~40 s warm start)
 curl http://localhost:8000/health
 ```
 
-### Frontend
+### The product is the desktop app
 ```bash
-pnpm install          # Install all workspace deps
-pnpm dev:web          # Next.js frontend (:3000)
-# or: cd apps/web && pnpm dev
+cd desktop && npm ci && npm --prefix renderer ci
+npm run dev           # Electron: the IDE, the problems, the tutor, accounts
 ```
+
+### The website is a landing page
+```bash
+pnpm install          # workspace deps
+pnpm dev:web          # Next.js marketing site (:3000)
+```
+Five static pages: the landing page with the download section on it, Terms, Privacy and the two
+pages Stripe returns a buyer to. It has no sign-in, no session and makes no call to the API — the
+logged-in UI it used to carry is the desktop app now.
 
 ### Docker (Infrastructure only — no API)
 ```bash
@@ -93,14 +101,16 @@ apps/
     merge_lora.py     Merge LoRA into base weights (one-time, offline)
     quantize_awq.py   W4A16 quantize merged model for vLLM (one-time, offline)
 
-apps/web/             Next.js 16 frontend (React 19, Tailwind CSS v4, Monaco Editor)
-packages/shared/      Shared TypeScript types
+desktop/              Electron app — THE PRODUCT (main + sandboxed Next renderer)
+apps/web/             Next.js 16 marketing site: landing page, legal, Stripe return pages
+packages/shared/      Shared TypeScript types (imported by nothing; a deletion candidate)
 ```
 
 **Training Stack**: PyTorch + Transformers + PEFT + TRL + BitsAndBytes (4-bit NF4 quantization)
 **Inference Stack (primary)**: vLLM + W4A16 AWQ model + PagedAttention (WSL2 only)
 **Inference Stack (fallback)**: HuggingFace model.generate() + BnB NF4 + PEFT (Windows/WSL2)
-**Frontend Stack**: Next.js 16 + React 19 + Tailwind CSS v4 + Monaco Editor
+**Desktop Stack**: Electron + electron-vite + Next.js static export + Monaco + Pyodide
+**Website Stack**: Next.js 16 + React 19 + Tailwind CSS v4 + react-three-fiber (landing page only)
 
 ## v5.3 Multi-Mode Response System
 

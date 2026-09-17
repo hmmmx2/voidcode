@@ -18,14 +18,13 @@ Unlike the manifests. `voidcode-web:test` was built and run:
 | size | 344 MB (`output: "standalone"`; without it the image needs the whole `node_modules`) |
 | runs as | uid 1000, non-root |
 | `.env` in the filesystem | none — the guard the release workflow enforces, run by hand |
-| `/login`, `/register`, `/forgot-password`, `/reset-password` | all 200, real content |
+| `/`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | all 200, real content |
 | Docker `HEALTHCHECK` | `healthy` |
 | errors in logs | 0 |
 
-One thing that trips people up and is worth writing down: without `AUTH_TRUST_HOST=true` every route
-307s with `UntrustedHost`, because NextAuth refuses to build callbacks for a host it was not told to
-trust. The Deployment sets it; a bare `docker run` does not, and the failure looks like a broken app
-rather than a missing variable.
+That table used to list `/login`, `/register` and the two password-reset routes, and a note about
+`AUTH_TRUST_HOST=true` without which every route 307'd with `UntrustedHost`. None of it applies: the
+web tier has no auth, no session and no API calls. Sign-in is in the desktop app.
 
 What *is* verified about the manifests:
 
@@ -47,18 +46,20 @@ git. Create them out of band:
 
 ```bash
 kubectl -n voidcode create secret generic voidcode-api-secrets --from-env-file=apps/api/.env
-kubectl -n voidcode create secret generic voidcode-web-secrets   --from-literal=INTERNAL_API_SECRET=... --from-literal=AUTH_SECRET=...
 ```
 
-`INTERNAL_API_SECRET` **must be identical in both**. If it is not, every signed request comes back
-401 and it looks like a broken session rather than a mismatched secret.
+One secret, for the API. There is no `voidcode-web-secrets` any more: the web tier is static pages
+that sign nothing and hold no session.
 
 ## Decisions that are not obvious from the YAML
 
-**The API is not routed through the ingress.** Everything goes to the web tier, and browser calls
-reach the API through `/api/proxy` on the Next.js server — which is what signs the identity.
-Exposing the API publicly would restore the unsigned-`X-User-Id` hole and would publish `/metrics`,
-which has no authentication.
+**The API is not routed through the ingress, and that is now a gap rather than a design.**
+Everything goes to the web tier. That was right when the browser reached the API through
+`/api/proxy` on the Next.js server, which signed the identity; both are gone. The desktop app needs
+`/v1` reachable over the internet with its bearer token, so the ingress has to grow an
+`api.<domain>` host routed to `voidcode-api` — **only** under `/v1`, because `/metrics`, `/health`,
+`/docs` and `/openapi.json` have no authentication. Until that lands the desktop app cannot reach a
+deployed API at all.
 
 **Migrations are an initContainer, not the entrypoint.** Two replicas starting together would race on
 the alembic version table. A Job would not be ordered against the rollout, so pods could serve
@@ -67,9 +68,9 @@ against the old schema.
 **The HPA scales on CPU, not memory.** A Python process's RSS does not fall when load does, so a
 memory-driven HPA scales up and then never scales back down.
 
-**`proxy-buffering: off`.** The chat stream and notification feed send incrementally. An ingress that
-buffers undoes the non-buffering proxy route: the tutor appears to hang for a whole generation and
-then dumps its answer at once.
+**`proxy-buffering: off`.** The chat stream sends incrementally. An ingress that buffers makes the
+tutor appear to hang for a whole generation and then dump its answer at once. This still matters
+for the desktop app's streaming, which reaches the API directly.
 
 **There is an egress NetworkPolicy, not only ingress.** Ingress stops people getting in; egress stops
 data getting out, and exfiltration is the half that matters after a compromise. Its DNS rule is

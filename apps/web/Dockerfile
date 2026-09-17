@@ -38,14 +38,19 @@ COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 
 # NEXT_PUBLIC_* values are INLINED INTO THE BUNDLE at build time, not read at
-# runtime. So the API URL has to be a build argument: setting it as an env var on
-# the running container does nothing, which is a genuinely confusing failure —
-# the app builds, starts, and calls localhost.
+# runtime. So anything the browser needs has to be a build argument: setting it as an
+# env var on the running container does nothing, which is a genuinely confusing failure
+# — the app builds, starts, and behaves as if the value were empty.
 #
-# INTERNAL_API_SECRET is deliberately NOT here. It is read at runtime by the proxy
-# route handler, and baking a secret into an image layer puts it in the registry.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# NO SECRET IS EVER AN ARG HERE, and now there is none to pass anyway: this image serves
+# four static pages with no session and no API calls. It used to take the API's URL and
+# read INTERNAL_API_SECRET at runtime for the proxy that signed identity headers; both
+# went with the logged-in UI.
+# `owner/name` of the repository whose releases the download section lists. Inlined into the
+# bundle by Next at build time, like every NEXT_PUBLIC_* value, so it cannot be set at runtime.
+# Empty builds a page that says no release has been published — which is correct until one is.
+ARG NEXT_PUBLIC_RELEASES_REPO=
+ENV NEXT_PUBLIC_RELEASES_REPO=$NEXT_PUBLIC_RELEASES_REPO
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm --filter @voidcode/web build

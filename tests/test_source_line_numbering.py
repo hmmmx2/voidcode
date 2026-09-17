@@ -23,12 +23,14 @@ for p in (ROOT, ROOT / "scripts"):
 
 import run_evals as R  # noqa: E402
 
-#: Every client that sends the tutor a message. The desktop app carries its own copy of the panel,
-#: and it is the one learners will use once the web app is gone — a check that reads only the web
-#: copy would keep passing while the product it describes drifted away from it.
+#: Every client that sends the tutor a message — one, now that the website's copy is deleted.
+#:
+#: The comment here used to say the desktop copy "is the one learners will use once the web app is
+#: gone". That happened: the website keeps its landing page and legal documents, and the panel went
+#: with the rest of its logged-in UI. The parametrisation stays, because a second client is exactly
+#: the situation this test exists for.
 PANELS = {
     "desktop": ROOT / "desktop" / "renderer" / "src" / "components" / "VoidCodeAI" / "VoidCodeAIPanel.tsx",
-    "web": ROOT / "apps" / "web" / "src" / "components" / "VoidCodeAI" / "VoidCodeAIPanel.tsx",
 }
 SCENARIO = {"user_message": "it returns the wrong value",
             "source_code": "def f(n):\n    total = 0\n    return total\n"}

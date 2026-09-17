@@ -60,6 +60,8 @@ interface Kind {
   /** What a person chooses between, in their words rather than the build's. */
   label: string;
   hint: string;
+  /** The installer's extension, shown before a release exists so the row still says something. */
+  file: string;
   pattern: RegExp;
 }
 
@@ -75,15 +77,31 @@ const KINDS: Kind[] = [
     arch: "arm64",
     label: "Apple silicon",
     hint: "M1, M2, M3, M4",
+    file: ".dmg",
     pattern: /-mac-arm64\.dmg$/,
   },
-  { os: "mac", arch: "x64", label: "Intel", hint: "pre-2020 Macs", pattern: /-mac-x64\.dmg$/ },
-  { os: "win", arch: "x64", label: "64-bit", hint: "most PCs", pattern: /-win-x64\.exe$/ },
+  {
+    os: "mac",
+    arch: "x64",
+    label: "Intel",
+    hint: "pre-2020 Macs",
+    file: ".dmg",
+    pattern: /-mac-x64\.dmg$/,
+  },
+  {
+    os: "win",
+    arch: "x64",
+    label: "64-bit",
+    hint: "most PCs",
+    file: ".exe installer",
+    pattern: /-win-x64\.exe$/,
+  },
   {
     os: "win",
     arch: "arm64",
     label: "ARM",
     hint: "Snapdragon, Surface Pro X",
+    file: ".exe installer",
     pattern: /-win-arm64\.exe$/,
   },
 ];
@@ -92,6 +110,7 @@ const PLATFORMS = [
   {
     os: "mac" as const,
     title: "macOS",
+    what: "A disk image you drag into Applications. Apple silicon and Intel are separate files.",
     /** The prompt this platform will show, and the exact way past it. */
     gate: [
       "Open the .dmg and drag VoidCode to Applications.",
@@ -105,6 +124,7 @@ const PLATFORMS = [
   {
     os: "win" as const,
     title: "Windows",
+    what: "An installer that sets the app up for your user account. No administrator rights needed.",
     gate: [
       "Run the .exe.",
       "The installer is not signed, so SmartScreen shows “Windows protected your PC”.",
@@ -131,7 +151,7 @@ interface Release {
 type State =
   | { status: "loading" }
   | { status: "unavailable"; reason: string }
-  | { status: "ready"; release: Release; found: Map<string, Asset>; pick: string | null };
+  | { status: "ready"; release: Release; found: Map<string, Asset> };
 
 const key = (kind: Kind): string => `${kind.os}-${kind.arch}`;
 
@@ -215,6 +235,18 @@ function remember(repo: string, release: Release): void {
 export function DownloadSection() {
   const [state, setState] = useState<State>({ status: "loading" });
   const [copied, setCopied] = useState<string | null>(null);
+  /** The visitor's platform, resolved independently of the release feed — it is known offline. */
+  const [detected, setDetected] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void detect().then((platform) => {
+      if (!cancelled) setDetected(platform);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const repo = repoName();
@@ -262,8 +294,7 @@ export function DownloadSection() {
         return unavailable("The latest release does not carry installers for macOS or Windows.");
       }
 
-      const pick = await detect();
-      if (!cancelled) setState({ status: "ready", release, found, pick });
+      if (!cancelled) setState({ status: "ready", release, found });
     };
 
     void load();
@@ -341,108 +372,122 @@ export function DownloadSection() {
             needed only for the hosted VoidCode model and the credits that pay for it.
           </Lead>
 
-          {state.status !== "ready" ? (
-            /* One honest panel instead of two empty ones. */
-            <div className="mt-14 rounded-cta border border-line bg-void-1 px-8 py-12 text-center lg:px-16 lg:py-16">
-              <p className="mx-auto max-w-[52ch] text-lg leading-relaxed text-ink-2">
-                {state.status === "loading" ? "Reading the latest release…" : state.reason}
-              </p>
-              {state.status === "unavailable" && releasesUrl !== null ? (
-                <div className="mt-8 flex justify-center">
-                  <Pill href={releasesUrl} variant="outline" size="lg">
-                    Open the releases page
-                  </Pill>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-14 grid gap-6 lg:grid-cols-2">
-              {PLATFORMS.map((platform) => {
-                const kinds = KINDS.filter(
-                  (kind) => kind.os === platform.os && state.found.has(key(kind))
-                );
-                if (kinds.length === 0) return null;
+          {/*
+            THE PANELS ALWAYS RENDER. Which file a visitor needs, and what their operating system
+            will do when they run an unsigned installer, are facts about the platform — not about
+            whether a release happens to be published, or whether GitHub answered. Only the links,
+            sizes and checksums come from the release feed, so only those parts change state. The
+            first version hid all of it behind the feed, which meant the section said nothing at
+            all until a release existed.
+          */}
+          <div className="mt-14 grid gap-6 lg:grid-cols-2">
+            {PLATFORMS.map((platform) => {
+              const kinds = KINDS.filter((kind) => kind.os === platform.os);
+              const mine = detected !== null && detected.startsWith(`${platform.os}-`);
+              const found = state.status === "ready" ? state.found : new Map<string, Asset>();
+              const available = kinds.filter((kind) => found.has(key(kind)));
+              const primaryKind =
+                available.find((kind) => key(kind) === detected) ?? available[0] ?? null;
+              const primary = primaryKind === null ? undefined : found.get(key(primaryKind));
 
-                // The visitor's own platform first, and its arch promoted to the button.
-                const mine = state.pick !== null && state.pick.startsWith(`${platform.os}-`);
-                const primaryKind =
-                  kinds.find((kind) => key(kind) === state.pick) ?? kinds[0];
-                const primary = state.found.get(key(primaryKind))!;
-                const others = kinds.filter((kind) => kind !== primaryKind);
+              return (
+                <div
+                  key={platform.os}
+                  className={[
+                    "flex flex-col rounded-cta border bg-void-1 p-8 lg:p-10",
+                    // The detected platform is emphasised by its border, not by colour or size:
+                    // the other panel must stay a first-class choice for anyone the guess missed.
+                    mine ? "border-line-strong" : "border-line",
+                  ].join(" ")}
+                >
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h3 className="text-xl font-light tracking-tight text-ink">{platform.title}</h3>
+                    {mine ? <MonoLabel>Your system</MonoLabel> : null}
+                  </div>
 
-                return (
-                  <div
-                    key={platform.os}
-                    className={[
-                      "flex flex-col rounded-cta border bg-void-1 p-8 lg:p-10",
-                      // The detected platform is emphasised by its border, not by colour or size:
-                      // the other panel must stay a first-class choice for anyone the guess missed.
-                      mine ? "border-line-strong" : "border-line",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-baseline justify-between gap-4">
-                      <h3 className="text-xl font-light tracking-tight text-ink">
-                        {platform.title}
-                      </h3>
-                      {mine ? <MonoLabel>Detected</MonoLabel> : null}
-                    </div>
+                  <p className="mt-4 text-sm leading-relaxed text-ink-2">{platform.what}</p>
 
-                    <div className="mt-7">
-                      <Pill href={primary.browser_download_url} variant="solid" size="lg">
-                        Download for {platform.title}
-                      </Pill>
-                      <p className="mt-3 text-sm text-ink-3">
-                        {primaryKind.label} · {formatSize(primary.size)} ·{" "}
-                        <span className="text-ink-3">{primaryKind.hint}</span>
-                      </p>
-                    </div>
+                  {/* The download itself: a button when there is a file, and an honest sentence
+                      when there is not. Never a button that leads nowhere. */}
+                  <div className="mt-7">
+                    {primary !== undefined && primaryKind !== null ? (
+                      <>
+                        <Pill href={primary.browser_download_url} variant="solid" size="lg">
+                          Download for {platform.title}
+                        </Pill>
+                        <p className="mt-3 text-sm text-ink-3">
+                          {primaryKind.label} · {formatSize(primary.size)} · {primaryKind.hint}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Pill href="#download" variant="outline" size="lg" aria-disabled="true">
+                          {state.status === "loading" ? "Checking for a release…" : "No download yet"}
+                        </Pill>
+                        <p className="mt-3 max-w-[40ch] text-sm text-ink-3">
+                          {state.status === "loading"
+                            ? "Reading the latest release…"
+                            : state.status === "unavailable"
+                              ? state.reason
+                              : `The latest release carries no ${platform.title} installer.`}
+                        </p>
+                      </>
+                    )}
+                  </div>
 
-                    {others.length > 0 ? (
-                      <ul className="mt-6 space-y-2 border-t border-line pt-6">
-                        {others.map((kind) => {
-                          const asset = state.found.get(key(kind))!;
-                          return (
-                            <li key={kind.arch} className="flex flex-wrap items-baseline gap-x-3">
-                              <a
-                                href={asset.browser_download_url}
-                                className="text-sm text-ink-2 underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
-                              >
-                                {kind.label}
-                              </a>
-                              <MonoLabel>{formatSize(asset.size)}</MonoLabel>
-                              <span className="text-xs text-ink-3">{kind.hint}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : null}
-
-                    <p className="mt-6 text-xs leading-relaxed text-ink-3">{platform.which}</p>
-
-                    {/* The install steps, numbered. Every visitor on an unsigned build meets their
-                        platform's security prompt, and a step list is read where a paragraph is
-                        skipped. */}
-                    <ol className="mt-8 space-y-3 border-t border-line pt-7">
-                      {platform.gate.map((step, index) => (
-                        <li key={step} className="flex gap-3 text-sm leading-relaxed text-ink-2">
-                          <MonoLabel className="mt-0.5 shrink-0 text-ink-3">
-                            {String(index + 1).padStart(2, "0")}
+                  {/* Every file this platform gets, so the choice is visible whether or not the
+                      feed answered: a size where one is known, and the architecture either way. */}
+                  <ul className="mt-6 space-y-2 border-t border-line pt-6">
+                    {kinds.map((kind) => {
+                      const asset = found.get(key(kind));
+                      return (
+                        <li key={kind.arch} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          {asset === undefined ? (
+                            <span className="text-sm text-ink-3">{kind.label}</span>
+                          ) : (
+                            <a
+                              href={asset.browser_download_url}
+                              className="text-sm text-ink-2 underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
+                            >
+                              {kind.label}
+                            </a>
+                          )}
+                          <MonoLabel>
+                            {asset === undefined ? kind.file : formatSize(asset.size)}
                           </MonoLabel>
-                          <span>{step}</span>
+                          <span className="text-xs text-ink-3">{kind.hint}</span>
                         </li>
-                      ))}
-                    </ol>
+                      );
+                    })}
+                  </ul>
 
-                    {/* Checksums last, and copyable. They matter to the few people who check them
-                        and are noise to everyone else, so they sit at the bottom in mono. */}
-                    <div className="mt-8 border-t border-line pt-7">
-                      <MonoLabel>Verify</MonoLabel>
-                      <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-void-2 px-3 py-2 font-mono text-[11px] leading-relaxed text-ink-2">
-                        {platform.verify}
-                      </pre>
+                  <p className="mt-6 text-xs leading-relaxed text-ink-3">{platform.which}</p>
+
+                  {/* The install steps, numbered. Every visitor on an unsigned build meets their
+                      platform's security prompt, and a step list is read where a paragraph is
+                      skipped. */}
+                  <ol className="mt-8 space-y-3 border-t border-line pt-7">
+                    {platform.gate.map((step, index) => (
+                      <li key={step} className="flex gap-3 text-sm leading-relaxed text-ink-2">
+                        <MonoLabel className="mt-0.5 shrink-0 text-ink-3">
+                          {String(index + 1).padStart(2, "0")}
+                        </MonoLabel>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+
+                  {/* Verifying is instructional whether or not a checksum is on the page yet, so
+                      the command stays; the digests appear when the release carries them. */}
+                  <div className="mt-8 border-t border-line pt-7">
+                    <MonoLabel>Verify what you downloaded</MonoLabel>
+                    <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-void-2 px-3 py-2 font-mono text-[11px] leading-relaxed text-ink-2">
+                      {platform.verify}
+                    </pre>
+                    {available.length > 0 ? (
                       <ul className="mt-4 space-y-3">
-                        {kinds.map((kind) => {
-                          const asset = state.found.get(key(kind))!;
+                        {available.map((kind) => {
+                          const asset = found.get(key(kind))!;
                           const hash = digestOf(asset);
                           const id = key(kind);
                           return (
@@ -466,13 +511,17 @@ export function DownloadSection() {
                           );
                         })}
                       </ul>
-                    </div>
+                    ) : (
+                      <p className="mt-3 text-xs leading-relaxed text-ink-3">
+                        Each file&apos;s SHA-256 is listed here once a release is published. Compare
+                        it with the command above before installing.
+                      </p>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-
+                </div>
+              );
+            })}
+          </div>
           {releasesUrl !== null ? (
             <p className="mt-10 text-sm text-ink-3">
               Linux builds (AppImage and .deb), older versions and the source are on{" "}

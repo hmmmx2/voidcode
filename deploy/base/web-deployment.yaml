@@ -20,22 +20,20 @@ spec:
           image: voidcode-web:latest
           ports:
             - { name: http, containerPort: 3000 }
-          env:
-            # Server-side only. This is the half of the identity fix that lives in the
-            # web tier: the proxy route handler signs X-User-Id with it, and the browser
-            # never sees it. It MUST equal the API's value or every signed request 401s.
-            - name: INTERNAL_API_SECRET
-              valueFrom:
-                secretKeyRef: { name: voidcode-web-secrets, key: INTERNAL_API_SECRET }
-            - name: AUTH_SECRET
-              valueFrom:
-                secretKeyRef: { name: voidcode-web-secrets, key: AUTH_SECRET }
-            # In-cluster address, so browser traffic and server-to-server traffic take
-            # different paths. NEXT_PUBLIC_API_URL is NOT here: it is inlined into the
-            # bundle at build time, so setting it now would do nothing — see the
-            # Dockerfile's ARG.
-            - { name: API_INTERNAL_URL, value: "http://voidcode-api:8000" }
-            - { name: AUTH_TRUST_HOST, value: "true" }
+          # NO ENVIRONMENT AND NO SECRETS. This tier is four static pages: the landing
+          # page with the download on it, the two legal documents, and the two pages
+          # Stripe returns a buyer to. It signs nothing, holds no session and makes no
+          # request to the API — the only address it contacts is api.github.com, from the
+          # visitor's own browser, to list the latest release.
+          #
+          # It used to carry INTERNAL_API_SECRET (its proxy signed X-User-Id with it),
+          # AUTH_SECRET (NextAuth), API_INTERNAL_URL and AUTH_TRUST_HOST. All four went
+          # with the logged-in UI; a secret mounted into a tier that cannot use it is a
+          # blast radius with no benefit.
+          #
+          # NEXT_PUBLIC_RELEASES_REPO is deliberately absent too: like every
+          # NEXT_PUBLIC_* value it is inlined at build time, so setting it here would do
+          # nothing. See the Dockerfile's ARG.
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -48,8 +48,8 @@ jobs:
         include:
           - { name: api, dockerfile: apps/api/Dockerfile, context: apps/api }
           # The web build needs the REPO ROOT as context, not apps/web: the Dockerfile
-          # copies pnpm-lock.yaml and packages/shared to install a workspace. Getting
-          # this wrong fails with a confusing "pnpm-lock.yaml not found".
+          # copies pnpm-lock.yaml to install a workspace. Getting this wrong fails with a
+          # confusing "pnpm-lock.yaml not found".
           - { name: web, dockerfile: apps/web/Dockerfile, context: . }
     steps:
       - uses: actions/checkout@v4
@@ -89,8 +89,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Inlined into the bundle at build time, which is why it is an ARG and not a
+          # container env var. NEXT_PUBLIC_API_URL was here until the website stopped
+          # calling the API at all; what it needs now is the repository whose releases
+          # the download section lists. Empty is a valid value — the section then says no
+          # release has been published rather than drawing a dead button.
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:8000' }}
+            NEXT_PUBLIC_RELEASES_REPO=${{ vars.VOIDCODE_RELEASES_REPO }}
 
       # A .dockerignore that stops excluding .env would put a live API key into a
       # published layer, and `docker history` would show it. This repo had no

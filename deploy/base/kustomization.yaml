@@ -20,12 +20,17 @@ configMapGenerator:
   - name: voidcode-api-config
     literals:
       - APP_ENV=production
-      - INTERNAL_AUTH_ENFORCE=false
       - TRUSTED_PROXY_HOPS=1
       - EMAIL_PROVIDER=resend
       - JUDGE0_BASE_URL=http://judge0-server.voidcode-sandbox:2358
-      - ALLOWED_ORIGINS=https://voidcode.example
+      # APP_BASE_URL is the public site's origin: Stripe returns buyers to
+      # {APP_BASE_URL}/purchase/success/ and the API refuses to start in production
+      # unless it is https://.
       - APP_BASE_URL=https://voidcode.example
+      # ALLOWED_ORIGINS and INTERNAL_AUTH_ENFORCE are gone. Nothing browser-based calls
+      # this API any more — the desktop app talks to it with a bearer token and the site
+      # is static — so CORS has no origin to allow, and there is no unsigned identity
+      # header left to enforce against. See apps/api/src/identity.py.
 
 # NO secretGenerator, on purpose.
 #
@@ -35,7 +40,5 @@ configMapGenerator:
 #
 #   kubectl -n voidcode create secret generic voidcode-api-secrets \
 #     --from-env-file=apps/api/.env
-#   kubectl -n voidcode create secret generic voidcode-web-secrets \
-#     --from-literal=INTERNAL_API_SECRET=... --from-literal=AUTH_SECRET=...
-#
-# INTERNAL_API_SECRET must be IDENTICAL in both, or every signed request 401s.
+# There is no voidcode-web-secrets any more: the web tier is static pages with no
+# session, no signing key and no API calls. See web-deployment.yaml.
