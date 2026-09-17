@@ -77,6 +77,17 @@ CHAT = Limit(max_requests=30, window_seconds=60, name="chat")
 #: arithmetic hopeless while leaving room for somebody mistyping a code off a piece of paper.
 VOUCHER = Limit(max_requests=5, window_seconds=3600, name="voucher")
 
+#: Google and Microsoft sign-in. Looser than LOGIN because a person may genuinely cancel and retry a
+#: browser consent a few times, and each attempt is bounded by a single-use provider code the
+#: attacker cannot mint. It still exists because every request makes an outbound call to a provider
+#: token endpoint, and an unthrottled endpoint that makes outbound calls is an amplifier.
+OAUTH = Limit(max_requests=20, window_seconds=300, name="oauth")
+
+#: Asking for a password-reset code, per email address. A separate bucket from LOGIN because the
+#: thing it bounds is different: each request mails a new six-digit code, so this is what caps how
+#: many codes an attacker can have live to guess at, and how many emails a stranger can send someone.
+RESET_REQUEST = Limit(max_requests=3, window_seconds=3600, name="reset_request")
+
 
 def client_ip(request: Request) -> str:
     """The caller's address, honouring exactly as many proxy hops as we actually run.

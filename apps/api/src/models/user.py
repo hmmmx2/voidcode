@@ -84,6 +84,15 @@ class User(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
+    # When and to which version of the terms this person agreed. `/register` has always REQUIRED
+    # `terms_accepted` and then thrown it away, so there was no record of consent at all — a
+    # checkbox enforced and never kept. The version is what makes it mean something after the terms
+    # change: "accepted" alone cannot say what was accepted.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    terms_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     # ── Profile fields ────────────────────────────────────────────
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)

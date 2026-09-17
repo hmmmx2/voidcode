@@ -57,6 +57,40 @@ def test_every_api_image_declares_the_account_dependencies(filename):
     )
 
 
+def _imported_top_level_modules() -> set[str]:
+    import ast
+
+    modules: set[str] = set()
+    for path in (API / "src").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules.add(node.module.split(".")[0])
+    return modules
+
+
+#: Dependencies the API needs without importing them by name. `EmailStr` makes pydantic import
+#: `email_validator` at validation time, so an import scan never sees it; the source marker proves
+#: the need instead.
+_INDIRECT = {"email_validator": "EmailStr"}
+
+
+def test_every_declared_account_dependency_is_really_used():
+    """The other direction. Without this the table above could keep a dependency nothing needs —
+    or keep being cited as the reason one is installed long after the code that needed it is gone."""
+    imported = _imported_top_level_modules()
+    source = "\n".join(p.read_text(encoding="utf-8") for p in (API / "src").rglob("*.py"))
+    unused = []
+    for dist, module in ACCOUNT_DEPENDENCIES.items():
+        marker = _INDIRECT.get(module)
+        used = module in imported or (marker is not None and marker in source)
+        if not used:
+            unused.append(f"{dist} ({module})")
+    assert not unused, f"declared as account dependencies but not used by apps/api/src: {unused}"
+
+
 def test_the_parser_reads_every_line_shape_the_files_use():
     """The test above is only as good as `declared`. Pinned (`httpx==`), extras (`uvicorn[standard]`,
     `PyJWT[crypto]`), mixed case and `_`/`-` spellings all occur in these files; each must normalise

@@ -25,7 +25,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +48,18 @@ PURPOSE_EMAIL_VERIFY = "email_verify"
 #: an HMAC over the user id with a secret shared between the Next.js proxy and this API; shipping
 #: it inside an installable application would hand every user the key to assert any identity.
 PURPOSE_DESKTOP_SESSION = "desktop_session"
+
+#: A six-digit password-reset code, typed into the desktop app.
+#:
+#: The link-based reset needs a web page to land on, and the desktop app has no website behind it.
+#: A code the user types into the app that asked for it needs no page, no deep link and no CORS on
+#: the public API. It is also the one safe way for an account that signs in with Google or Microsoft
+#: to set a first password: receiving the code proves control of the mailbox.
+#:
+#: A six-digit code is guessable where a 32-byte token is not, which changes how it is stored and
+#: checked — see `token_service.issue_reset_code` for the keyed hash and `attempts` below for the
+#: lockout.
+PURPOSE_PASSWORD_RESET_CODE = "password_reset_code"
 
 
 class AuthToken(Base):
@@ -93,6 +105,14 @@ class AuthToken(Base):
     #: against the user's current email at redemption is what makes that check possible; reading
     #: `user.email` at redemption would compare the new address with itself and always agree.
     sent_to_email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    #: Wrong guesses made against this token. Only meaningful for `PURPOSE_PASSWORD_RESET_CODE`.
+    #:
+    #: A 32-byte link needs no counter — there is nothing to guess. A six-digit code has a million
+    #: values, so without a per-code limit the only defence is the IP rate limit, which a botnet does
+    #: not notice. Five guesses per code is what bounds an attacker, and it lives on the row rather
+    #: than in Redis because the rate limiter fails OPEN when Redis is down, and a lockout must not.
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
     user: Mapped[User] = relationship()  # noqa: F821
 

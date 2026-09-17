@@ -267,6 +267,45 @@ SPINDOWN_CHECK_SECONDS = float(os.getenv("SPINDOWN_CHECK_SECONDS", "120"))
 # token is revocable per device, which is the control that matters more than a short lifetime.
 DESKTOP_SESSION_TTL_DAYS = int(os.getenv("DESKTOP_SESSION_TTL_DAYS", "90"))
 
+# ── Google and Microsoft sign-in (desktop) ──────────────────────
+#
+# The desktop app runs the browser half of the OAuth flow and hands this API the authorization code;
+# this API redeems it and verifies the ID token. See `services/oidc.py` for why the code is relayed
+# rather than the app sending an ID token itself.
+#
+# CLIENT IDS ARE PUBLIC; THE GOOGLE CLIENT SECRET IS NOT SHIPPED ANYWHERE BUT HERE. Google's "Desktop
+# app" client type still requires a client_secret at its token endpoint, and relaying the code is
+# what keeps it out of the installer. Microsoft's public-client registration has no secret at all.
+#
+# A comma-separated LIST of client ids, because a key rotation or a second build flavour means two
+# live registrations for a while, and an ID token issued to either must verify. Empty disables the
+# provider: its endpoint answers 503 and the desktop hides the button. Nothing else is affected.
+OAUTH_GOOGLE_CLIENT_IDS = [
+    v.strip() for v in os.getenv("OAUTH_GOOGLE_CLIENT_IDS", "").split(",") if v.strip()
+]
+OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET", "")
+OAUTH_MICROSOFT_CLIENT_IDS = [
+    v.strip() for v in os.getenv("OAUTH_MICROSOFT_CLIENT_IDS", "").split(",") if v.strip()
+]
+# Optional allowlist of Microsoft tenant ids. Empty accepts any tenant, including personal accounts,
+# which is what a public learning app wants; a school deployment would pin its own tenant here.
+OAUTH_MICROSOFT_ALLOWED_TENANTS = [
+    v.strip().lower()
+    for v in os.getenv("OAUTH_MICROSOFT_ALLOWED_TENANTS", "").split(",")
+    if v.strip()
+]
+
+# ── Password reset by emailed code ───────────────────────────────
+#
+# HMAC key for stored reset codes. A plain SHA-256 of a six-digit code is reversed by trying all one
+# million values against a leaked database, so the stored value is keyed with a secret that is not in
+# the database. Changing it invalidates outstanding codes and nothing else.
+AUTH_CODE_SECRET = os.getenv("AUTH_CODE_SECRET", "voidcode-dev-auth-code-secret")
+PASSWORD_RESET_CODE_TTL_MINUTES = int(os.getenv("PASSWORD_RESET_CODE_TTL_MINUTES", "15"))
+# Wrong guesses before a code is dead. With RESET_REQUEST allowing three codes an hour per address,
+# five guesses each bounds a blind attacker at roughly 1.5e-5 successes an hour per account.
+PASSWORD_RESET_CODE_MAX_ATTEMPTS = int(os.getenv("PASSWORD_RESET_CODE_MAX_ATTEMPTS", "5"))
+
 # ── Payments ─────────────────────────────────────────────────────
 #
 # Both secrets are read from the environment and never from the database or a request. They are the
@@ -502,6 +541,22 @@ def assert_production_config() -> None:
         problems.append(
             "RATELIMIT_PEPPER is still the shipped default, so rate-limit keys "
             "are guessable from a known-plaintext email."
+        )
+    if AUTH_CODE_SECRET == "voidcode-dev-auth-code-secret" or len(AUTH_CODE_SECRET) < 32:
+        problems.append(
+            "AUTH_CODE_SECRET is the shipped default or shorter than 32 characters, so a leaked "
+            "auth_tokens table reverses every outstanding password-reset code in a million guesses."
+        )
+    if OAUTH_GOOGLE_CLIENT_IDS and not OAUTH_GOOGLE_CLIENT_SECRET:
+        problems.append(
+            "OAUTH_GOOGLE_CLIENT_IDS is set but OAUTH_GOOGLE_CLIENT_SECRET is empty; Google's token "
+            "endpoint refuses a desktop client's code without it, so every Google sign-in would fail."
+        )
+    if not OAUTH_GOOGLE_CLIENT_IDS and not OAUTH_MICROSOFT_CLIENT_IDS:
+        # A warning, not a refusal: email and password sign-in is a complete product on its own.
+        logging.getLogger(__name__).warning(
+            "No Google or Microsoft client ids are configured; only email and password sign-in "
+            "will be offered."
         )
 
     if problems:

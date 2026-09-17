@@ -149,6 +149,12 @@ async def resolve_caller(
     if bearer is not None:
         user_id = await _user_for_bearer(bearer)
         if user_id is not None:
+            # Which session this is, for the handlers that act on "every session but this one" —
+            # changing a password signs out other devices and keeps the one the person is using.
+            # The hash, never the token: request state ends up in error reports.
+            from .services import token_service
+
+            request.state.session_token_hash = token_service.hash_token(bearer)
             return Caller(user_id=user_id, verified=True)
         # A token that does not resolve is a decision, not an absence: the client sent a
         # credential and it is not good. Falling through to anonymous would silently downgrade a

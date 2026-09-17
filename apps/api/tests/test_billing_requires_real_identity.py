@@ -123,5 +123,7 @@ class TestProductionMayNotRunOnTrust:
             EMAIL_PROVIDER="resend",
             RESEND_API_KEY="k",
             RATELIMIT_PEPPER="not-the-default",
+            # Required since desktop password reset by code: see `test_desktop_auth_config.py`.
+            AUTH_CODE_SECRET="x" * 48,
         )
         fresh.assert_production_config()  # must not raise

@@ -65,6 +65,35 @@ def password_reset_email(to: str, token: str) -> Email:
     )
 
 
+def password_reset_code_email(to: str, code: str) -> Email:
+    """The six-digit reset code for the desktop app.
+
+    NO LINK, deliberately. The code is typed into the app, so there is no page for a host-header
+    injection to redirect and nothing for a mail scanner to "click" and spend.
+
+    The code is NOT bound to the app instance that requested it: anyone holding the address and the
+    code can redeem it. What bounds that is the code's short life, its per-code attempt limit, and
+    the per-address cap on codes issued — which is why the copy says never to share it rather than
+    claiming it is useless to anyone else.
+
+    The subject carries no code: subject lines show up in lock-screen notifications and mail-client
+    previews, which is not somewhere a credential should appear.
+    """
+    minutes = config.PASSWORD_RESET_CODE_TTL_MINUTES
+    return Email(
+        to=to,
+        subject="Your VoidCode password reset code",
+        body=(
+            "Someone asked to reset the password for this address in the VoidCode app.\n\n"
+            f"Your code is: {code}\n\n"
+            f"Enter it in the app. It works once and expires in {minutes} minutes.\n\n"
+            "Never share this code. VoidCode will never ask you for it.\n\n"
+            "If it wasn't you, ignore this message: nothing has changed and your current password "
+            "still works.\n"
+        ),
+    )
+
+
 def email_verification_email(to: str, token: str) -> Email:
     link = f"{config.APP_BASE_URL}/verify-email?token={token}"
     return Email(

@@ -126,7 +126,9 @@ def test_a_correctly_configured_production_starts(monkeypatch) -> None:
         monkeypatch, APP_ENV="production", ALLOWED_ORIGINS="https://voidcode.example",
         INTERNAL_API_SECRET="x" * 32, APP_BASE_URL="https://voidcode.example",
         EMAIL_PROVIDER="resend", RESEND_API_KEY="re_test", RATELIMIT_PEPPER="not-the-default",
-        INTERNAL_AUTH_ENFORCE="true")
+        INTERNAL_AUTH_ENFORCE="true",
+        # Required since desktop password reset by code: see `test_desktop_auth_config.py`.
+        AUTH_CODE_SECRET="x" * 48)
     config.assert_production_config()          # must not raise
 
 

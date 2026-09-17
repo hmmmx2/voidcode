@@ -6,6 +6,7 @@ its reason next to it rather than in a commit message.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import secrets
 import uuid
@@ -19,6 +20,7 @@ from ..models.auth_token import (
     PURPOSE_DESKTOP_SESSION,
     PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET,
+    PURPOSE_PASSWORD_RESET_CODE,
     AuthToken,
 )
 from ..models.user import User
@@ -211,3 +213,135 @@ async def revoke_desktop_session(session: AsyncSession, token: str) -> bool:
         .values(used_at=datetime.utcnow())
     )
     return (result.rowcount or 0) > 0
+
+
+async def revoke_desktop_sessions(
+    session: AsyncSession, user_id, *, except_hash: str | None = None
+) -> int:
+    """Sign a person out of every device, optionally keeping the one making the request.
+
+    Used when a password is reset or changed, and for "sign out everywhere". Before this, neither a
+    reset nor a change touched desktop sessions: a person who reset their password because a laptop
+    was stolen left that laptop signed in for the rest of its 90 days.
+
+    `except_hash` keeps the caller's own session when they changed the password themselves — making
+    them sign straight back in on the device they just proved they control reads as a bug.
+    """
+    conditions = [
+        AuthToken.user_id == user_id,
+        AuthToken.purpose == PURPOSE_DESKTOP_SESSION,
+        AuthToken.used_at.is_(None),
+    ]
+    if except_hash is not None:
+        conditions.append(AuthToken.token_hash != except_hash)
+    result = await session.execute(
+        update(AuthToken).where(*conditions).values(used_at=datetime.utcnow())
+    )
+    return result.rowcount or 0
+
+
+# ── Password reset by six-digit code ─────────────────────────────────────────
+
+
+def reset_code_hash(row_id: uuid.UUID, code: str) -> str:
+    """HMAC-SHA256 of the code, keyed with a server secret and bound to its own row.
+
+    NOT `hash_token`. A plain SHA-256 is right for a 32-byte link, where there is nothing to guess; a
+    six-digit code has one million values, so a leaked `auth_tokens` table would give up every
+    outstanding code by trying them all. The key lives in config, not in the database.
+
+    Bound to the ROW id rather than the user id because `ix_auth_tokens_hash` is unique across every
+    token ever issued and spent rows are kept: keyed by user, the same person drawing the same code
+    twice would collide with their own revoked row and fail the insert.
+    """
+    return hmac.new(
+        config.AUTH_CODE_SECRET.encode(), f"{row_id}:{code}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+async def issue_reset_code(session: AsyncSession, user: User) -> str:
+    """Create a six-digit code for `user`, revoking any earlier one. Returns the code; never stored.
+
+    `secrets.randbelow`, zero-padded — `random` would make the next code predictable from a few
+    observed ones, and an unpadded number would make codes below 100000 shorter and easier to guess.
+    """
+    await revoke_all(session, user.id, PURPOSE_PASSWORD_RESET_CODE)
+
+    code = f"{secrets.randbelow(10**6):06d}"
+    row_id = uuid.uuid4()
+    session.add(AuthToken(
+        id=row_id,
+        user_id=user.id,
+        token_hash=reset_code_hash(row_id, code),
+        purpose=PURPOSE_PASSWORD_RESET_CODE,
+        expires_at=datetime.utcnow() + timedelta(minutes=config.PASSWORD_RESET_CODE_TTL_MINUTES),
+        sent_to_email=user.email,
+        attempts=0,
+    ))
+    await session.flush()
+    return code
+
+
+CODE_OK = "ok"
+CODE_WRONG = "wrong"
+CODE_LOCKED = "locked"
+CODE_NONE = "none"
+
+
+async def check_reset_code(session: AsyncSession, user: User, code: str) -> str:
+    """Test `code` against this person's live code. Returns one of `CODE_*`.
+
+    THE ATTEMPT IS COUNTED BEFORE THE COMPARISON, IN THE DATABASE, UNDER A ROW LOCK.
+      * Before: a counter bumped only on a mismatch can be raced — fire fifty guesses at once and
+        every one reads `attempts = 0` before any of them writes.
+      * Under `FOR UPDATE`: the same race at the row level.
+      * In the database: the rate limiter fails open when Redis is down; a lockout must not.
+
+    THE CALLER MUST COMMIT BEFORE RAISING. `get_db` rolls back when a handler raises, so an attempt
+    recorded and then followed by an HTTP 400 would be silently undone — unlimited guessing, with a
+    counter that looks correct in every unit test. `routers/auth.py` commits explicitly, and
+    `test_password_reset_code_postgres.py` proves wrong guesses accumulate across real requests.
+
+    On success the code is spent. On the final wrong guess it is spent too — it cannot be used again
+    even with the right digits, which is what "locked" has to mean.
+    """
+    row = (await session.execute(
+        select(AuthToken)
+        .where(
+            AuthToken.user_id == user.id,
+            AuthToken.purpose == PURPOSE_PASSWORD_RESET_CODE,
+            AuthToken.used_at.is_(None),
+        )
+        .order_by(AuthToken.created_at.desc())
+        .limit(1)
+        .with_for_update()
+    )).scalar_one_or_none()
+
+    if row is None or row.is_expired():
+        return CODE_NONE
+
+    row.attempts = (row.attempts or 0) + 1
+    await session.flush()
+
+    if row.attempts > config.PASSWORD_RESET_CODE_MAX_ATTEMPTS:
+        row.used_at = datetime.utcnow()
+        await session.flush()
+        return CODE_LOCKED
+
+    if user.email.strip().lower() != row.sent_to_email.strip().lower():
+        # Same rule as links: a code mailed to an address the account no longer has is dead.
+        row.used_at = datetime.utcnow()
+        await session.flush()
+        return CODE_NONE
+
+    matches = hmac.compare_digest(row.token_hash, reset_code_hash(row.id, code))
+    if matches:
+        row.used_at = datetime.utcnow()
+        await session.flush()
+        return CODE_OK
+
+    if row.attempts >= config.PASSWORD_RESET_CODE_MAX_ATTEMPTS:
+        row.used_at = datetime.utcnow()
+        await session.flush()
+        return CODE_LOCKED
+    return CODE_WRONG
