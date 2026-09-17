@@ -29,7 +29,12 @@ export function Hero() {
     // it paints behind the *layout's* black background — neither this section
     // (position:relative, z-index:auto) nor the layout wrapper creates one, so
     // the whole backdrop silently disappears.
-    <section className="relative isolate overflow-hidden pt-32 lg:pt-40">
+    /*
+      Bottom padding, not just top. The demo window is the last thing in this section and it sat
+      flush against `StackStrip`'s top border — two bordered surfaces touching, which reads as one
+      broken panel rather than as two sections.
+    */
+    <section className="relative isolate overflow-hidden pb-24 pt-32 lg:pb-32 lg:pt-40">
       {/* Something for the glass to refract. Flat black gives the object no
           interior; a soft vertical gradient plus one very wide bloom gives it
           volume, at the cost of two gradients. */}
@@ -96,8 +101,8 @@ export function Hero() {
               </p>
 
               <div className="mt-9 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                <Pill href="/login" variant="solid" size="lg">
-                  Start free
+                <Pill href="#download" variant="solid" size="lg">
+                  Download
                 </Pill>
                 <Pill href="#how" variant="outline" size="lg">
                   See how it works

@@ -20,11 +20,11 @@ export function CtaBlock() {
               Start preparing properly.
             </h2>
             <p className="mx-auto mt-6 max-w-[44ch] text-lg leading-relaxed text-ink-2">
-              Create a free account and work through your first problem today.
+              Install it and work through your first problem today. No account needed.
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              <Pill href="/login" variant="solid" size="lg">
-                Start free
+              <Pill href="#download" variant="solid" size="lg">
+                Download
               </Pill>
               <Pill href="#how" variant="ghost" size="lg">
                 See how it works

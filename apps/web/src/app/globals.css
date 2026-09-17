@@ -259,6 +259,14 @@
 
   --animate-drift: drift 19s ease-in-out infinite;
 
+  /* The credibility strip's marquee. Registered here for the reason the comment below spells out:
+     Tailwind v4 deletes `@keyframes` nothing references from a theme variable.
+
+     `linear`, because any easing in an infinite loop reads as a stutter at the seam. 46s for a
+     two-copy track — slow enough to be legible while a visitor is reading the section it sits
+     under, rather than a ticker demanding attention. */
+  --animate-marquee: marquee 46s linear infinite;
+
   /* The prerequisite-graph animations.
      REGISTERED HERE, NOT JUST DECLARED AS @keyframes. Tailwind v4 strips any
      `@keyframes` block that no `--animate-*` theme variable references — the
@@ -285,6 +293,31 @@
   0%,
   100% { transform: translate3d(0, 0, 0) scale(1); }
   50%  { transform: translate3d(0, -2%, 0) scale(1.06); }
+}
+
+/* The strip travels LEFT TO RIGHT, so the track starts shifted one copy to the left and ends at
+   its natural position — at which point the second copy sits exactly where the first began and the
+   loop restarts invisibly. Animating `translate3d` on a single element keeps the whole thing on the
+   compositor: no layout, no paint, no main-thread work while it runs.
+
+   -50% and not -100%: the track holds the item list TWICE, so one copy is half the track.
+
+   The `transform` property, deliberately, rather than the `translate` longhand. They compose in
+   Tailwind v4 — an element carrying a `translate-*` utility plus a keyframe that also translates
+   moves by the sum of both, which is how an earlier animation in this file moved an element a full
+   width off screen. `transform` overrides rather than adds. */
+@keyframes marquee {
+  from { transform: translate3d(-50%, 0, 0); }
+  to   { transform: translate3d(0, 0, 0); }
+}
+
+/* Stopped, not slowed, for a visitor who asks for less motion — and the strip is fully legible
+   standing still, which is why it is safe to simply stop it. */
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track {
+    animation: none;
+    transform: none;
+  }
 }
 
 /* Film grain for the landing hero.

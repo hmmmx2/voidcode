@@ -7,6 +7,7 @@ import { FeatureRows } from "@/components/marketing/sections/FeatureRows";
 import { ConceptGraph } from "@/components/marketing/sections/ConceptGraph";
 import { ObjectionFaq } from "@/components/marketing/sections/ObjectionFaq";
 import { CtaBlock } from "@/components/marketing/sections/CtaBlock";
+import { DownloadSection } from "@/components/marketing/sections/DownloadSection";
 import { MarketingFooter } from "@/components/marketing/sections/MarketingFooter";
 
 /**
@@ -21,17 +22,15 @@ import { MarketingFooter } from "@/components/marketing/sections/MarketingFooter
  * Unauthenticated visitors reach this page because `middleware.ts` lists `/` in
  * PUBLIC_PATHS; signed-in visitors are redirected to `/homepage` there, which is
  * what the deleted `app/page.tsx` used to do unconditionally.
+ *
+ * THERE IS NO "SKIP THE DEMO" LINK. It was a skip link to `#why`, hidden until focused — so the
+ * first thing a keyboard visitor met was an offer to leave, and it showed up unbidden whenever the
+ * browser restored focus to the top of the document. The nav above is reachable by the same Tab
+ * press and goes to the same places.
  */
 export default function LandingPage() {
   return (
     <>
-      <a
-        href="#why"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-6 focus:top-6 focus:z-[60] focus:rounded-full focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:text-void-0"
-      >
-        Skip the demo
-      </a>
-
       <MarketingNav />
 
       <main>
@@ -43,6 +42,7 @@ export default function LandingPage() {
         <ConceptGraph />
         <ObjectionFaq />
         <CtaBlock />
+        <DownloadSection />
       </main>
 
       <MarketingFooter />

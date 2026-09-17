@@ -58,7 +58,7 @@ export function DemoTutorPanel({
 
       <div
         aria-live="polite"
-        className="min-h-[15rem] flex-1 space-y-4 overflow-y-auto px-3.5 py-4 lg:min-h-0"
+        className="min-h-[19rem] flex-1 space-y-4 overflow-y-auto px-3.5 py-4 lg:min-h-0"
       >
         {messages.length === 0 && (
           <p className="text-xs leading-relaxed text-ink-3">

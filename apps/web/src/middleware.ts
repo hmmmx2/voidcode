@@ -13,7 +13,17 @@ import { NextResponse } from "next/server";
  * `target="_blank"`, and they were auth-gated — so they were unreachable for
  * exactly the audience that clicks them.
  */
-const PUBLIC_PATHS = new Set(["/", "/terms", "/privacy"]);
+// `/purchase/*` is where Stripe returns a buyer's browser after checkout. It has to be public:
+// the payment is made in a browser that may have no session at all — the desktop app opened it —
+// and redirecting that visitor to a sign-in form after they have just paid would read as a failed
+// payment.
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/terms",
+  "/privacy",
+  "/purchase/success",
+  "/purchase/cancelled",
+]);
 
 /**
  * The pages that exist to get you a session.

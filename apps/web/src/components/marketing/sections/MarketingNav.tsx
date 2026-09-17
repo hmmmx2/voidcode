@@ -139,11 +139,8 @@ export function MarketingNav() {
         </nav>
 
         <div className="flex flex-none items-center gap-2">
-          <Pill href="/login" variant="ghost" size="sm" className="hidden md:inline-flex">
-            Sign in
-          </Pill>
-          <Pill href="/login" variant="solid" size="sm">
-            Start free
+          <Pill href="#download" variant="solid" size="sm">
+            Download
           </Pill>
           {/* Links are passed down rather than imported by MobileMenu, which
               would make the two modules circular. */}
@@ -151,11 +148,8 @@ export function MarketingNav() {
             links={NAV_LINKS}
             actions={
               <>
-                <Pill href="/login" variant="solid" size="lg">
-                  Start free
-                </Pill>
-                <Pill href="/login" variant="outline" size="lg">
-                  Sign in
+                <Pill href="#download" variant="solid" size="lg">
+                  Download
                 </Pill>
               </>
             }

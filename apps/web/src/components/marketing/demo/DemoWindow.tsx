@@ -138,7 +138,10 @@ export function DemoWindow() {
               <MonoLabel className="text-ink-2">{DEMO_LANGUAGE}</MonoLabel>
             </div>
 
-            <div className="h-[19rem] min-w-0 shrink-0">
+            {/* Taller than it was (19rem). The editor is the middle column of a three-column
+                workspace, and at the old height the tutor beside it had to scroll before its first
+                answer finished — the demo was showing a cramped version of the product. */}
+            <div className="h-[26rem] min-w-0 shrink-0">
               {showMonaco ? (
                 <DemoEditor value={demo.code} onChange={demo.setCode} />
               ) : (

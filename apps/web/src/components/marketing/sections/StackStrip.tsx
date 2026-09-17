@@ -1,4 +1,4 @@
-import { Container, Eyebrow, MonoLabel } from "@/components/marketing/primitives/SectionShell";
+import { Eyebrow, MonoLabel } from "@/components/marketing/primitives/SectionShell";
 import { Reveal } from "@/components/motion/Reveal";
 
 /**
@@ -26,6 +26,35 @@ const STACK = [
   { value: "80", label: "concept graph" },
 ];
 
+/**
+ * One pass of the strip's contents.
+ *
+ * Rendered twice inside the track. A component rather than `[...STACK, ...STACK]` so the eyebrow
+ * repeats with the items — it is part of the phrase ("self-hosted infrastructure: Qwen2.5-7B…"),
+ * and a track that repeated only the values would read as a list with one stray label in it.
+ */
+function StripRun({ "aria-hidden": ariaHidden }: { "aria-hidden"?: boolean }) {
+  return (
+    <div aria-hidden={ariaHidden} className="flex shrink-0 items-center gap-8 pr-8 lg:gap-10 lg:pr-10">
+      <Eyebrow className="shrink-0 whitespace-nowrap border-r border-line pr-8 lg:pr-10">
+        Self-hosted infrastructure
+      </Eyebrow>
+
+      <dl className="flex shrink-0 items-center gap-8 lg:gap-10">
+        {STACK.map((item) => (
+          <div key={item.value} className="flex shrink-0 items-baseline gap-2 whitespace-nowrap">
+            <dt className="text-sm font-light tracking-tight text-ink">{item.value}</dt>
+            <dd>
+              <MonoLabel>{item.label}</MonoLabel>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+
 export function StackStrip() {
   return (
     /*
@@ -35,42 +64,36 @@ export function StackStrip() {
       and the stack is the more specific claim anyway.
     */
     <section className="border-y border-line py-10 lg:py-12">
-      <Container>
-        <Reveal>
-          <div
-            className={[
-              "flex items-center gap-8 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-              // Edge fades are the strongest logo-wall cue there is, and on
-              // mobile they double as the affordance that the row scrolls.
-              "[mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)]",
-              // `justify-between` degrades to flex-start when the row overflows,
-              // so keeping the scroller and the mask at every width is safe and
-              // means a slightly-too-narrow desktop scrolls instead of clipping.
-              "lg:justify-between",
-            ].join(" ")}
-          >
-            <Eyebrow className="shrink-0 whitespace-nowrap border-r border-line pr-8">
-              Self-hosted infrastructure
-            </Eyebrow>
+      <Reveal>
+        {/*
+          A MOVING STRIP, AND THEREFORE NOT IN `Container`.
 
-            <dl className="flex shrink-0 items-center gap-8 lg:gap-6">
-              {STACK.map((item) => (
-                <div
-                  key={item.value}
-                  className="flex shrink-0 items-baseline gap-2 whitespace-nowrap"
-                >
-                  <dt className="text-sm font-light tracking-tight text-ink">
-                    {item.value}
-                  </dt>
-                  <dd>
-                    <MonoLabel>{item.label}</MonoLabel>
-                  </dd>
-                </div>
-              ))}
-            </dl>
+          A marquee has to run edge to edge: bounded to the page gutter it would visibly appear and
+          disappear a centimetre inside the screen, which reads as clipping rather than as motion.
+          The mask below fades both ends instead, so items arrive and leave rather than popping.
+
+          It used to be a horizontal scroller that clipped its last item at anything under ~1160px.
+          Moving it solves that at every width — nothing is ever permanently cut off, because
+          everything comes around.
+        */}
+        <div
+          className={[
+            "overflow-hidden",
+            "[mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]",
+          ].join(" ")}
+        >
+          {/*
+            `w-max` so the track is as wide as its contents rather than the viewport, and the
+            percentage in the keyframes is a percentage of the track. Two copies of the list, the
+            second `aria-hidden` — a screen reader should hear the claims once, and a duplicate is
+            what makes the loop seamless rather than a jump back to the start.
+          */}
+          <div className="marquee-track flex w-max animate-marquee items-center">
+            <StripRun />
+            <StripRun aria-hidden />
           </div>
-        </Reveal>
-      </Container>
+        </div>
+      </Reveal>
     </section>
   );
 }
