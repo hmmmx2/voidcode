@@ -51,15 +51,43 @@ kubectl -n voidcode create secret generic voidcode-api-secrets --from-env-file=a
 One secret, for the API. There is no `voidcode-web-secrets` any more: the web tier is static pages
 that sign nothing and hold no session.
 
+When Google and Microsoft sign-in lands, two more values join this: `OAUTH_GOOGLE_CLIENT_IDS` and
+`OAUTH_MICROSOFT_CLIENT_IDS` belong in the ConfigMap above — they are public identifiers that the
+desktop binary also ships — while `OAUTH_GOOGLE_CLIENT_SECRET` goes in the Secret, because the API
+redeems the authorization code rather than the app. `assert_production_config()` warns but starts
+with none of them set, since email and password sign-in is a complete product on its own.
+
 ## Decisions that are not obvious from the YAML
 
-**The API is not routed through the ingress, and that is now a gap rather than a design.**
-Everything goes to the web tier. That was right when the browser reached the API through
-`/api/proxy` on the Next.js server, which signed the identity; both are gone. The desktop app needs
-`/v1` reachable over the internet with its bearer token, so the ingress has to grow an
-`api.<domain>` host routed to `voidcode-api` — **only** under `/v1`, because `/metrics`, `/health`,
-`/docs` and `/openapi.json` have no authentication. Until that lands the desktop app cannot reach a
-deployed API at all.
+**The API has its own host, and only `/v1` on it.** `api.<domain>` routes to `voidcode-api` with
+one `Prefix` rule. Nothing was routed to the API before, which was right while browser traffic
+reached it through `/api/proxy` on the Next.js server; that proxy and the signed header it sent are
+both gone, and a desktop client has no server of ours to route through — it presents a bearer token
+from the machine it runs on.
+
+Everything else the process serves stays unreachable *because the ingress does not route it*, which
+is the only control in front of it:
+
+| path | why it must not be published |
+|---|---|
+| `/metrics` | Prometheus, unauthenticated: request counts, queue depth, wallet activity |
+| `/health` | names the model backend, the model and free GPU memory |
+| `/docs`, `/openapi.json`, `/redoc` | FastAPI's generated explorer and the whole surface |
+
+`tests/test_deploy_manifests.py` asserts the exact prefix, the `Prefix` path type, that the host
+starts with `api.`, that every routed host appears in the TLS list, and that no ingress backend
+names a Service the kustomization does not contain. Seven mutations of these manifests were applied
+locally and each failed the suite.
+
+**Two things have to agree with this host, and neither is in this directory.** The desktop app is
+built with `VOIDCODE_BUILD_API_URL=https://api.<domain>/v1` (an Actions variable, see
+`.github/workflows/desktop.yml`), and a packaged build ignores any runtime override — so a wrong
+value ships in the binary. And `APP_BASE_URL` in the ConfigMap is the *website's* origin, not this
+one: it is what Stripe returns a buyer to.
+
+**A host missing from the TLS list fails differently for the two clients.** A browser warns and a
+human clicks through; the desktop app refuses the connection before sending a request, and the
+person sees "could not reach VoidCode" with nothing in any log.
 
 **Migrations are an initContainer, not the entrypoint.** Two replicas starting together would race on
 the alembic version table. A Job would not be ordered against the rollout, so pods could serve

@@ -16,6 +16,14 @@ resources:
 # assert_production_config() refuse to boot on a missing secret, and TRUSTED_PROXY_HOPS
 # must match the real number of proxies in front of the ingress or the rate limiter
 # reads an address the client chose.
+#
+# TRUSTED_PROXY_HOPS MATTERS MORE NOW THAN IT DID. The API is reachable from the
+# internet on its own host (see ingress.yaml), so every sign-in attempt and every
+# password-reset request arrives through nginx and the limiter's idea of "the client"
+# is whatever this number says. One hop is ingress-nginx alone. Put Cloudflare or
+# another L7 in front and it becomes 2 — set it wrong high and a single attacker
+# chooses their own key by sending a header; set it wrong low and every caller shares
+# the proxy's address and one person's mistyped password locks out everyone.
 configMapGenerator:
   - name: voidcode-api-config
     literals:

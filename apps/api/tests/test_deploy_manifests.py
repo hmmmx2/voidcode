@@ -187,15 +187,145 @@ def test_migrations_run_as_an_init_container_not_in_the_entrypoint(objects) -> N
         "nothing runs alembic before the API serves")
 
 
-def test_the_api_is_not_exposed_through_the_ingress(objects) -> None:
-    """Routing the API publicly would restore the unsigned-X-User-Id hole that A2 closed, and would
-    publish /metrics, which has no authentication."""
+#: What the API process serves besides `/v1`, and why none of it may be published.
+#:
+#: Each of these is reachable on the same port as `/v1`, so the ONLY thing keeping them off the
+#: internet is that the ingress does not route them. A `/` rule would publish all four.
+UNROUTABLE_API_PATHS = {
+    "/metrics": "Prometheus, unauthenticated: request counts, queue depth, wallet activity",
+    "/health": "names the model backend, the model and GPU memory",
+    "/docs": "FastAPI's generated explorer",
+    "/openapi.json": "the whole API surface, for anyone who asks",
+}
+
+
+def api_paths(objects) -> list[tuple[str, str, str]]:
+    """Every ingress path routed to the API, as (host, path, pathType)."""
+    found = []
+    for ingress in of_kind(objects, "Ingress"):
+        for rule in ingress["spec"].get("rules", []):
+            for path in rule.get("http", {}).get("paths", []):
+                if "api" in path["backend"]["service"]["name"]:
+                    found.append((rule.get("host", ""), path["path"], path.get("pathType", "")))
+    return found
+
+
+def test_the_api_is_exposed_only_under_slash_v1(objects) -> None:
+    """THIS TEST USED TO ASSERT THE OPPOSITE, and the reversal is the deployment's whole shape.
+
+    Nothing was routed to the API: browser traffic reached it through `/api/proxy` on the Next.js
+    server, which signed the identity, and publishing the API would have restored an unsigned
+    `X-User-Id` from the internet. Both the proxy and that header are gone. A desktop application
+    has no server of ours to route through — it presents a bearer token from the machine it runs on
+    — so `/v1` has to be reachable, and until it was, a deployed API could not be reached at all.
+
+    What has not changed is everything else on that port. `/metrics` is unauthenticated,
+    `/health` names the serving stack, and `/docs` publishes the surface; the ingress not routing
+    them is the only thing keeping them private, which is why this asserts the exact prefix rather
+    than "an api backend exists".
+    """
+    routed = api_paths(objects)
+    assert routed, "nothing routes to the API, so no desktop client can reach a deployed one"
+
+    for host, path, path_type in routed:
+        assert path == "/v1", f"{host} routes {path!r} to the API; only /v1 may be published"
+        assert path_type == "Prefix", (
+            f"{host}{path} is {path_type!r}: Exact would match /v1 and nothing under it, so every "
+            "endpoint would 404"
+        )
+        assert host.startswith("api."), (
+            f"{path} is served from {host!r}. The API belongs on its own host: sharing the "
+            "website's means one certificate, one rate limit and one set of annotations for two "
+            "things with different needs"
+        )
+
+
+def test_no_unauthenticated_endpoint_is_routed(objects) -> None:
+    """The four paths a `/` rule would publish, named one by one so a failure says which."""
+    for ingress in of_kind(objects, "Ingress"):
+        for rule in ingress["spec"].get("rules", []):
+            for path in rule.get("http", {}).get("paths", []):
+                if "api" not in path["backend"]["service"]["name"]:
+                    continue
+                for unroutable, why in UNROUTABLE_API_PATHS.items():
+                    assert not unroutable.startswith(path["path"].rstrip("/") + "/") and (
+                        path["path"] != unroutable
+                    ), f"{rule.get('host')}{path['path']} publishes {unroutable} — {why}"
+
+
+def test_every_ingress_host_is_covered_by_tls(objects) -> None:
+    """A host missing from the TLS list is served the default backend's certificate.
+
+    A browser shows a warning and a human clicks through. The desktop app does not: it refuses the
+    connection before sending a request, and the failure surfaces as "could not reach VoidCode"
+    with nothing in any log to say why.
+    """
+    for ingress in of_kind(objects, "Ingress"):
+        secured = {host for entry in ingress["spec"].get("tls", []) for host in entry.get("hosts", [])}
+        for rule in ingress["spec"].get("rules", []):
+            host = rule.get("host")
+            if host:
+                assert host in secured, f"{host} is routed but has no TLS entry"
+
+
+def test_every_ingress_backend_is_a_service_that_exists(objects) -> None:
+    """The ingress pointed at `voidcode-web` while that Service lived in a file being deleted.
+
+    Nothing caught it: the Service check only validates Service-to-pod selectors, never
+    Ingress-to-Service, so a TLS ingress pointing at nothing renders and applies cleanly.
+    """
+    services = {service["metadata"]["name"] for service in of_kind(objects, "Service")}
     for ingress in of_kind(objects, "Ingress"):
         for rule in ingress["spec"].get("rules", []):
             for path in rule.get("http", {}).get("paths", []):
                 backend = path["backend"]["service"]["name"]
-                assert "api" not in backend, (
-                    f"the ingress routes {path['path']} straight to {backend}")
+                assert backend in services, (
+                    f"{rule.get('host')}{path['path']} routes to Service {backend!r}, "
+                    f"which is not in this kustomization ({sorted(services)})"
+                )
+
+
+def test_the_api_admits_the_ingress_controller_and_the_scraper(objects) -> None:
+    """The policy admitted `app: voidcode-web`, and nothing carries that label any more.
+
+    Left alone it would have read as a deliberate restriction while making the API unreachable by
+    everything — including the ingress that now has to reach it. Keyed on namespace labels rather
+    than pod labels because ingress-nginx renames and relabels its pods between chart versions, and
+    a policy keyed on those silently stops matching after an upgrade.
+    """
+    policies = [
+        policy
+        for policy in of_kind(objects, "NetworkPolicy")
+        if policy["spec"]["podSelector"].get("matchLabels", {}).get("app") == "voidcode-api"
+        and "Ingress" in policy["spec"].get("policyTypes", [])
+    ]
+    assert policies, "no ingress policy selects the API pods"
+
+    for policy in policies:
+        sources = [
+            source
+            for rule in policy["spec"].get("ingress", [])
+            for source in rule.get("from", [])
+        ]
+        namespaces = {
+            source["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for source in sources
+            if "namespaceSelector" in source
+        }
+        assert "ingress-nginx" in namespaces, (
+            "the ingress controller's namespace is not admitted, so every request from the "
+            "internet is dropped before it reaches the API"
+        )
+        assert "monitoring" in namespaces, "the metrics scraper is not admitted"
+
+        pods = {
+            source["podSelector"]["matchLabels"].get("app")
+            for source in sources
+            if "podSelector" in source
+        }
+        assert "voidcode-web" not in pods, (
+            "the policy still admits the website's pods, which no longer call the API"
+        )
 
 
 def test_sse_buffering_is_disabled_at_the_ingress(objects) -> None:

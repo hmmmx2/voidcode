@@ -50,12 +50,30 @@ spec:
     matchLabels: { app: voidcode-api }
   policyTypes: [Ingress]
   ingress:
-    # Only the web tier and the metrics scraper. Nothing else in the cluster has a
+    # THE INGRESS CONTROLLER AND THE METRICS SCRAPER. Nothing else in the cluster has a
     # reason to reach the API, and /metrics is unauthenticated — this is the control
     # that keeps it unreachable rather than merely unadvertised.
+    #
+    # It used to admit `app: voidcode-web`, because the website's server-side proxy was
+    # the only caller. That proxy is gone and so is the label on anything that calls the
+    # API: the desktop app arrives from the internet, through the ingress, so the
+    # controller's namespace is what has to be allowed. Leaving the old selector in
+    # place would have left the API unreachable by anything at all — the policy would
+    # still look deliberate while nothing could talk to it.
+    #
+    # The namespace label, not a pod label: ingress-nginx renames and relabels its pods
+    # between chart versions, and a policy keyed on a pod label silently stops matching
+    # after an upgrade. `kubernetes.io/metadata.name` is set by the API server on every
+    # namespace and cannot drift.
+    #
+    # PORT 8000 ONLY, for both sources. The ingress reaches `/v1` on it (the only path
+    # routed — see ingress.yaml) and the scraper reaches `/metrics` on the same port;
+    # narrowing further would need a second policy per path, which NetworkPolicy cannot
+    # express. Path-level protection for `/metrics` is the ingress's job, and it does it
+    # by not routing it.
     - from:
-        - podSelector:
-            matchLabels: { app: voidcode-web }
+        - namespaceSelector:
+            matchLabels: { "kubernetes.io/metadata.name": ingress-nginx }
         - namespaceSelector:
             matchLabels: { "kubernetes.io/metadata.name": monitoring }
       ports:

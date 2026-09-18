@@ -4,11 +4,9 @@ metadata:
   name: voidcode
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    # SSE. The chat completions stream and the notification feed both hold a
-    # connection open and send incrementally; the default proxy buffering collects the
-    # whole response before forwarding, so the tutor appears to hang for a full
-    # generation and then dumps its answer at once. The Next.js proxy route was
-    # written not to buffer for the same reason — an ingress that buffers undoes it.
+    # SSE. The chat completions stream holds a connection open and sends incrementally;
+    # the default proxy buffering collects the whole response before forwarding, so the
+    # tutor appears to hang for a full generation and then dumps its answer at once.
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
@@ -18,21 +16,60 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: [voidcode.example]
+    # Both hosts, one certificate. cert-manager issues a SAN certificate covering the
+    # list, so adding a host here is the whole change — forgetting it serves the
+    # default backend's certificate and every desktop client refuses the connection
+    # before it sends a request.
+    - hosts: [voidcode.example, api.voidcode.example]
       secretName: voidcode-tls
   rules:
+    # ── The website ────────────────────────────────────────────────────────────
+    #
+    # Five static pages: the overview, the pricing, the download, and the two legal
+    # documents (plus Stripe's two return pages). It holds no session and calls no API.
     - host: voidcode.example
       http:
         paths:
-          # EVERYTHING goes to the web tier. The API is deliberately NOT routed here.
-          #
-          # Browser calls reach it through /api/proxy on the Next.js server, which is
-          # what signs the identity. Exposing the API directly would restore exactly
-          # the hole that closed: an unsigned X-User-Id from the public internet. It
-          # would also publish /metrics, which has no authentication.
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: voidcode-web
+                port: { name: http }
+
+    # ── The API, on its own host, and ONLY under /v1 ──────────────────────────
+    #
+    # THIS HOST IS NEW, AND IT IS WHAT MAKES THE DESKTOP APP USABLE AT ALL. Nothing
+    # was routed to the API before: browser traffic reached it through /api/proxy on
+    # the Next.js server, which signed the identity. That proxy is gone with the
+    # website's logged-in UI, and a desktop application has no server of ours to route
+    # through — it presents a bearer token from the machine it runs on. So `/v1` has to
+    # be reachable from the internet.
+    #
+    # ONE PREFIX, NOT `/`. Everything else this process serves is either unauthenticated
+    # or an internal detail, and each would be published by a `/` rule:
+    #
+    #   /metrics          Prometheus, no authentication. Request counts, queue depth,
+    #                     wallet activity. Scraped in-cluster from the monitoring
+    #                     namespace; see network-policy.yaml.
+    #   /health           backend URL, model name and GPU memory — a map of the serving
+    #                     stack for anyone who asks.
+    #   /docs, /openapi.json, /redoc
+    #                     FastAPI's generated explorer. Harmless in isolation, an
+    #                     invitation in public.
+    #
+    # `pathType: Prefix` on `/v1` matches `/v1` and everything under it, and nothing
+    # else — nginx will not fall through to another rule, so an unmatched path on this
+    # host gets the default backend's 404 rather than reaching Python.
+    #
+    # `tests/test_deploy_manifests.py` asserts exactly this: every path routed to the
+    # API is the `/v1` prefix, and none of the four above appears anywhere.
+    - host: api.voidcode.example
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: voidcode-api
                 port: { name: http }
