@@ -6,7 +6,10 @@ name: desktop
 
 on:
   push:
-    branches: [main]
+    # Both names, because this repository has no remote yet and therefore no settled default
+    # branch. A workflow that only watches the wrong one of the two never runs, and the symptom is
+    # silence rather than an error.
+    branches: [main, master]
     paths: ["desktop/**", ".github/workflows/desktop.yml", ".github/allowed-licenses.txt"]
   pull_request:
     paths: ["desktop/**", ".github/workflows/desktop.yml", ".github/allowed-licenses.txt"]
@@ -203,13 +206,66 @@ jobs:
       # packaging step's own vendor call a no-op instead of a download.
       - run: npm run vendor:pyodide
 
-      # No signing. Certificates cost money and this is an OSS project (spec §4.3). The README's
-      # "Installing a build" section documents the SmartScreen and Gatekeeper prompts rather than
-      # letting users discover them. Checksums are the other half of that answer and are not built yet
-      # — they arrive with the release workflow. SignPath is the follow-up for signing itself.
+      # No identity signing. Certificates cost money and this is an OSS project (spec §4.3). The
+      # README's "Installing a build" section documents the SmartScreen and Gatekeeper prompts rather
+      # than letting users discover them, and the download page walks through both. SignPath is the
+      # follow-up for signing itself. macOS builds are still AD-HOC signed by
+      # `desktop/build/ad-hoc-sign.cjs`, because arm64 refuses to run an unsigned binary outright —
+      # that is not a warning a user can click through.
+      #
+      # ── WHERE THE APP'S ADDRESSES COME FROM ────────────────────────────────────────────────────
+      #
+      # `electron.vite.config.ts` bakes these into `__VOIDCODE_BUILD__` at build time, and a
+      # PACKAGED build ignores the matching runtime environment variables (`platform/config.ts`
+      # only honours them when the app is unpackaged). So a wrong value here ships inside the
+      # binary and cannot be corrected by the person running it.
+      #
+      # Repository VARIABLES, not secrets: an API origin, a website origin and two OAuth client IDs
+      # are public identifiers that the installer hands to every user anyway. The only secret in
+      # that flow is Google's client secret, and it stays in the API's environment because the API
+      # redeems the authorization code, never the app.
+      #
+      # EMPTY IS A VALID VALUE, and it is what a fork's pull request gets — `vars` are not exposed
+      # to forks. `apiBase()` then returns null, the app reports "VoidCode isn't set up in this
+      # build" instead of calling somebody else's server, and the provider buttons are hidden. A
+      # fork therefore builds a working offline editor, which is the correct outcome.
+      #
+      # VOIDCODE_BUILD_ALLOW_OVERRIDE is deliberately NOT set: leaving it off is what makes a
+      # packaged build ignore `VOIDCODE_API_URL` from the environment it happens to run in.
       - run: npm run package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          VOIDCODE_BUILD_API_URL: ${{ vars.VOIDCODE_BUILD_API_URL }}
+          VOIDCODE_BUILD_SITE_URL: ${{ vars.VOIDCODE_BUILD_SITE_URL }}
+          VOIDCODE_BUILD_GOOGLE_CLIENT_ID: ${{ vars.VOIDCODE_BUILD_GOOGLE_CLIENT_ID }}
+          VOIDCODE_BUILD_MICROSOFT_CLIENT_ID: ${{ vars.VOIDCODE_BUILD_MICROSOFT_CLIENT_ID }}
+
+      # The signature the hook made, checked by something other than the hook. `codesign --verify`
+      # walks the nested helpers with `--deep --strict`, so a bundle whose outer app is signed and
+      # whose Electron framework is not fails here rather than on a user's machine.
+      #
+      # NOT `spctl --assess`: that asks Gatekeeper whether the app would be ALLOWED, and the honest
+      # answer for an unnotarised build is no. Asserting it would mean asserting something this
+      # project does not claim.
+      - name: The macOS app is ad-hoc signed
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(release/mac*/*.app)
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "no .app was packed, so there is nothing to verify" >&2
+            exit 1
+          fi
+          for app in "${apps[@]}"; do
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            # Prints "Signature=adhoc" for a signature with no identity. Asserted, because an
+            # identity appearing here would mean a certificate leaked into a public build.
+            codesign --display --verbose=2 "$app" 2>&1 | tee /tmp/codesign.txt
+            grep -q "Signature=adhoc" /tmp/codesign.txt
+          done
 
       - uses: actions/upload-artifact@v4
         with:

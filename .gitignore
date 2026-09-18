@@ -183,6 +183,10 @@ artifacts/
 # `npm run vendor:pyodide`; electron-builder copies it as an extraResource at package time.
 desktop/node_modules/
 desktop/out/
+# electron-builder's output: installers, unpacked app bundles and blockmaps, 150-400 MB per
+# platform. `desktop.yml` uploads them as artifacts and `release.yml` attaches them to a release;
+# neither needs them in git, and one `git add -A` on a Mac would commit a whole .app bundle.
+desktop/release/
 desktop/vendor/
 desktop/dist/
 desktop/renderer/node_modules/

@@ -158,6 +158,17 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
 
+# AD-HOC SIGN THE PACKED APP. See build/ad-hoc-sign.cjs for the whole argument; the short
+# version is that arm64 macOS REFUSES to execute a binary with no signature at all, so a
+# genuinely unsigned build tells an Apple silicon user the app is "damaged" with no way
+# past it. An ad-hoc signature has no identity, so Gatekeeper still prompts — which is the
+# prompt the download page documents — but the app launches.
+#
+# A hook rather than `mac.identity`, because `identity: null` means "skip signing" and the
+# handling of `"-"` has moved between electron-builder versions. The hook verifies its own
+# work, and desktop.yml verifies it again on the runner.
+afterPack: build/ad-hoc-sign.cjs
+
 linux:
   target:
     - target: AppImage

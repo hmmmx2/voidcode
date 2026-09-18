@@ -14,7 +14,12 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    # `api-v*`, NOT `v*`. A `v0.2.0` tag means a desktop release, and `release.yml` owns it: two
+    # workflows on one tag means every version tag also rebuilds and republishes server images that
+    # nothing in that release changed, and a failure in either shows up as "the release is red".
+    # The API's images get their own series — `api-v1.4.0` — so the two can move independently,
+    # which they do: the desktop app ships far more often than the server does.
+    tags: ["api-v*"]
   # Manual runs, so the build can be exercised without minting a version tag. Tags are
   # cheap but they are also permanent and they imply a release happened.
   workflow_dispatch:
