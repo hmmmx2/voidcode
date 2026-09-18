@@ -92,11 +92,15 @@ export function PricingPlans() {
         <Container>
           <Reveal>
             <Eyebrow>Pricing</Eyebrow>
-            <SectionHeading className="max-w-[26ch]">
+            <SectionHeading className="max-w-none">
               The application is free.
               <span className="block text-ink-3">Only our GPUs cost money.</span>
             </SectionHeading>
-            <Lead>
+            {/* FULL WIDTH, to the container's own margins. `Lead` caps its measure for a
+                paragraph that shares a row with something else; this one has the row to itself, so
+                the cap only left empty space to the right of every line. `Container` holds the
+                gutter — nothing here sets its own. */}
+            <Lead className="max-w-none">
               VoidCode is open source under the Apache License 2.0, and it does not need an account
               to do its job. The one thing you can pay for is the hosted VoidCode model — a model
               far larger than a laptop can hold, running on GPUs we rent — and it is metered by the
@@ -189,7 +193,9 @@ export function PricingPlans() {
         <Container>
           <Reveal>
             <Eyebrow>How credits work</Eyebrow>
-            <SectionHeading className="max-w-[24ch]">Metered by the second, not the seat.</SectionHeading>
+            <SectionHeading className="max-w-none">
+              Metered by the second, not the seat.
+            </SectionHeading>
 
             <div className="mt-12 grid gap-10 lg:grid-cols-3">
               <div>

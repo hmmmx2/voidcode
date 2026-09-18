@@ -337,7 +337,7 @@ export function DownloadSection() {
           <div className="flex flex-wrap items-end justify-between gap-6">
             <div>
               <Eyebrow>Download</Eyebrow>
-              <SectionHeading className="max-w-[24ch]">
+              <SectionHeading className="max-w-none">
                 Install it on your own machine.
               </SectionHeading>
             </div>
@@ -367,7 +367,11 @@ export function DownloadSection() {
             </dl>
           </div>
 
-          <Lead>
+          {/* FULL WIDTH, to the container's own margins. `Lead` and `SectionHeading` cap their
+              measure for a paragraph that shares a row with something else; these two have the row
+              to themselves, so the cap only left empty space to the right of every line. The
+              container (`Container`) is what holds the gutter now — nothing here sets its own. */}
+          <Lead className="max-w-none">
             The editor, the problems and the grader all run locally. An account is optional — it is
             needed only for the hosted VoidCode model and the credits that pay for it.
           </Lead>

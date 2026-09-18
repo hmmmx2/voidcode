@@ -15,20 +15,17 @@ import { MobileMenu } from "@/components/Layout/MobileMenu";
  * everywhere else — and this nav renders on all five pages, including the legal documents and the
  * two Stripe returns to.
  *
- * The overview's own sections are still reachable by anchor from within it; `SECTION_LINKS` below
- * is rendered only there.
+ * THREE ENTRIES, AND NO SECTION ANCHORS. "How it works", "Tracks" and "FAQ" were in this bar; they
+ * are not any more. With three pages the bar's job is to say where the site goes, and mixing page
+ * links with jumps inside one of those pages made a five-item row in which two kinds of thing
+ * looked identical — and the jumps only meant anything on one page. The sections are still there,
+ * still linked from the hero ("See how it works") and reachable by scrolling, which is how a
+ * one-page argument is meant to be read.
  */
 export const NAV_LINKS = [
   { href: "/", label: "Overview" },
   { href: "/pricing", label: "Pricing" },
   { href: "/download", label: "Download" },
-];
-
-/** The overview page's own sections. Shown beside the page links when the reader is on it. */
-export const SECTION_LINKS = [
-  { href: "#how", label: "How it works" },
-  { href: "#tracks", label: "Tracks" },
-  { href: "#faq", label: "FAQ" },
 ];
 
 /**
@@ -62,9 +59,8 @@ export const SECTION_LINKS = [
  */
 export function MarketingNav() {
   const barRef = useRef<HTMLDivElement>(null);
-  // Which page this is, so the current one is marked and its own sections are offered.
+  // Which page this is, so the current one is marked in the bar.
   const pathname = usePathname();
-  const onOverview = pathname === "/";
 
   useEffect(() => {
     const bar = barRef.current;
@@ -162,18 +158,6 @@ export function MarketingNav() {
               {link.label}
             </Link>
           ))}
-          {/* Anchors, and only where they point at something that exists. */}
-          {onOverview
-            ? SECTION_LINKS.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  className="whitespace-nowrap text-sm text-ink-2 transition-colors hover:text-ink"
-                >
-                  {link.label}
-                </a>
-              ))
-            : null}
         </nav>
 
         <div className="flex flex-none items-center gap-2">
@@ -183,7 +167,7 @@ export function MarketingNav() {
           {/* Links are passed down rather than imported by MobileMenu, which
               would make the two modules circular. */}
           <MobileMenu
-            links={onOverview ? [...NAV_LINKS, ...SECTION_LINKS] : NAV_LINKS}
+            links={NAV_LINKS}
             actions={
               <>
                 <Pill href="/download" variant="solid" size="lg">
