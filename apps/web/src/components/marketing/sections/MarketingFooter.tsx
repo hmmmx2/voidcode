@@ -6,10 +6,11 @@ const COLUMNS = [
   {
     heading: "Product",
     links: [
-      { href: "#how", label: "How it works" },
-      { href: "#tracks", label: "Tracks" },
-      { href: "#faq", label: "FAQ" },
-      { href: "/login", label: "Sign in" },
+      // Routes, not anchors: this footer is on every page, and `#how` resolves on one of them.
+      // "Sign in" was here and is gone — signing in happens inside the desktop app.
+      { href: "/", label: "Overview" },
+      { href: "/pricing", label: "Pricing" },
+      { href: "/download", label: "Download" },
     ],
   },
   {

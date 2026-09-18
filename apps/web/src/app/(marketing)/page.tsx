@@ -7,11 +7,16 @@ import { FeatureRows } from "@/components/marketing/sections/FeatureRows";
 import { ConceptGraph } from "@/components/marketing/sections/ConceptGraph";
 import { ObjectionFaq } from "@/components/marketing/sections/ObjectionFaq";
 import { CtaBlock } from "@/components/marketing/sections/CtaBlock";
-import { DownloadSection } from "@/components/marketing/sections/DownloadSection";
 import { MarketingFooter } from "@/components/marketing/sections/MarketingFooter";
 
 /**
- * Public landing page.
+ * `/` — the overview.
+ *
+ * ONE OF THREE PAGES. The site is overview, `/pricing` and `/download`. The download section used
+ * to sit at the bottom of this page; it moved because a download is a destination people link to
+ * directly, and because a page that argues a case should not end in a file list. Every "Download"
+ * on this page now points at that page, which is also the only page with a client component on it.
+ *
  *
  * A server component, and it must stay one. The <h1> inside <Hero> is the
  * intended LCP element and it is plain server-rendered text with nothing in
@@ -42,7 +47,6 @@ export default function LandingPage() {
         <ConceptGraph />
         <ObjectionFaq />
         <CtaBlock />
-        <DownloadSection />
       </main>
 
       <MarketingFooter />

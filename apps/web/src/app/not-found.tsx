@@ -33,22 +33,22 @@ export default function NotFound() {
         That page isn&rsquo;t here.
       </h1>
       <p className="mt-5 max-w-[46ch] text-sm leading-relaxed text-ink-2">
-        The link may be out of date. Problems and interview questions are
-        reachable from their catalogues.
+        The link may be out of date. This site has three pages — the overview, the pricing and the
+        download — and the problems themselves live inside the application.
       </p>
 
       <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/problems"
+          href="/download"
           className="rounded-full border border-line-strong bg-void-3 px-4 py-2 text-sm text-ink transition-colors hover:border-ink-3"
         >
-          Browse problems
+          Download VoidCode
         </Link>
         <Link
-          href="/homepage"
+          href="/"
           className="rounded-full border border-line px-4 py-2 text-sm text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
         >
-          Your dashboard
+          Back to the overview
         </Link>
       </div>
     </main>

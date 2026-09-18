@@ -23,7 +23,7 @@ export function CtaBlock() {
               Install it and work through your first problem today. No account needed.
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              <Pill href="#download" variant="solid" size="lg">
+              <Pill href="/download" variant="solid" size="lg">
                 Download
               </Pill>
               <Pill href="#how" variant="ghost" size="lg">

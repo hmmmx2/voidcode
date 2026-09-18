@@ -64,11 +64,12 @@ export default function Error({
         >
           Try again
         </button>
+        {/* The dashboard this offered is in the desktop app now; this site has three pages. */}
         <Link
-          href="/homepage"
+          href="/"
           className="rounded-full border border-line px-4 py-2 text-sm text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
         >
-          Your dashboard
+          Back to the overview
         </Link>
       </div>
 

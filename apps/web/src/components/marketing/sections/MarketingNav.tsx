@@ -1,12 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { Mark } from "@/components/brand/Mark";
 import { Pill } from "@/components/ui/Pill";
 import { MobileMenu } from "@/components/Layout/MobileMenu";
 
+/**
+ * The site's three pages.
+ *
+ * These were in-page anchors (`#how`, `#tracks`, `#faq`) when there was one page. They are routes
+ * now, because an anchor that only works on one page is a link that silently does nothing
+ * everywhere else — and this nav renders on all five pages, including the legal documents and the
+ * two Stripe returns to.
+ *
+ * The overview's own sections are still reachable by anchor from within it; `SECTION_LINKS` below
+ * is rendered only there.
+ */
 export const NAV_LINKS = [
+  { href: "/", label: "Overview" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/download", label: "Download" },
+];
+
+/** The overview page's own sections. Shown beside the page links when the reader is on it. */
+export const SECTION_LINKS = [
   { href: "#how", label: "How it works" },
   { href: "#tracks", label: "Tracks" },
   { href: "#faq", label: "FAQ" },
@@ -43,6 +62,9 @@ export const NAV_LINKS = [
  */
 export function MarketingNav() {
   const barRef = useRef<HTMLDivElement>(null);
+  // Which page this is, so the current one is marked and its own sections are offered.
+  const pathname = usePathname();
+  const onOverview = pathname === "/";
 
   useEffect(() => {
     const bar = barRef.current;
@@ -128,27 +150,43 @@ export function MarketingNav() {
 
         <nav className="mx-auto hidden items-center gap-8 md:flex" aria-label="Main">
           {NAV_LINKS.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
-              className="whitespace-nowrap text-sm text-ink-2 transition-colors hover:text-ink"
+              aria-current={pathname === link.href ? "page" : undefined}
+              className={[
+                "whitespace-nowrap text-sm transition-colors hover:text-ink",
+                pathname === link.href ? "text-ink" : "text-ink-2",
+              ].join(" ")}
             >
               {link.label}
-            </a>
+            </Link>
           ))}
+          {/* Anchors, and only where they point at something that exists. */}
+          {onOverview
+            ? SECTION_LINKS.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="whitespace-nowrap text-sm text-ink-2 transition-colors hover:text-ink"
+                >
+                  {link.label}
+                </a>
+              ))
+            : null}
         </nav>
 
         <div className="flex flex-none items-center gap-2">
-          <Pill href="#download" variant="solid" size="sm">
+          <Pill href="/download" variant="solid" size="sm">
             Download
           </Pill>
           {/* Links are passed down rather than imported by MobileMenu, which
               would make the two modules circular. */}
           <MobileMenu
-            links={NAV_LINKS}
+            links={onOverview ? [...NAV_LINKS, ...SECTION_LINKS] : NAV_LINKS}
             actions={
               <>
-                <Pill href="#download" variant="solid" size="lg">
+                <Pill href="/download" variant="solid" size="lg">
                   Download
                 </Pill>
               </>

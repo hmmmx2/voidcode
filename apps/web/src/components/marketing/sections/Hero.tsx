@@ -101,7 +101,7 @@ export function Hero() {
               </p>
 
               <div className="mt-9 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                <Pill href="#download" variant="solid" size="lg">
+                <Pill href="/download" variant="solid" size="lg">
                   Download
                 </Pill>
                 <Pill href="#how" variant="outline" size="lg">
