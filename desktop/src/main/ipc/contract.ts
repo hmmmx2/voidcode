@@ -187,6 +187,36 @@ export const CHANNELS = {
   /** Reopen the browser at the sign-in already in progress — for a tab closed by accident. */
   "account:reopenOAuth": { input: z.undefined(), modes: BOTH },
 
+  // ── The research library ──────────────────────────────────────────────────
+  //
+  // A SLUG, NEVER A URL. `research:openPdf` ends at `shell.openExternal`, so the set of addresses
+  // a renderer can cause to be opened in the person's browser is the set of papers our own API
+  // publishes — main takes the address from the fetched paper, checks it is https, and opens it.
+  // The slug pattern is the API's own: lower-case, digits and hyphens.
+  //
+  // Both modes. A paper explains the thing a problem asks you to implement, and the IDE is a
+  // perfectly reasonable place to go and read why the maths works.
+
+  "research:list": { input: z.undefined(), modes: BOTH },
+  "research:get": {
+    input: z.object({ slug: z.string().regex(/^[a-z0-9-]{1,128}$/) }),
+    modes: BOTH,
+  },
+  /** Record that a section was opened. Refused without a session, before any request. */
+  "research:markRead": {
+    input: z.object({
+      slug: z.string().regex(/^[a-z0-9-]{1,128}$/),
+      // The API validates the same four against the same pattern; `shared/research.ts` owns the
+      // list and a test pins the two together.
+      section: z.enum(["architecture", "implementation", "systems", "mathematics"]),
+    }),
+    modes: BOTH,
+  },
+  "research:openPdf": {
+    input: z.object({ slug: z.string().regex(/^[a-z0-9-]{1,128}$/) }),
+    modes: BOTH,
+  },
+
   "voidcode:credits": { input: z.undefined(), modes: BOTH },
   "voidcode:packs": { input: z.undefined(), modes: BOTH },
   /**

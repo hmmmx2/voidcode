@@ -207,6 +207,15 @@ const SECTIONS: Section[] = [
             describes what we keep.
           </li>
           <li>
+            <strong className="text-ink-2">The research library, when you open it.</strong> The
+            Research page asks our servers for the list of papers and for the breakdowns of the one
+            you open. This works without an account and sends nothing about you: the request carries
+            a paper’s name and, if you are signed in, your session — so that the sections you have
+            already read can be ticked. Marking a section read needs an account, because there is
+            nowhere else to keep it. Nothing is fetched until you open that page, and the PDF itself
+            is opened in your own browser, which contacts arXiv rather than us.
+          </li>
+          <li>
             <strong className="text-ink-2">The VoidCode model, if you select it.</strong> This one
             goes <em>to us</em>. Choosing the &ldquo;VoidCode&rdquo; provider sends that conversation —
             your prompt, and any code or images attached to it — to our servers, where a model we run
@@ -335,6 +344,11 @@ const SECTIONS: Section[] = [
             of our servers answered it — but not what you asked or what it said
           </li>
           <li>Which voucher codes you redeemed</li>
+          <li>
+            Which sections of which research papers you have opened, and when you first finished
+            all four of a paper. Not how long you spent, and not what you thought of it — the page
+            says outright that this counts sections opened rather than sections understood
+          </li>
           <li>
             If you connect a Google or Microsoft account: which provider it is, the identifier that
             provider uses for your account, the email address it gave us and whether it confirmed
@@ -838,7 +852,7 @@ export default function PrivacyClient() {
             <span className="text-[11px] text-ink-3/60">Last updated</span>
             {/* Revised with the rewrite. Section 12 makes this the signal that the Policy changed,
                 so it has to move whenever the substance does. */}
-            <span className="text-[12px] text-ink-2 font-medium">18 September 2026</span>
+            <span className="text-[12px] text-ink-2 font-medium">19 September 2026</span>
           </div>
         </div>
 

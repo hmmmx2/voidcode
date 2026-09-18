@@ -138,6 +138,36 @@ interface VoidCodeHost {
     reopenOAuth(): Promise<{ ok: true } | HostAccountFailure>;
   };
 
+  /**
+   * The research library. Fetched only when somebody opens it, and never at startup.
+   *
+   * The papers are public and the reading ticks are not: main sends the session when there is one
+   * and falls back to anonymous when the server says it has expired, so the library keeps working
+   * signed out. Marking a section read needs a session and is refused without one, with no request.
+   */
+  research: {
+    list(): Promise<
+      { ok: true; library: import("@shared/research").PaperLibrary } | HostResearchFailure
+    >;
+    get(input: { slug: string }): Promise<
+      { ok: true; paper: import("@shared/research").PaperDetail } | HostResearchFailure
+    >;
+    markRead(input: {
+      slug: string;
+      section: import("@shared/research").SectionKey;
+    }): Promise<
+      { ok: true; sectionsRead: string[]; completedAt: string | null } | HostResearchFailure
+    >;
+    /**
+     * Open the paper's PDF in the reader's own browser.
+     *
+     * Takes a SLUG. Main resolves the address from the paper our API returned and checks it is
+     * https before opening anything — a renderer that could pass a URL here could ask the
+     * operating system to launch whatever it has a handler for.
+     */
+    openPdf(input: { slug: string }): Promise<{ ok: true } | HostResearchFailure>;
+  };
+
   voidcode: {
     credits(): Promise<
       | {
@@ -1189,6 +1219,14 @@ interface HostSignedIn {
  * file a module and `window.host` would lose its type everywhere at once.
  */
 type HostLedgerEntry = import("@shared/credits").LedgerEntry;
+
+interface HostResearchFailure {
+  ok: false;
+  /** `offline`, `not_configured`, `not_found`, `signed_out`, `no_pdf`, `unsafe_pdf`, `http_<n>`. */
+  code: string;
+  /** Written to be shown as it is. */
+  message: string;
+}
 
 type HostProviderId = "google" | "microsoft";
 

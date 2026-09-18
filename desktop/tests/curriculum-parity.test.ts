@@ -149,14 +149,30 @@ describe("routes are addressed by slug", () => {
     expect(inserted[positionBefore - 1]?.slug).not.toBe(target?.slug);
   });
 
-  it("no renderer component links a problem by position", () => {
-    /**
-     * Structural, because a single reintroduced `/problems/${orderIndex}` is exactly the bug and
-     * would look perfectly reasonable in review. `Workbench` still *computes* a position for the
-     * chevrons — that is fine and intended — so what is banned is interpolating one into a path.
-     */
+  /**
+   * Whether an interpolated path segment NAMES THE PROBLEM rather than counting to it.
+   *
+   * AN ALLOWLIST, AND IT HAS TO BE. This began as a deny-list of position-shaped names —
+   * `orderIndex`, `index +`, `position`, and a bare `n` — and two mutations walked straight past
+   * it. The first was written `\bn\b` and reached the file as `\x08n\x08`, because whatever emitted it
+   * resolved `\b` as an ASCII backspace instead of a regex word boundary, so that alternative had
+   * never matched anything. The second was `String(CURRICULUM.indexOf(entry) + 1)`, which is a
+   * position by any reasonable reading and matches none of those four names.
+   *
+   * A deny-list of ways to spell "a number" cannot be completed. What CAN be stated is the rule:
+   * a problem route is addressed by the thing that names a problem. So an interpolation has to
+   * mention a slug or an id, and anything else fails until somebody either renames the variable or
+   * comes here and argues for it.
+   */
+  const namesTheProblem = (expression: string): boolean =>
+    // "slug" anywhere, case-insensitively, so `paperSlug` counts; or an identifier that ENDS in an
+    // id, so `problem.id` and `problemId` count while `orderIndex` does not.
+    /slug/i.test(expression) || /(^|\.)id$|Id$/.test(expression);
+
+  /** Every `/problems/${...}` in a renderer component, with comments stripped. */
+  const interpolatedProblemLinks = (): { file: string; expression: string }[] => {
     const componentDir = path.join(root, "renderer/src/components");
-    const offenders: string[] = [];
+    const found: { file: string; expression: string }[] = [];
 
     const walk = (dir: string): void => {
       for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -166,16 +182,64 @@ describe("routes are addressed by slug", () => {
           continue;
         }
         if (!/\.tsx?$/.test(item.name)) continue;
-        const source = fs.readFileSync(full, "utf8");
+        /**
+         * COMMENTS STRIPPED FIRST, because this repository has already learned that a
+         * source-scanning guard trips on the prose explaining the thing it bans.
+         * `WorkspaceClient.tsx` says "Was the literal `/problems/${n}` in two places", which is a
+         * note about a defect that was FIXED — and fixing the escape above turns that sentence
+         * into a failure unless the scan reads code only.
+         */
+        const source = fs
+          .readFileSync(full, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/.*/g, "");
         for (const match of source.matchAll(/\/problems\/\$\{([^}]+)\}/g)) {
-          const expression = match[1] ?? "";
-          if (/orderIndex|index \+|position|n/.test(expression)) {
-            offenders.push(`${path.relative(root, full)}: /problems/\${${expression}}`);
-          }
+          found.push({ file: path.relative(root, full), expression: match[1] ?? "" });
         }
       }
     };
     walk(componentDir);
+    return found;
+  };
+
+  it("tells a name from a count", () => {
+    /**
+     * The positive control, and the reason it exists is written above `namesTheProblem`: the
+     * predicate this replaced had a dead alternative and a blind spot, and nothing said so for as
+     * long as no component happened to use either shape.
+     */
+    for (const named of ["slug", "problem.slug", "entry.slug", "problem.id", "paperSlug", "problemId"]) {
+      expect(namesTheProblem(named), named).toBe(true);
+    }
+    for (const counted of [
+      "n",
+      "orderIndex",
+      "index + 1",
+      "position",
+      "String(position)",
+      "CURRICULUM.indexOf(entry) + 1",
+      "String(CURRICULUM.indexOf(entry) + 1)",
+      "i + 1",
+    ]) {
+      expect(namesTheProblem(counted), counted).toBe(false);
+    }
+  });
+
+  it("no renderer component links a problem by position", () => {
+    /**
+     * Structural, because a single reintroduced `/problems/${orderIndex}` is exactly the bug and
+     * would look perfectly reasonable in review. `Workbench` still *computes* a position for the
+     * chevrons — that is fine and intended — so what is banned is interpolating one into a path.
+     */
+    const links = interpolatedProblemLinks();
+
+    // Vacuity: a walk that stopped finding links would pass this test for the wrong reason, which
+    // is how a source-scanning guard rots without anybody noticing.
+    expect(links.length, "no interpolated problem links were found at all").toBeGreaterThanOrEqual(4);
+
+    const offenders = links
+      .filter((link) => !namesTheProblem(link.expression))
+      .map((link) => `${link.file}: /problems/\${${link.expression}}`);
 
     expect(offenders).toEqual([]);
   });

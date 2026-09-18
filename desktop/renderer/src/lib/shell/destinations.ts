@@ -51,12 +51,23 @@ export const DESTINATIONS: Destination[] = [
     id: "prep",
     label: "Interview Prep",
     home: "/homepage",
-    match: ["/homepage", "/problems", "/interviews", "/projects"],
+    match: ["/homepage", "/problems", "/interviews", "/projects", "/research"],
     sections: [
       { href: "/homepage", label: "Dashboard" },
       { href: "/problems", label: "Problems", countKey: "problems" },
       { href: "/interviews", label: "Interviews", countKey: "interviews" },
       { href: "/projects", label: "Projects", countKey: "projects" },
+      /**
+       * NO COUNT, and that is the one thing about this entry worth explaining.
+       *
+       * Every other section here counts something the application already knows: the problems,
+       * questions and projects are content that ships in the bundle. The paper library lives on
+       * our server, so a number beside "Research" would mean fetching the index to draw the
+       * sidebar of every other page in the product — for a reader who never opened it. The
+       * library is a network feature reached by an explicit action, and the rail has to stay
+       * consistent with that.
+       */
+      { href: "/research", label: "Research" },
     ],
   },
 ];

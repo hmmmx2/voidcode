@@ -15,6 +15,7 @@ import { BrowserWindow, MessageChannelMain, app, dialog, shell } from "electron"
 import * as hosted from "../../inference/hosted.js";
 import * as password from "../../account/password.js";
 import * as oauth from "../../account/oauth.js";
+import * as papers from "../../research/papers.js";
 import { OAUTH_TIMEOUT_MS, providerStatuses } from "../../account/providers.js";
 import * as session from "../../account/session.js";
 import { checkedExternalUrl } from "../../net/external.js";
@@ -1306,6 +1307,16 @@ export function registerHandlers(): void {
 
   setHandler("account:cancelOAuth", async () => oauth.cancel());
   setHandler("account:reopenOAuth", async () => oauth.reopen());
+
+  // ── The research library ───────────────────────────────────────────────────
+  //
+  // Thin passes to `research/papers.ts`, which owns the one decision worth owning: `openPdf` takes
+  // a slug and resolves the address itself, from the paper our API returned.
+
+  setHandler("research:list", async () => papers.list());
+  setHandler("research:get", async (input) => papers.get(input.slug));
+  setHandler("research:markRead", async (input) => papers.markRead(input.slug, input.section));
+  setHandler("research:openPdf", async (input) => papers.openPdf(input.slug));
 
   setHandler("voidcode:credits", async () => hosted.credits());
 

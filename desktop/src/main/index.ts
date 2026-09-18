@@ -627,6 +627,51 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
   /** Movements only: a hold and a release change no balance, so the page must not list them. */
   const MOVEMENTS = LEDGER.filter((row) => row.amountMicro !== 0).length;
 
+  /**
+   * Two papers, one of them part-read, and four breakdowns each.
+   *
+   * `pdfUrl` is a real arXiv address and the smoke never clicks "Open PDF": doing so would open a
+   * browser on whoever ran this. What the guard does with an address it should refuse is covered
+   * exhaustively in `research.test.ts`, against five shapes this fixture cannot produce.
+   */
+  const SECTIONS = ["architecture", "implementation", "systems", "mathematics"];
+  const PAPERS = [
+    {
+      slug: "attention-is-all-you-need",
+      title: "Attention Is All You Need",
+      authors: "Vaswani et al.",
+      year: 2017,
+      venue: "NeurIPS",
+      arxivId: "1706.03762",
+      abstract: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
+      difficulty: "hard",
+      categories: ["transformers"],
+      orderIndex: 0,
+      relatedProblemSlugs: ["scaled-dot-product-attention"],
+      sectionsRead: ["architecture"],
+      sectionCount: 4,
+      completedAt: null,
+    },
+    {
+      slug: "layer-normalization",
+      title: "Layer Normalization",
+      authors: "Ba, Kiros and Hinton",
+      year: 2016,
+      venue: null,
+      arxivId: "1607.06450",
+      abstract: "Training state-of-the-art, deep neural networks is computationally expensive.",
+      difficulty: "medium",
+      categories: ["normalisation"],
+      orderIndex: 1,
+      relatedProblemSlugs: ["layer-norm"],
+      sectionsRead: [],
+      sectionCount: 4,
+      completedAt: null,
+    },
+  ];
+  /** Every section the reader POSTs, so the smoke can assert the marking actually reaches main. */
+  const marked: string[] = [];
+
   const server = createServer((request, response) => {
     const route = (request.url ?? "").split("?")[0] ?? "";
     const send = (body: unknown, status = 200): void => {
@@ -662,6 +707,47 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
       });
     } else if (route === "/v1/credits/ledger") {
       send({ entries: LEDGER });
+    } else if (route === "/v1/papers") {
+      send({
+        papers: PAPERS,
+        sections: SECTIONS.map((key) => ({ key, label: key })),
+        progress: { papers: 2, finished: 0, sectionsRead: 1, sectionsTotal: 8 },
+      });
+    } else if (/^\/v1\/papers\/[a-z0-9-]+$/.test(route)) {
+      const slug = route.split("/").pop();
+      const paper = PAPERS.find((candidate) => candidate.slug === slug);
+      if (paper === undefined) {
+        send({ detail: "Paper not found" }, 404);
+      } else {
+        send({
+          ...paper,
+          pdfUrl: `https://arxiv.org/pdf/${paper.arxivId ?? ""}`,
+          keyEquations: [
+            {
+              label: "Scaled dot-product attention",
+              latex: "\\mathrm{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V",
+              note: "The scaling keeps the softmax out of its saturated region as d_k grows.",
+            },
+          ],
+          sections: SECTIONS.map((key) => ({
+            key,
+            label: key === "systems" ? "System design" : `${key.slice(0, 1).toUpperCase()}${key.slice(1)}`,
+            body: `## What ${key} covers\n\nOne paragraph of ${key} for the smoke to render.`,
+          })),
+        });
+      }
+    } else if (/^\/v1\/papers\/[a-z0-9-]+\/read$/.test(route)) {
+      let raw = "";
+      request.on("data", (chunk) => (raw += String(chunk)));
+      request.on("end", () => {
+        const section = (JSON.parse(raw || "{}") as { section?: string }).section ?? "";
+        if (!marked.includes(section)) marked.push(section);
+        const slug = route.split("/")[3] ?? "";
+        const paper = PAPERS.find((candidate) => candidate.slug === slug);
+        const read = [...new Set([...(paper?.sectionsRead ?? []), ...marked])];
+        send({ slug, sectionsRead: read, completedAt: read.length >= 4 ? "2026-09-19T00:00:00Z" : null });
+      });
+      return;
     } else {
       send({ detail: "not part of this smoke" }, 404);
     }
@@ -689,6 +775,8 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
     for (const [name, route, ready] of [
       ["account-signed-in", "/account", '(document.querySelector("main")?.innerText ?? "").includes("learner@example.test")'],
       ["credits", "/account/credits", 'document.querySelectorAll("tbody tr").length > 0'],
+      ["research", "/research", '(document.querySelector("main")?.innerText ?? "").includes("Attention Is All You Need")'],
+      ["paper", "/research/attention-is-all-you-need", 'document.querySelectorAll("[role=tab]").length === 4'],
     ] as const) {
       const consoleErrors: string[] = [];
       const onConsole = (event: { level: string; message: string }) => {
@@ -713,6 +801,22 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
         await writeFile(`${shots}/${name}.png`, image.toPNG());
       }
     }
+
+    /**
+     * EACH ASSERTION BLOCK OPENS ITS OWN PAGE.
+     *
+     * The reads below used to run straight after the capture loop, on whatever the loop had left
+     * on screen. Adding the research pages to that loop moved the last page from `/account/credits`
+     * to a paper, and every credits assertion failed against a page that was never wrong. A block
+     * that depends on the order of a loop above it is a block that breaks when the loop grows.
+     */
+    const openAndWait = async (route: string, ready: string): Promise<void> => {
+      await window.loadURL(`${APP_ORIGIN}${route}`);
+      if (!(await waitFor(window, ready))) failures.push(`signed-in: ${route} did not render`);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    };
+
+    await openAndWait("/account/credits", 'document.querySelectorAll("tbody tr").length > 0');
 
     /**
      * What the credits page made of that wallet.
@@ -796,10 +900,79 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
       failures.push(`credits: the history table is ${rendered.tableHeight}px tall`);
     }
 
+    await openAndWait(
+      "/research/attention-is-all-you-need",
+      'document.querySelectorAll("[role=tab]").length === 4'
+    );
+
+    /**
+     * The reader, and the one piece of wiring here that can only be checked end to end: arriving on
+     * a paper marks its first breakdown read, and switching tabs marks the next.
+     *
+     * `marked` is filled by the stand-in server, so this is the whole path -- a click in the
+     * renderer, through the channel, through main, to an HTTP POST with the right section in it.
+     * The unit tests prove each leg; nothing else proves they are joined up.
+     */
+    const reader = (await window.webContents.executeJavaScript(`
+      (async () => {
+        const tabs = () => Array.from(document.querySelectorAll("[role=tab]"));
+        const labels = tabs().map((t) => t.textContent.trim());
+        const before = tabs().filter((t) => t.querySelector("[aria-label=read]")).length;
+        // The last tab, so the click is unambiguous and is not the one already marked on arrival.
+        tabs().at(-1).click();
+        await new Promise((r) => setTimeout(r, 900));
+        const body = document.querySelector("main").innerText;
+        return {
+          labels,
+          ticksBefore: before,
+          ticksAfter: tabs().filter((t) => t.querySelector("[aria-label=read]")).length,
+          showsMathematics: body.includes("What mathematics covers"),
+          equation: document.querySelector(".katex") !== null,
+          relatedProblem: Array.from(document.querySelectorAll("a"))
+            .map((a) => a.getAttribute("href") ?? "")
+            .map((href) => (href.endsWith("/") ? href.slice(0, -1) : href))
+            .includes("/problems/scaled-dot-product-attention"),
+          hasPdfButton: Array.from(document.querySelectorAll("button"))
+            .some((b) => /open pdf/i.test(b.textContent ?? "")),
+        };
+      })()
+    `)) as {
+      labels: string[];
+      ticksBefore: number;
+      ticksAfter: number;
+      showsMathematics: boolean;
+      equation: boolean;
+      relatedProblem: boolean;
+      hasPdfButton: boolean;
+    };
+
+    if (reader.labels.join(",") !== "Architecture,Implementation,System design,Mathematics") {
+      failures.push(`paper: the breakdowns read ${JSON.stringify(reader.labels)}`);
+    }
+    // One tick on arrival: the paper came back with `architecture` already read.
+    if (reader.ticksBefore !== 1) failures.push(`paper: ${reader.ticksBefore} ticks on arrival, expected 1`);
+    if (reader.ticksAfter !== 2) failures.push(`paper: ${reader.ticksAfter} ticks after opening a tab, expected 2`);
+    if (!reader.showsMathematics) failures.push("paper: opening the Mathematics tab did not show its body");
+    if (!reader.equation) failures.push("paper: the key equation was not typeset");
+    if (!reader.relatedProblem) failures.push("paper: the related problem is not linked by slug");
+    if (!reader.hasPdfButton) failures.push("paper: no Open PDF button");
+    /**
+     * WHICH SECTIONS REACHED THE SERVER. `mathematics` is the click; `systems` must NOT be there,
+     * because nothing opened it -- a component that marked every tab on mount rather than the one
+     * on screen would pass every assertion above and fail this one.
+     */
+    if (!marked.includes("mathematics")) {
+      failures.push(`paper: the server was never told mathematics was read; it got ${JSON.stringify(marked)}`);
+    }
+    if (marked.includes("systems")) {
+      failures.push(`paper: sections nobody opened were marked read: ${JSON.stringify(marked)}`);
+    }
+
     if (failures.length === 0) {
       console.log(
-        `[smoke] signed in: /account and /account/credits rendered; ${rendered.rows} movements shown, `
-          + `holds and releases filtered, ${rendered.packs} packs offered`
+        `[smoke] signed in: /account, /account/credits, /research and a paper rendered; `
+          + `${rendered.rows} movements shown, holds and releases filtered, ${rendered.packs} packs offered; `
+          + `reader marked ${JSON.stringify(marked)}`
       );
     }
   } catch (err) {

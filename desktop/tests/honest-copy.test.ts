@@ -579,6 +579,60 @@ describe("the legal documents agree with the account code", () => {
     for (const file of LEGAL_SOURCES) expect(legalText(file), `${file} names the payment processor`).toContain("Stripe");
   });
 
+  it("discloses the research library exactly while the application has one", () => {
+    /**
+     * A two-way pin, like the provider hosts above it. The library is a NETWORK FEATURE in a
+     * local-first application: opening the Research page asks our servers for the papers, and
+     * marking a section read writes a row against an account. Before this shipped the Policy said
+     * nothing about either, and that was correct — the desktop app had no such page.
+     *
+     * So the direction that matters is this one: the code exists, therefore the sentences must.
+     * And each sentence is pinned to the thing that makes it true rather than to itself.
+     */
+    const reading = path.join(root, "src/main/research");
+    expect(fs.existsSync(reading), "src/main/research is gone; this test is now guarding nothing").toBe(
+      true
+    );
+    const papers = code(readSource(path.join(reading, "papers.ts"), "utf8"));
+
+    // "Nothing is fetched until you open that page": nothing in main calls these at startup, so the
+    // claim rests on the renderer asking — which is what the channels are for.
+    expect(papers).toContain("/papers");
+    expect(privacy).toContain("Nothing is fetched until you open that page");
+
+    // "if you are signed in, your session": the optional-session read, which is unusual enough in
+    // this application to be worth saying out loud in both places.
+    expect(papers, "the library read no longer sends a session when there is one").toContain(
+      "sessionToken() !== undefined"
+    );
+    expect(privacy).toContain("if you are signed in, your session");
+
+    // "Marking a section read needs an account": refused client-side, and refused server-side.
+    expect(papers).toContain('code: "signed_out"');
+    expect(api("src/routers/papers.py")).toContain("Depends(identity.require_user)");
+    expect(privacy).toContain("Marking a section read needs an account");
+
+    // "the PDF itself is opened in your own browser": `shell.openExternal`, not a frame.
+    expect(papers).toContain("shell.openExternal");
+    expect(privacy).toContain("opened in your own browser");
+
+    // What section 6.1 says the account holds, pinned to the columns that hold it.
+    const progress = code(
+      readSource(path.join(root, "..", "apps/api/src/models/catalogue.py"), "utf8")
+    );
+    expect(progress).toContain("sections_read");
+    expect(progress).toContain("completed_at");
+    expect(privacy).toContain("Which sections of which research papers you have opened");
+    expect(privacy).toContain("when you first finished");
+
+    // And the claim the library page itself makes, which the Policy repeats.
+    const library = code(
+      readSource(path.join(root, "renderer/src/components/Research/PaperLibraryClient.tsx"), "utf8")
+    );
+    expect(library).toContain("sections opened, not sections understood");
+    expect(privacy).toContain("sections opened rather than sections understood");
+  });
+
   it("is backed by a test when it says conversations are not logged", () => {
     // The only claim here about a log rather than a table, and a log line is invisible to a schema
     // check: two of them kept 60 characters of every question until this sentence was written.
