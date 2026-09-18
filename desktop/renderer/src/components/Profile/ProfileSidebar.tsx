@@ -11,6 +11,7 @@ interface SidebarItem {
 const SIDEBAR_ITEMS: SidebarItem[] = [
     { label: "Profile", href: "/profile" },
     { label: "Account", href: "/account" },
+    { label: "Credits", href: "/account/credits" },
     { label: "Terms of Use", href: "/terms" },
     { label: "Privacy Policy", href: "/privacy" },
 ];
@@ -40,6 +41,15 @@ export default function ProfileSidebar() {
         <aside className="flex w-48 flex-shrink-0 flex-col justify-between border-r border-line py-8">
             <nav className="flex flex-col gap-1 px-3">
                 {SIDEBAR_ITEMS.map((item) => {
+                    /**
+                     * Exact, so the deepest page is the one highlighted.
+                     *
+                     * A first attempt also lit the parent whenever a child route was open, on the
+                     * theory that Account should not look inactive while one of its own pages was.
+                     * It lit BOTH rows at once on `/account/credits`, which the screenshot showed
+                     * immediately: these are four sibling pages in a list, not a section with a
+                     * landing page, so "which one am I on" has exactly one answer.
+                     */
                     const isActive = pathname === item.href;
 
                     return (

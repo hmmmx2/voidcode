@@ -74,6 +74,7 @@ async def client(sessionmaker_np, learner):
 
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[identity.current_user_id] = lambda: learner
+    app.dependency_overrides[identity.require_user] = lambda: learner
     # `/checkout` resolves a full Caller rather than a bare id, because it has to refuse an
     # anonymous or unverified buyer. Overriding only `current_user_id` left it 401ing.
     app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(user_id=learner)
@@ -104,6 +105,7 @@ class TestBalance:
 
         app.dependency_overrides[get_db] = _db
         app.dependency_overrides[identity.current_user_id] = lambda: learner
+        app.dependency_overrides[identity.require_user] = lambda: learner
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
             response = await ac.get("/v1/credits")
         assert response.status_code == 200
@@ -140,6 +142,54 @@ class TestBalance:
             )
         body = (await client.get("/v1/credits")).json()
         assert body["availableCredits"] == 1
+
+
+class TestWhoMayRead:
+    """The per-person reads refuse an unauthenticated caller.
+
+    THE DEFECT THIS CLOSES. All three read paths took `current_user_id`, which resolves a caller
+    with no credential to the SHARED anonymous user -- the same identity every other signed-out
+    caller gets. So a signed-out request read one wallet and one ledger, and the moment anything
+    credited or charged that identity, every signed-out caller would have been shown it. It is the
+    same shape as the reading progress that became one record shared by everybody, on the money
+    path. `/checkout` and `/vouchers/redeem` have always refused anonymous, with a comment saying
+    why; the reads should never have differed.
+    """
+
+    @pytest_asyncio.fixture
+    async def anonymous(self, sessionmaker_np):
+        """A client with no credential at all -- `resolve_caller`'s answer for one is anonymous."""
+        app = FastAPI()
+        app.include_router(credits_router.router)
+
+        async def _db():
+            async with sessionmaker_np() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = _db
+        # Deliberately NOT overriding `require_user`: the real dependency is what is under test, and
+        # it is fed the anonymous Caller that an unauthenticated request actually produces.
+        app.dependency_overrides[identity.resolve_caller] = lambda: identity.Caller(
+            user_id=identity.ANONYMOUS_USER_ID
+        )
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            yield ac
+
+    @pytest.mark.parametrize("path", ["/v1/credits", "/v1/credits/ledger", "/v1/credits/usage"])
+    async def test_an_unauthenticated_caller_reads_no_wallet(self, anonymous, path):
+        response = await anonymous.get(path)
+        assert response.status_code == 401, path
+
+    async def test_the_pack_list_is_still_public(self, anonymous):
+        """The one read here that is not per-person, and it has to stay reachable.
+
+        A price list is not somebody's data, and the sign-in dialog's own copy says what an account
+        is for -- which is hard to write if the application cannot say what a pack costs until
+        after you have one.
+        """
+        response = await anonymous.get("/v1/credits/packs")
+        assert response.status_code == 200
+        assert len(response.json()["packs"]) > 0
 
 
 class TestLedgerAndUsage:

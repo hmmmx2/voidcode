@@ -56,10 +56,21 @@ router = APIRouter(prefix="/v1/credits", tags=["credits"])
 
 @router.get("")
 async def read_balance(
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    user_id: uuid.UUID = Depends(identity.require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Balance, held and available, in micro-credits and whole credits.
+
+    REQUIRES A SIGNED-IN CALLER, and that is a correction rather than a tightening. These three
+    reads used `current_user_id`, which hands an unauthenticated caller the SHARED anonymous user
+    -- so every signed-out request read one wallet, and anything that ever credited or charged that
+    identity would have been visible to all of them. It is the same defect as the shared reading
+    progress, on the money path. The write paths below have always refused anonymous for exactly
+    this reason; the reads should never have differed.
+
+    The desktop app never sends these without a session anyway (`platform/http.ts` answers an
+    authenticated call with no token itself), so the 401 is a statement about the endpoint rather
+    than a path the application takes.
 
     Returns zeroes rather than 404 for a user with no wallet. A learner who has never been granted
     credit has a balance — it is nought — and a 404 would make the client distinguish "no wallet"
@@ -116,10 +127,10 @@ async def read_balance(
 @router.get("/ledger")
 async def read_ledger(
     limit: int = 50,
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    user_id: uuid.UUID = Depends(identity.require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """The most recent movements, newest first.
+    """The most recent movements, newest first. Signed in only -- see `read_balance`.
 
     Ordered by the ledger's own id rather than a timestamp: two rows written in the same transaction
     share a `created_at` to the microsecond, and an audit that cannot put them in order is not an
@@ -152,10 +163,10 @@ async def read_ledger(
 @router.get("/usage")
 async def read_usage(
     limit: int = 50,
-    user_id: uuid.UUID = Depends(identity.current_user_id),
+    user_id: uuid.UUID = Depends(identity.require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Settled requests with what they occupied and what they cost.
+    """Settled requests with what they occupied and what they cost. Signed in only.
 
     `slotMs` is exposed deliberately. The unit is unfamiliar — learners expect to pay per message —
     so the interface has to be able to show *why* one question cost more than another, and the only

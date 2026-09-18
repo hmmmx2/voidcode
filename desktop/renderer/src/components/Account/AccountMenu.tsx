@@ -91,7 +91,7 @@ export default function AccountMenu() {
                 </div>
                 <Separator />
                 <Item onSelect={() => go("/account")}>Account</Item>
-                <Item onSelect={() => go("/models")}>Credits and the VoidCode model</Item>
+                <Item onSelect={() => go("/account/credits")}>Credits and history</Item>
                 <Item onSelect={() => go("/profile")}>Local profile</Item>
                 <Separator />
                 <Item

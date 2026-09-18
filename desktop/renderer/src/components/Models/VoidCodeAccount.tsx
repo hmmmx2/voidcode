@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The VoidCode model's card: what credit is left, and buying more.
+ * The VoidCode model's card: whether it can be used, and what credit is left.
  *
  * WHY THIS SITS BESIDE THE MODEL LIST RATHER THAN IN ITS OWN SETTINGS SCREEN
  *
@@ -22,13 +22,16 @@
  * whether somebody is signed in and what their balance is, which is everything it needs to render
  * and nothing worth stealing.
  *
- * THE BUY BUTTON DOES NOT NAVIGATE
+ * BUYING AND HISTORY MOVED TO `/account/credits`
  *
- * It asks main to start a purchase, and main opens the browser after checking the URL it got back
- * is https. A renderer that could hand a URL to `shell.openExternal` could launch anything the
- * operating system has a handler for.
+ * This card carried the pack buttons, the voucher box and a purchase notice, which made it a second
+ * and worse credits page: no history, no wait for the payment to clear, and a form squeezed beside a
+ * model list. The question here is "can I use the VoidCode model?", which a figure and a link
+ * answer. The question on that page is "what did I buy and what did it cost?", which needs a table.
+ * Two surfaces, one each, instead of one surface doing both jobs badly.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Pill } from "@/components/ui/Pill";
 import { useAccount } from "@/lib/account/AccountProvider";
 
@@ -36,13 +39,6 @@ interface Balance {
   availableCredits: number;
   reservedMicro: number;
   estimatedMinutes?: number;
-}
-
-interface Pack {
-  code: string;
-  label: string;
-  priceDisplay: string;
-  credits: number;
 }
 
 /** Minutes in whatever unit a person would say. Mirrors the web app's wording exactly. */
@@ -54,84 +50,29 @@ function formatGenerationTime(minutes: number): string {
 }
 
 export default function VoidCodeAccount() {
+  const router = useRouter();
   const { state, available, openSignIn } = useAccount();
   const signedIn = state === null ? null : state.signedIn;
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
-  const [packs, setPacks] = useState<Pack[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [voucher, setVoucher] = useState("");
-  const [redeeming, setRedeeming] = useState(false);
 
   const host = () => window.host as NonNullable<Window["host"]>;
 
-  // Signed out, nothing is fetched: the balance and the pack list are both account calls, and a
-  // signed-out launch makes no request to our server at all.
+  // Signed out, nothing is fetched: the balance is an account call, and a signed-out launch makes
+  // no request to our server at all.
   const refresh = useCallback(async () => {
     if (!signedIn) {
       setBalance(null);
-      setPacks([]);
       return;
     }
-    const [credits, packList] = await Promise.all([
-      host().voidcode.credits(),
-      host().voidcode.packs(),
-    ]);
+    const credits = await host().voidcode.credits();
     setBalance(credits.ok ? credits.balance : null);
     setError(credits.ok ? null : credits.message);
-    setPacks(packList.packs);
   }, [signedIn]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function redeem(event: React.FormEvent) {
-    event.preventDefault();
-    const code = voucher.trim();
-    if (code === "") return;
-
-    setRedeeming(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await host().voidcode.redeem({ code });
-      if (!result.ok) {
-        // The server's wording, not ours. It tells "already redeemed" apart from "not valid",
-        // and a second click is the commonest way to get here.
-        setError(result.message);
-        return;
-      }
-      // Cleared only on success. A rejected code stays in the box so a typo can be corrected
-      // rather than retyped off a piece of paper.
-      setVoucher("");
-      setNotice(`Added ${result.credits.toLocaleString()} credits.`);
-      await refresh();
-    } finally {
-      setRedeeming(false);
-    }
-  }
-
-  async function buy(packCode: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await host().voidcode.checkout({ packCode });
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      // The purchase completes in a browser and the credit arrives by webhook, so there is nothing
-      // to await here. Saying so is better than a spinner that resolves on nothing.
-      setNotice(
-        "Your browser is open to finish the payment. Credit appears here once it clears — "
-          + "you can close that tab when you are done.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
 
   // Outside the desktop app there is no account to show; before main answers there is nothing yet.
   if (!available || signedIn === null) return null;
@@ -176,53 +117,32 @@ export default function VoidCodeAccount() {
 
           {typeof balance?.estimatedMinutes === "number" && (
             // "Answer generation", not "tutoring": credit is spent while the model is writing, so
-            // a long study session might be three minutes of this. The web app says it the same
-            // way, and for the same reason.
+            // a long study session might be three minutes of this. `CreditsClient` words it
+            // identically, and for the same reason.
             <p className="mt-1 text-xs text-ink-3">
               about {formatGenerationTime(balance.estimatedMinutes)} of answer generation, at
               today&apos;s rate
             </p>
           )}
 
-          {packs.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {packs.map((pack) => (
-                <button
-                  key={pack.code}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void buy(pack.code)}
-                  className="rounded border border-line px-3 py-2 text-left text-sm transition-colors hover:border-ink-3 disabled:opacity-50"
-                >
-                  <span className="block text-ink">{pack.credits.toLocaleString()} credits</span>
-                  <span className="block text-xs text-ink-3">{pack.priceDisplay}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <form onSubmit={(e) => void redeem(e)} className="mt-4 flex items-center gap-2">
-            <input
-              type="text"
-              value={voucher}
-              onChange={(e) => setVoucher(e.target.value)}
-              placeholder="Voucher code"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              className="min-w-0 flex-1 rounded border border-line bg-transparent px-3 py-1.5 font-mono text-xs text-ink"
-            />
-            <button
-              type="submit"
-              disabled={redeeming || voucher.trim() === ""}
-              className="rounded border border-line px-3 py-1.5 text-xs text-ink transition-colors hover:border-ink-3 disabled:opacity-40"
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Pill
+              variant="solid"
+              size="sm"
+              type="button"
+              onClick={() => router.push("/account/credits")}
             >
-              {redeeming ? "Redeeming..." : "Redeem"}
-            </button>
-          </form>
-
-          {notice !== null && <p className="mt-3 text-xs text-ink-2">{notice}</p>}
+              Buy credits
+            </Pill>
+            <Pill
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => router.push("/account/credits")}
+            >
+              History
+            </Pill>
+          </div>
         </div>
       )}
 

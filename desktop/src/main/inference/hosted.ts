@@ -10,13 +10,26 @@
  * The desktop app is local-first and must keep working with no network and no account, so these
  * return a shaped failure rather than throwing into a renderer that has no way to recover.
  */
+import type { LedgerEntry } from "../../shared/credits.js";
 import { apiCall } from "../platform/http.js";
+
+export type { LedgerEntry };
 
 export interface CreditBalance {
   availableCredits: number;
   reservedMicro: number;
   estimatedMinutes?: number;
   rateMicroPerSlotSecond?: number;
+  /**
+   * The wallet total, held credit included. The API has always returned it; it was not declared
+   * here because nothing read it.
+   *
+   * It is the RIGHT signal for "has the payment landed", and `availableCredits` is the wrong one:
+   * available is balance minus what in-flight requests hold, so a question answered while a
+   * purchase settles can leave available unchanged or lower even though the money arrived. Micro,
+   * not whole credits, because a small pack can be worth less than one whole credit of movement.
+   */
+  balanceMicro?: number;
 }
 
 export async function credits(): Promise<
@@ -46,6 +59,33 @@ export async function packs(): Promise<CreditPack[]> {
     return ((body as { packs?: CreditPack[] } | null)?.packs ?? []);
   } catch {
     return [];
+  }
+}
+
+
+/**
+ * The most recent movements, newest first.
+ *
+ * ORDERED AND BOUNDED BY THE SERVER. The rows come back ordered by the ledger's own id rather than
+ * by a timestamp, because two rows written in one transaction share a `created_at` to the
+ * microsecond; re-sorting them here by date would undo that. The limit is clamped server-side too,
+ * so this is a request rather than a promise.
+ *
+ * NO FILTERING HERE. A `hold` and a `release` move credit between available and reserved without
+ * changing the balance, so both carry an amount of zero; whether to show them is a question about
+ * what a reader is looking at, and it is answered in the component that draws the table.
+ */
+export async function ledger(
+  limit: number,
+): Promise<{ ok: true; entries: LedgerEntry[] } | { ok: false; message: string }> {
+  try {
+    const { status, body } = await apiCall(`/credits/ledger?limit=${String(limit)}`, { auth: true });
+    if (status === 401) return { ok: false, message: "Sign in to see your history." };
+    if (status !== 200) return { ok: false, message: "Could not read your history." };
+    const entries = (body as { entries?: LedgerEntry[] } | null)?.entries;
+    return { ok: true, entries: Array.isArray(entries) ? entries : [] };
+  } catch {
+    return { ok: false, message: "Could not reach VoidCode." };
   }
 }
 

@@ -446,6 +446,9 @@ async function runSmokeChecks(window: Electron.BrowserWindow): Promise<void> {
   failures.push(...(await runRestrictedWindowSmoke()));
   failures.push(...(await runTransportSmoke(window)));
   failures.push(...(await runSignedOutSmoke(window)));
+  // AFTER the signed-out check, never before: that one asserts a count of zero requests, and
+  // this one deliberately puts a session in place.
+  failures.push(...(await runSignedInSmoke(window)));
   failures.push(...(await runBuildSmoke()));
 
   if (failures.length > 0) {
@@ -586,6 +589,226 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  return failures;
+}
+
+/**
+ * Signed in, against a stand-in API: the account and credits pages, rendered and photographed.
+ *
+ * WHY THIS EXISTS AS A SMOKE AND NOT AS A UNIT TEST. The credits page is a balance, a pack list, a
+ * voucher form and a table of movements, and every one of those is a round trip: renderer to IPC to
+ * main to HTTP and back. The unit tests cover each leg; nothing else covers them composed, with a
+ * real session token in the real credential store and a real Next bundle doing the rendering. Two
+ * bugs of this shape a unit test cannot catch: a channel that answers correctly beside a component
+ * that reads the wrong field off it, and a table that is in the DOM with no height.
+ *
+ * `/account` is captured here too, signed in, because its sign-in methods list exists only in that
+ * state — the signed-out screenshots cannot reach it at all.
+ *
+ * THE API IS A LOOPBACK SERVER WITH FIXED ANSWERS. No Postgres, no Stripe, no payment: the point is
+ * what the application does with a wallet, and fixing the figures is what lets the assertions below
+ * name them.
+ */
+async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[]> {
+  const failures: string[] = [];
+
+  // Chosen to be checkable on sight: one grant of 1,200 credits and three charges of 0.02, plus a
+  // hold and a release that must NOT appear as rows.
+  const LEDGER = [
+    { id: 106, type: "release", amountMicro: 0, balanceAfterMicro: 1_204_940_000, reservationId: "r-3", createdAt: "2026-09-18T09:05:00+00:00" },
+    { id: 105, type: "charge", amountMicro: -20_000, balanceAfterMicro: 1_204_940_000, reservationId: "r-3", createdAt: "2026-09-18T09:05:00+00:00" },
+    { id: 104, type: "hold", amountMicro: 0, balanceAfterMicro: 1_204_960_000, reservationId: "r-3", createdAt: "2026-09-18T09:04:00+00:00" },
+    { id: 103, type: "charge", amountMicro: -20_000, balanceAfterMicro: 1_204_960_000, reservationId: "r-2", createdAt: "2026-09-18T08:30:00+00:00" },
+    { id: 102, type: "charge", amountMicro: -20_000, balanceAfterMicro: 1_204_980_000, reservationId: "r-1", createdAt: "2026-09-17T21:12:00+00:00" },
+    { id: 101, type: "grant", amountMicro: 1_200_000_000, balanceAfterMicro: 1_205_000_000, reservationId: null, createdAt: "2026-09-17T20:58:00+00:00" },
+  ];
+  /** Movements only: a hold and a release change no balance, so the page must not list them. */
+  const MOVEMENTS = LEDGER.filter((row) => row.amountMicro !== 0).length;
+
+  const server = createServer((request, response) => {
+    const route = (request.url ?? "").split("?")[0] ?? "";
+    const send = (body: unknown, status = 200): void => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify(body));
+    };
+    if (route === "/v1/auth/me") {
+      send({
+        id: "u-smoke",
+        email: "learner@example.test",
+        name: "Smoke Learner",
+        has_password: true,
+        email_verified: true,
+        providers: [],
+        created_at: "2026-09-01T00:00:00Z",
+      });
+    } else if (route === "/v1/credits") {
+      send({
+        balanceMicro: 1_204_940_000,
+        reservedMicro: 0,
+        availableMicro: 1_204_940_000,
+        availableCredits: 1204,
+        estimatedMinutes: 120,
+        rateMicroPerSlotSecond: 1000,
+      });
+    } else if (route === "/v1/credits/packs") {
+      send({
+        packs: [
+          { code: "my-starter-20", label: "Starter", priceDisplay: "RM20.00", credits: 1200 },
+          { code: "my-regular-50", label: "Regular", priceDisplay: "RM50.00", credits: 3300 },
+          { code: "my-heavy-100", label: "Heavy", priceDisplay: "RM100.00", credits: 7000 },
+        ],
+      });
+    } else if (route === "/v1/credits/ledger") {
+      send({ entries: LEDGER });
+    } else {
+      send({ detail: "not part of this smoke" }, 404);
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+
+  const previousApi = process.env.VOIDCODE_API_URL;
+  const previousToken = process.env.VOIDCODE_DEV_SESSION_TOKEN;
+  process.env.VOIDCODE_API_URL = `http://127.0.0.1:${port}/v1`;
+  // The development session path, which exists for exactly this: a token main will present without
+  // one having been minted by a real sign-in. Honoured only in an unpackaged build.
+  process.env.VOIDCODE_DEV_SESSION_TOKEN = "smoke-session-token";
+
+  const shots = process.env.VOIDCODE_SMOKE_SHOTS;
+
+  try {
+    /**
+     * A per-route readiness test, because the two pages show different things.
+     *
+     * The first version waited for the signed-in email on both, which `/account/credits` does not
+     * display at all -- it names a balance, not a person. The wait timed out and the smoke reported
+     * "never showed the signed-in account" for a page that had rendered perfectly.
+     */
+    for (const [name, route, ready] of [
+      ["account-signed-in", "/account", '(document.querySelector("main")?.innerText ?? "").includes("learner@example.test")'],
+      ["credits", "/account/credits", 'document.querySelectorAll("tbody tr").length > 0'],
+    ] as const) {
+      const consoleErrors: string[] = [];
+      const onConsole = (event: { level: string; message: string }) => {
+        if (event.level === "error") consoleErrors.push(event.message);
+      };
+      window.webContents.on("console-message", onConsole);
+
+      await window.loadURL(`${APP_ORIGIN}${route}`);
+      const painted = await waitFor(window, ready);
+      // The wallet arrives after first paint, so give the fetches and the re-render a moment.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      window.webContents.off("console-message", onConsole);
+
+      if (!painted) failures.push(`signed-in/${name} never rendered what it fetched: ${ready}`);
+      for (const message of consoleErrors.slice(0, 3)) {
+        failures.push(`signed-in/${name} console error: ${message}`);
+      }
+
+      if (shots !== undefined) {
+        const { writeFile } = await import("node:fs/promises");
+        const image = await window.webContents.capturePage();
+        await writeFile(`${shots}/${name}.png`, image.toPNG());
+      }
+    }
+
+    /**
+     * What the credits page made of that wallet.
+     *
+     * EVERY BACKSLASH IN THE SCRIPT BELOW IS DOUBLED. It is built as a template literal, and a
+     * template literal drops an unrecognised escape -- so a regex written with one backslash
+     * reaches the page with none. The whitespace collapse became /s+/g, which replaced every
+     * letter s on the page with a space and reported "All 4 movement ." as a missing footer.
+     *
+     * Read out of the rendered DOM rather than checked against the component's props, because the
+     * failure being looked for is a component reading the wrong field off a correct answer, and
+     * only the rendered figure can show that.
+     */
+    const rendered = (await window.webContents.executeJavaScript(`
+      (() => {
+        const text = document.querySelector("main")?.innerText ?? "";
+        const rows = Array.from(document.querySelectorAll("tbody tr"));
+        const table = document.querySelector("table");
+        const cell = (row, n) => row.children[n]?.textContent?.trim() ?? "";
+        return {
+          balanceShown: text.includes("1,204"),
+          rows: rows.length,
+          words: Array.from(new Set(rows.map((r) => cell(r, 1)))).sort(),
+          amounts: rows.map((r) => cell(r, 2)),
+          packs: Array.from(document.querySelectorAll("button"))
+            .filter((b) => /RM\\d/.test(b.textContent ?? "")).length,
+          voucher: document.querySelector("#voucher") !== null,
+          footer: text.replace(/\\s+/g, " "),
+          tableHeight: table === null ? 0 : Math.round(table.getBoundingClientRect().height),
+        };
+      })()
+    `)) as {
+      balanceShown: boolean;
+      rows: number;
+      words: string[];
+      amounts: string[];
+      packs: number;
+      voucher: boolean;
+      footer: string;
+      tableHeight: number;
+    };
+
+    if (!rendered.balanceShown) failures.push("credits: the available balance is not on the page");
+    if (rendered.rows !== MOVEMENTS) {
+      failures.push(
+        `credits: ${rendered.rows} history rows for ${MOVEMENTS} movements — a hold or a release is being listed`
+      );
+    }
+    // The ledger's own vocabulary must not reach a column headed "What".
+    for (const word of rendered.words) {
+      if (word === "charge" || word === "grant" || word === "") {
+        failures.push(`credits: a history row says ${JSON.stringify(word)} under "What"`);
+      }
+    }
+    if (!rendered.amounts.includes("+1,200")) {
+      failures.push(`credits: no +1,200 purchase row; amounts were ${JSON.stringify(rendered.amounts)}`);
+    }
+    if (!rendered.amounts.includes("-0.02")) {
+      failures.push(`credits: no -0.02 charge row; amounts were ${JSON.stringify(rendered.amounts)}`);
+    }
+    if (rendered.packs !== 3) failures.push(`credits: ${rendered.packs} packs offered, expected 3`);
+    if (!rendered.voucher) failures.push("credits: no voucher field");
+    /**
+     * The footer counts MOVEMENTS and says whether that is all of them.
+     *
+     * Six ledger rows came back against a limit of fifty, so this history is complete and the page
+     * must say "All 4 movements" rather than "the 4 movements in your last 50 ledger entries" --
+     * which would invite the reader to wonder what the other forty-six were. There were none.
+     */
+    if (!rendered.footer.includes("All 4 movements.")) {
+      failures.push(
+        "credits: the history footer does not say the four movements are all of them; page text was "
+          + JSON.stringify(rendered.footer.slice(-400))
+      );
+    }
+    if (!rendered.footer.includes("Holds and releases aren")) {
+      failures.push("credits: the page does not explain the entries it leaves out");
+    }
+    // Content in the DOM is not content on screen.
+    if (rendered.tableHeight < 80) {
+      failures.push(`credits: the history table is ${rendered.tableHeight}px tall`);
+    }
+
+    if (failures.length === 0) {
+      console.log(
+        `[smoke] signed in: /account and /account/credits rendered; ${rendered.rows} movements shown, `
+          + `holds and releases filtered, ${rendered.packs} packs offered`
+      );
+    }
+  } catch (err) {
+    failures.push(`signed-in smoke threw: ${(err as Error).message}`);
+  } finally {
+    if (previousApi === undefined) delete process.env.VOIDCODE_API_URL;
+    else process.env.VOIDCODE_API_URL = previousApi;
+    if (previousToken === undefined) delete process.env.VOIDCODE_DEV_SESSION_TOKEN;
+    else process.env.VOIDCODE_DEV_SESSION_TOKEN = previousToken;
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   return failures;

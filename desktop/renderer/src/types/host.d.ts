@@ -147,6 +147,13 @@ interface VoidCodeHost {
             reservedMicro: number;
             estimatedMinutes?: number;
             rateMicroPerSlotSecond?: number;
+            /**
+             * The wallet total, held credit included — and the right signal for "has a payment
+             * landed". `availableCredits` is the wrong one: available is balance minus what
+             * in-flight requests hold, so a question answered while a purchase settles can leave
+             * it unchanged.
+             */
+            balanceMicro?: number;
           };
         }
       | { ok: false; message: string }
@@ -154,6 +161,17 @@ interface VoidCodeHost {
     packs(): Promise<{
       packs: Array<{ code: string; label: string; priceDisplay: string; credits: number }>;
     }>;
+    /**
+     * The most recent movements of credit, newest first, bounded at 200.
+     *
+     * A `hold` and a `release` carry an amount of zero: they move credit between available and
+     * reserved without changing the balance. Whether to show them is the reader's question, not
+     * the transport's — `CreditsClient` decides.
+     */
+    ledger(input: { limit?: number }): Promise<
+      | { ok: true; entries: HostLedgerEntry[] }
+      | { ok: false; message: string }
+    >;
     /**
      * Start a purchase. Resolves once main has opened the browser.
      *
@@ -1162,6 +1180,15 @@ interface HostSignedIn {
    */
   passwordCleared: boolean;
 }
+
+/**
+ * A ledger row. One declaration, in `src/shared/credits.ts`, because main parses this shape and the
+ * renderer both renders it and decides from it whether a payment has landed.
+ *
+ * An inline `import(...)` type, like `onPreviewChanged` above: a top-level import would make this
+ * file a module and `window.host` would lose its type everywhere at once.
+ */
+type HostLedgerEntry = import("@shared/credits").LedgerEntry;
 
 type HostProviderId = "google" | "microsoft";
 

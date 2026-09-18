@@ -190,6 +190,19 @@ export const CHANNELS = {
   "voidcode:credits": { input: z.undefined(), modes: BOTH },
   "voidcode:packs": { input: z.undefined(), modes: BOTH },
   /**
+   * The most recent movements of credit, newest first.
+   *
+   * `limit` is optional with a server default of 50, and bounded here at the same 200 the API
+   * clamps to — so an absurd value is refused at the boundary rather than quietly reinterpreted
+   * two processes later, and the two numbers cannot drift apart unnoticed.
+   *
+   * A read of the caller's own wallet: it names no user, because the session does.
+   */
+  "voidcode:ledger": {
+    input: z.object({ limit: z.number().int().min(1).max(200).optional() }),
+    modes: BOTH,
+  },
+  /**
    * Start a purchase. Returns nothing useful to the renderer on purpose: main opens the buyer's
    * browser itself, so a compromised renderer cannot use this to navigate a person anywhere.
    */

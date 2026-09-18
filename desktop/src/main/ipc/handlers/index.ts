@@ -1311,6 +1311,8 @@ export function registerHandlers(): void {
 
   setHandler("voidcode:packs", async () => ({ packs: await hosted.packs() }));
 
+  setHandler("voidcode:ledger", async (input) => hosted.ledger(input.limit ?? 50));
+
   setHandler("voidcode:redeem", async (input) => hosted.redeemVoucher(input.code.trim()));
 
   setHandler("voidcode:checkout", async (input) => {
