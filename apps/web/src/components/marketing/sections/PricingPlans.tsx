@@ -128,7 +128,7 @@ export function PricingPlans() {
 
                 <div className="mt-8 border-t border-line pt-7">
                   <Pill href="/download" variant="solid" size="lg">
-                    Download
+                    Start Now!
                   </Pill>
                 </div>
               </div>

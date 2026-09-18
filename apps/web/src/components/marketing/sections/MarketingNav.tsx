@@ -162,7 +162,7 @@ export function MarketingNav() {
 
         <div className="flex flex-none items-center gap-2">
           <Pill href="/download" variant="solid" size="sm">
-            Download
+            Start Now!
           </Pill>
           {/* Links are passed down rather than imported by MobileMenu, which
               would make the two modules circular. */}
@@ -171,7 +171,7 @@ export function MarketingNav() {
             actions={
               <>
                 <Pill href="/download" variant="solid" size="lg">
-                  Download
+                  Start Now!
                 </Pill>
               </>
             }

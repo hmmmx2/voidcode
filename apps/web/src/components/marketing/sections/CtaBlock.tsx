@@ -24,7 +24,7 @@ export function CtaBlock() {
             </p>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
               <Pill href="/download" variant="solid" size="lg">
-                Download
+                Start Now!
               </Pill>
               <Pill href="#how" variant="ghost" size="lg">
                 See how it works
