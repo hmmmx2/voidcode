@@ -483,6 +483,19 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
   const { port } = server.address() as AddressInfo;
   const previous = process.env.VOIDCODE_API_URL;
   process.env.VOIDCODE_API_URL = `http://127.0.0.1:${port}/v1`;
+  /**
+   * Cleared for the duration, and not merely assumed absent.
+   *
+   * With a client id configured, the provider check below would open a REAL browser at a REAL
+   * consent screen on whatever machine runs the smoke. A developer who has these set to drive the
+   * flow by hand would otherwise get a browser window every time they ran `npm run smoke`.
+   */
+  const previousClientIds = {
+    google: process.env.VOIDCODE_GOOGLE_CLIENT_ID,
+    microsoft: process.env.VOIDCODE_MICROSOFT_CLIENT_ID,
+  };
+  delete process.env.VOIDCODE_GOOGLE_CLIENT_ID;
+  delete process.env.VOIDCODE_MICROSOFT_CLIENT_ID;
 
   try {
     await window.loadURL(`${APP_ORIGIN}/models`);
@@ -514,6 +527,45 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
       failures.push(`signed-out: the app contacted the API ${hits.length} time(s) with nobody signed in: ${hits.join(", ")}`);
     }
 
+    /**
+     * A BUILD WITH NO PROVIDER REGISTRATION CANNOT BE MADE TO OPEN A BROWSER.
+     *
+     * This is a fork's configuration, and the one this smoke runs in: no client ids, so both
+     * providers report unavailable and the renderer draws no buttons. The assertion is what happens
+     * when the channel is called anyway — `not_configured`, with nothing opened and nothing sent.
+     *
+     * Checked here rather than only in unit tests because `account:signInOAuth` is the single path
+     * from a renderer to `shell.openExternal` in this application, and the unit tests call the
+     * module directly. This calls it the way a renderer does, through the broker and its schema.
+     */
+    const oauth = (await window.webContents.executeJavaScript(`
+      (async () => {
+        const listed = await window.host.account.providers();
+        const refused = await window.host.account.signInOAuth({ provider: "google", mode: "signIn" });
+        const cancelled = await window.host.account.cancelOAuth();
+        return {
+          providers: listed.providers.map((p) => p.id + ":" + String(p.configured)),
+          timeoutSeconds: listed.timeoutSeconds,
+          code: refused.ok === true ? "signed-in!" : refused.code,
+          cancelled: cancelled.ok === true,
+        };
+      })()
+    `)) as { providers: string[]; timeoutSeconds: number; code: string; cancelled: boolean };
+
+    if (oauth.providers.join(",") !== "google:false,microsoft:false") {
+      failures.push(`signed-out: expected no configured provider, got [${oauth.providers.join(", ")}]`);
+    }
+    if (oauth.code !== "not_configured") {
+      failures.push(`signed-out: signInOAuth answered ${oauth.code} in a build with no client id`);
+    }
+    if (oauth.timeoutSeconds !== 300) {
+      failures.push(`signed-out: the dialog would count down ${oauth.timeoutSeconds}s, not 300s`);
+    }
+    if (!oauth.cancelled) failures.push("signed-out: cancelOAuth did not answer");
+    if (hits.length !== 0) {
+      failures.push(`signed-out: the provider channels contacted the API: ${hits.join(", ")}`);
+    }
+
     // Positive control: an explicit sign-in is the first request, and it arrives.
     const signIn = (await window.webContents.executeJavaScript(
       `window.host.account.signInPassword({ email: "smoke@example.com", password: "not-a-real-password" })`
@@ -529,6 +581,11 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
   } finally {
     if (previous === undefined) delete process.env.VOIDCODE_API_URL;
     else process.env.VOIDCODE_API_URL = previous;
+    for (const [provider, value] of Object.entries(previousClientIds)) {
+      const name = provider === "google" ? "VOIDCODE_GOOGLE_CLIENT_ID" : "VOIDCODE_MICROSOFT_CLIENT_ID";
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   return failures;

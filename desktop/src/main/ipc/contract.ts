@@ -155,6 +155,38 @@ export const CHANNELS = {
   "account:signOut": { input: z.undefined(), modes: BOTH },
   "account:signOutEverywhere": { input: z.undefined(), modes: BOTH },
 
+  // ── Google and Microsoft ──────────────────────────────────────────────────
+  //
+  // THE RENDERER NAMES A PROVIDER AND NEVER AN ADDRESS. `signInOAuth` takes two enums, so the set of
+  // addresses this channel can cause to be opened in the person's browser is two constants in
+  // `account/providers.ts`. A `url` field here — or a `scope`, or a `redirectUri` — would turn the
+  // one call in this application that reaches `shell.openExternal` into one a compromised renderer
+  // could aim anywhere, which is precisely what the generated preload exists to prevent.
+  //
+  // No credential crosses these either: the authorization code is received by a listener in main and
+  // relayed to our API from there, and what comes back is a session stored in the OS keychain.
+
+  /** The two providers and whether this build has a client id for each. Build config only, no network. */
+  "account:providers": { input: z.undefined(), modes: BOTH },
+  /**
+   * Open the browser and wait. `mode: "link"` attaches the provider to the session already signed
+   * in; `"signIn"` signs in, creating the account if the provider vouches for the address.
+   *
+   * This one call can stay open for five minutes, which is deliberate — it is a person reading a
+   * consent screen. Its handler cancels the flow if the window that asked goes away.
+   */
+  "account:signInOAuth": {
+    input: z.object({
+      provider: z.enum(["google", "microsoft"]),
+      mode: z.enum(["signIn", "link"]),
+    }),
+    modes: BOTH,
+  },
+  /** Stop waiting on the browser. The listener closes and its port is released. */
+  "account:cancelOAuth": { input: z.undefined(), modes: BOTH },
+  /** Reopen the browser at the sign-in already in progress — for a tab closed by accident. */
+  "account:reopenOAuth": { input: z.undefined(), modes: BOTH },
+
   "voidcode:credits": { input: z.undefined(), modes: BOTH },
   "voidcode:packs": { input: z.undefined(), modes: BOTH },
   /**

@@ -453,7 +453,16 @@ describe("the mode reaches main from the composer", () => {
     expect(read("renderer/src/components/Build/AssistantPanel.tsx")).toContain(
       "SELECTABLE_MODES.map"
     );
-    expect(read("src/main/ipc/contract.ts")).not.toMatch(/mode:\s*z\.enum\(\[/);
+    /**
+     * NARROWED FROM `/mode:\s*z\.enum\(\[/`, which was every inline `mode` enum in the contract
+     * and not only this one. `account:signInOAuth` declares `mode: z.enum(["signIn", "link"])` —
+     * a different `mode`, about which browser flow to run, with no `SELECTABLE_MODES` to be built
+     * from and nothing in the renderer to agree with. The failure being guarded against is a
+     * hand-written list of the AGENT modes, so the agent modes are what this looks for.
+     */
+    expect(read("src/main/ipc/contract.ts")).not.toMatch(
+      /z\.enum\(\[\s*"(plan|manual|acceptEdits)"/
+    );
   });
 
   it("keeps the window mode and the agent mode distinguishable in main", () => {

@@ -109,7 +109,14 @@ describe("signed out, nothing reaches the server", () => {
 
     const result = await password.signInPassword("learner@example.com", "a long enough password");
 
-    expect(result).toEqual({ ok: true, user: { id: ME.id, email: ME.email, name: ME.name } });
+    // `created` and `passwordCleared` come from the session response and are always present — see
+    // `account/outcomes.ts`. A password sign-in to an existing account is false for both.
+    expect(result).toEqual({
+      ok: true,
+      user: { id: ME.id, email: ME.email, name: ME.name },
+      created: false,
+      passwordCleared: false,
+    });
     expect(calls[0]?.url).toBe("http://127.0.0.1:59999/v1/auth/desktop/session");
     expect(calls[0]?.authorization).toBeUndefined();
     expect(secretValue("voidcode")).toBe("tok-1");

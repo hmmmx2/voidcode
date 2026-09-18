@@ -206,9 +206,13 @@ const SECTIONS: Section[] = [
             touches your local work.
           </li>
           <li>
-            <strong className="text-ink-2">Your sign-in.</strong> Keep your password to yourself. If you
-            think someone else has it, change it from the Account page, which signs out every other
-            device, or use &ldquo;Sign out of all devices&rdquo;.
+            <strong className="text-ink-2">Your sign-in.</strong> An account can be signed in to with
+            an email address and password, or with a Google or Microsoft account you connect to it —
+            so whoever can sign in to that account can sign in to this one, and keeping it secure
+            keeps this one secure. Keep your password to yourself; if you think someone else has it,
+            change it from the Account page, which signs out every other device, or use
+            &ldquo;Sign out of all devices&rdquo;. An account created with Google or Microsoft has no
+            password at all until you set one, from the same page.
           </li>
           <li>
             <strong className="text-ink-2">Credits.</strong> The VoidCode model is metered by the time
@@ -380,7 +384,7 @@ export default function TermsClient() {
             <span className="text-[11px] text-ink-3/60">Last updated</span>
             {/* Moves with the substance, as section 8 says — and is TERMS_VERSION in `src/shared/legal.ts`,
                 which registration records as the version accepted. honest-copy.test.ts pins the two. */}
-            <span className="text-[12px] text-ink-2 font-medium">17 September 2026</span>
+            <span className="text-[12px] text-ink-2 font-medium">18 September 2026</span>
           </div>
         </div>
 

@@ -8,7 +8,7 @@
  *
  * Shared by main (which sends it) and the renderer (which shows the date), so there is one value.
  */
-export const TERMS_VERSION = "2026-09-17";
+export const TERMS_VERSION = "2026-09-18";
 
 /** The same date as the documents print it. */
-export const TERMS_DISPLAY_DATE = "17 September 2026";
+export const TERMS_DISPLAY_DATE = "18 September 2026";

@@ -24,8 +24,12 @@ import { FormError } from "@/components/Account/FormError";
 import { StrengthMeter } from "@/components/Account/StrengthMeter";
 import { useAccount } from "@/lib/account/AccountProvider";
 import { validatePassword } from "@/lib/account/validation";
-
-const PROVIDER_LABELS: Record<string, string> = { google: "Google", microsoft: "Microsoft" };
+import {
+  ProviderError,
+  ProviderMonogram,
+  ProviderWaiting,
+  useProviderSignIn,
+} from "@/components/Account/ProviderSignIn";
 
 /** How long "Send a new code" stays disabled. Matches the sign-in dialog. */
 const RESEND_COOLDOWN_S = 60;
@@ -113,14 +117,6 @@ export default function AccountClient() {
                 {user.emailVerified ? "Verified" : "Not verified"}
               </Badge>
             </dd>
-            <dt className="text-ink-3">Signs in with</dt>
-            <dd className="flex flex-wrap gap-2">
-              {user.hasPassword && <Badge>Password</Badge>}
-              {user.providers.map((p) => (
-                <Badge key={p}>{PROVIDER_LABELS[p] ?? p}</Badge>
-              ))}
-              {!user.hasPassword && user.providers.length === 0 && <span className="text-ink-3">—</span>}
-            </dd>
           </dl>
         )}
         <p className="mt-5 text-xs leading-relaxed text-ink-3">
@@ -128,6 +124,12 @@ export default function AccountClient() {
           account.
         </p>
       </Section>
+
+      {user !== null && (
+        <Section title="Sign-in methods">
+          <SignInMethods user={user} />
+        </Section>
+      )}
 
       {user !== null && (
         <Section title={user.hasPassword ? "Change password" : "Set a password"}>
@@ -172,6 +174,89 @@ function Notice({ children }: { children: React.ReactNode }) {
   return (
     <div role="status" className="rounded-xl border border-line-strong bg-void-2 px-4 py-3 text-sm text-ink-2">
       {children}
+    </div>
+  );
+}
+
+// ── Which ways this account can be signed in to ──────────────────────────────
+
+/**
+ * Password, Google and Microsoft, with what each one currently is.
+ *
+ * WHY THE THREE ARE LISTED TOGETHER. They are alternatives, and the thing a person comes here to
+ * find out is how many they have — an account with one way in is an account they can be locked out
+ * of. A bare row of badges said what was connected and gave no way to change it; the second column
+ * is the point of the list.
+ *
+ * CONNECTING RUNS THE SAME FLOW AS SIGNING IN, in `mode: "link"`, so the provider is asked to
+ * confirm the address rather than this application asserting it. That is what stops "connect
+ * Google" from being a way to attach somebody else's address to your own account.
+ *
+ * A PROVIDER THIS BUILD HAS NO CLIENT ID FOR SAYS SO. Here, unlike the sign-in dialog, the row is
+ * kept and labelled: the question being asked on this page is "can I connect Google?", and the
+ * honest answer is "not in this build of VoidCode", not silence.
+ */
+function SignInMethods({ user }: { user: HostAccountUser }) {
+  const flow = useProviderSignIn({});
+  const connected = new Set(user.providers);
+
+  if (flow.waiting !== null) return <ProviderWaiting flow={flow} />;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <ProviderError flow={flow} />
+      <ul className="divide-y divide-line-strong rounded-xl border border-line-strong">
+        <li className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="flex items-center gap-3 text-sm text-ink">
+            <span
+              aria-hidden
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line-strong bg-void-2 text-[11px] font-semibold text-ink-2"
+            >
+              P
+            </span>
+            Password
+          </span>
+          {/* No button: the form for both cases is the next section down, always visible. */}
+          <Badge tone={user.hasPassword ? "strong" : "quiet"}>{user.hasPassword ? "Set" : "Not set"}</Badge>
+        </li>
+        {flow.offered !== null && flow.offered.length === 0 && connected.size === 0 && (
+          <li className="px-4 py-3 text-xs leading-relaxed text-ink-3">
+            Signing in with Google or Microsoft isn&apos;t set up in this build of VoidCode.
+          </li>
+        )}
+        {(flow.offered ?? []).map((provider) => (
+          <li key={provider.id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <span className="flex items-center gap-3 text-sm text-ink">
+              <ProviderMonogram provider={provider} />
+              {provider.label}
+            </span>
+            {connected.has(provider.id) ? (
+              <Badge tone="strong">Connected</Badge>
+            ) : (
+              <Pill size="sm" onClick={() => void flow.start(provider, "link")}>
+                Connect
+              </Pill>
+            )}
+          </li>
+        ))}
+        {/*
+          A provider already attached that this build can no longer offer — the client id was
+          changed or removed since. It stays on the account and still works elsewhere, so the row
+          has to appear, and there is nothing this build can do with it.
+        */}
+        {[...connected]
+          .filter((id) => !(flow.offered ?? []).some((provider) => provider.id === id))
+          .map((id) => (
+            <li key={id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm text-ink">{id === "google" ? "Google" : id === "microsoft" ? "Microsoft" : id}</span>
+              <Badge tone="strong">Connected</Badge>
+            </li>
+          ))}
+      </ul>
+      <p className="text-xs leading-relaxed text-ink-3">
+        Connecting an account lets you sign in with it. VoidCode never sees the password, and asks
+        only for your name and email address.
+      </p>
     </div>
   );
 }

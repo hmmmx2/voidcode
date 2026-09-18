@@ -74,8 +74,45 @@ export const safeStorage = {
   },
 };
 
-/** Shape-compatible enough for the registry, which only reads `id` and `once`. */
+/**
+ * Shape-compatible enough for the registry and the broker, which read `id` and subscribe to
+ * `destroyed`. `off` is optional because only the OAuth handler unsubscribes, and it does so
+ * defensively for exactly that reason.
+ */
 export interface WebContents {
   id: number;
   once(event: string, listener: () => void): void;
+  off?(event: string, listener: () => void): void;
 }
+
+/**
+ * `shell`, recorded rather than performed.
+ *
+ * The property under test is almost always *whether* a URL was opened and which one — "no browser
+ * was opened for a provider this build has no client id for" is an assertion about a call that must
+ * NOT happen, and a stub that threw could not tell that apart from one that was never reached.
+ *
+ * `__shell.fail` covers the other direction: on a machine with no registered browser, or a Linux
+ * box with no `xdg-open`, `openExternal` rejects — and a sign-in that cannot open a browser has to
+ * say so rather than wait five minutes for a redirect that can never arrive.
+ */
+export const __shell = {
+  opened: [] as string[],
+  fail: false,
+  reset(): void {
+    this.opened = [];
+    this.fail = false;
+  },
+  /** The last URL opened, parsed. Saves every caller writing `new URL(...)`. */
+  lastUrl(): URL | undefined {
+    const last = this.opened.at(-1);
+    return last === undefined ? undefined : new URL(last);
+  },
+};
+
+export const shell = {
+  async openExternal(url: string): Promise<void> {
+    if (__shell.fail) throw new Error("no application is registered to open that URL");
+    __shell.opened.push(url);
+  },
+};

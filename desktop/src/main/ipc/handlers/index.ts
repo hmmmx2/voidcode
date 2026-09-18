@@ -14,6 +14,8 @@ import path from "node:path";
 import { BrowserWindow, MessageChannelMain, app, dialog, shell } from "electron";
 import * as hosted from "../../inference/hosted.js";
 import * as password from "../../account/password.js";
+import * as oauth from "../../account/oauth.js";
+import { OAUTH_TIMEOUT_MS, providerStatuses } from "../../account/providers.js";
 import * as session from "../../account/session.js";
 import { checkedExternalUrl } from "../../net/external.js";
 import { write, logError } from "../../log.js";
@@ -1264,6 +1266,46 @@ export function registerHandlers(): void {
     return { ok: true as const };
   });
   setHandler("account:signOutEverywhere", async () => session.signOutEverywhere());
+
+  /**
+   * `timeoutSeconds` travels with the provider list so the dialog's "Waiting… 4:32" counts down the
+   * same five minutes main is actually waiting. Two constants would drift, and the visible symptom
+   * would be a counter that reaches zero while the sign-in still works — or worse, the reverse.
+   */
+  setHandler("account:providers", async () => ({
+    providers: providerStatuses(),
+    timeoutSeconds: Math.round(OAUTH_TIMEOUT_MS / 1000),
+  }));
+
+  setHandler("account:signInOAuth", async (input, ctx) => {
+    /**
+     * A sign-in can sit in the browser for five minutes, and the window that started it can be
+     * closed in that time. Left alone, the loopback listener would stay bound and a code arriving
+     * afterwards would be relayed on behalf of a window that no longer exists.
+     *
+     * `once` clears itself when the window goes; `off` clears it when the flow ends first, so a
+     * window someone signs in and out of repeatedly does not accumulate listeners. `cancel()` on a
+     * finished flow is a no-op, which is what makes the race between the two harmless.
+     */
+    const cancelOnClose = (): void => {
+      oauth.cancel();
+    };
+    ctx.sender.once("destroyed", cancelOnClose);
+    try {
+      return await oauth.signIn(input.provider, input.mode);
+    } finally {
+      try {
+        ctx.sender.off?.("destroyed", cancelOnClose);
+      } catch {
+        // The window is already gone — which is the case that fired the listener, and `once` has
+        // removed it. Letting this throw would replace the outcome with E_HANDLER_FAILED, addressed
+        // to a renderer that no longer exists.
+      }
+    }
+  });
+
+  setHandler("account:cancelOAuth", async () => oauth.cancel());
+  setHandler("account:reopenOAuth", async () => oauth.reopen());
 
   setHandler("voidcode:credits", async () => hosted.credits());
 

@@ -586,17 +586,69 @@ describe("the legal documents agree with the account code", () => {
     expect(fs.existsSync(path.join(root, "..", "apps/api/tests/test_prompts_are_not_logged.py"))).toBe(true);
   });
 
-  it("says Google and Microsoft sign-in is not offered only while it is not", () => {
-    // Phase 4 adds them; that change must rewrite section 11 rather than leave this sentence behind.
-    const offered = fs
-      .readdirSync(path.join(root, "src/main/account"))
-      .some((name) =>
-        /accounts\.google\.com|login\.microsoftonline\.com/.test(
-          readSource(path.join(root, "src/main/account", name), "utf8")
-        )
+  it("describes Google and Microsoft sign-in exactly while the code offers it", () => {
+    /**
+     * THIS ASSERTION USED TO RUN THE OTHER WAY, and swapping it round was the whole job of the
+     * change that added the two providers.
+     *
+     * It asserted that no file under `src/main/account` named either provider's host, and that the
+     * Policy said "does not offer sign-in with Microsoft or Google". Both were true, and the pair
+     * was the trip-wire: adding the hosts to `providers.ts` failed this test, which is what forced
+     * the Policy to be rewritten rather than left behind saying the opposite of what shipped.
+     *
+     * It is still a two-way pin, just pointed the other way — the sentence cannot come back while
+     * the hosts are there, and the description cannot be deleted while the buttons exist.
+     */
+    const accountDir = path.join(root, "src/main/account");
+    const hosts = fs
+      .readdirSync(accountDir)
+      .map((name) => readSource(path.join(accountDir, name), "utf8"))
+      .join(" ");
+    const offersGoogle = hosts.includes("accounts.google.com");
+    const offersMicrosoft = hosts.includes("login.microsoftonline.com");
+
+    expect(offersGoogle, "no file under src/main/account opens Google's authorize endpoint").toBe(true);
+    expect(offersMicrosoft, "no file under src/main/account opens Microsoft's authorize endpoint").toBe(true);
+
+    // The retired sentence, in either document. Banned here rather than in the phrase list above
+    // because it is conditional: it was true, and would be true again if the providers went.
+    for (const file of LEGAL_SOURCES) {
+      expect(legalText(file), `${file} still says provider sign-in is not offered`).not.toContain(
+        "does not offer sign-in"
       );
-    expect(offered).toBe(false);
-    expect(privacy).toContain("does not offer sign-in with Microsoft or Google");
+    }
+
+    // What has to be there instead. Each of these is a claim about the code below it, not a slogan.
+    expect(privacy, "the Policy does not say provider sign-in is optional").toContain(
+      "one of the ways to sign in, not a requirement"
+    );
+
+    const providers = code(readSource(path.join(accountDir, "providers.ts"), "utf8"));
+    // The scopes asked for are the claim "your name and email address, and nothing else".
+    expect(providers, "the scope asked for is no longer openid email profile").toContain(
+      "openid email profile"
+    );
+    expect(privacy).toContain("name and email address, and nothing else");
+
+    // No refresh token is requested, which is what "no standing permission" means.
+    expect(providers, "a provider scope now asks for offline access").not.toContain("offline_access");
+    expect(providers).not.toContain("access_type=offline");
+    expect(privacy).toContain("no standing permission");
+
+    // The browser is the person's own, which is the sentence about never seeing their password.
+    const oauth = code(readSource(path.join(accountDir, "oauth.ts"), "utf8"));
+    expect(oauth, "the flow no longer opens the system browser").toContain("shell.openExternal");
+    expect(privacy).toContain("not a window inside the application");
+
+    // The audit row section 6.1 describes, pinned to the columns that exist.
+    const identity = code(
+      readSource(path.join(root, "..", "apps/api/src/models/user_identity.py"), "utf8")
+    );
+    for (const column of ["subject", "tenant_id", "email_at_link", "email_trusted_at_link", "last_used_at"]) {
+      expect(identity, `user_identities has no ${column} column`).toContain(column);
+    }
+    expect(privacy).toContain("whether it confirmed");
+    expect(privacy).toContain("when it was last used to sign in");
   });
 });
 
