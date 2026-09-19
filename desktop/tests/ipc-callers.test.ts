@@ -13,10 +13,11 @@
  * recents submenu from the store directly (`menu.ts`) and never asks the renderer.
  *
  * FOUR LEFT BY BEING WIRED UP, which is the outcome this list was hoping for. `fs:save`,
- * `fs:saveAs` and `fs:confirmDiscard` were an editor surface designed, implemented to the IPC
- * layer and deliberately not shipped; the surface shipped, so they have callers and their entries
- * are gone. `lint:run` went the same way when the Problems pane came back. Deleting a line here to
- * record that something is now reachable is exactly the edit this file was built to invite.
+ * `fs:saveAs`, `fs:confirmDiscard` and `lint:run` were an editor surface designed, implemented to
+ * the IPC layer and deliberately not shipped — one of them a whole subsystem, `src/main/lint/`,
+ * with nothing to render into. The surface shipped, so all four have callers and none has an
+ * entry. Deleting a line here to record that something is now reachable is exactly the edit this
+ * file was built to invite.
  *
  * The rest are kept, and this file is where that is declared rather than discovered. The reasons
  * differ, and the difference is the whole point — three categories, only one of which was ever a
@@ -95,15 +96,12 @@ const EXPECTED: Record<string, string> = {
     that says what it now protects.
   */
 
-  /**
-   * Still here, and it is the last of the family. `src/main/lint/` is a complete subsystem —
-   * ruff, eslint and `tsc --noEmit`, chosen by extension, project-local binaries preferred — with
-   * nothing to render into. It was stranded for the same reason the save channels were: the
-   * surface that had a file open was gone. That surface is back and this one is next; deleting
-   * the channel in the meantime would strand the subsystem, which is a larger decision than a
-   * cleanup pass should make.
-   */
-  "lint:run": "the Problems pane is not wired up yet; deleting it would strand src/main/lint/",
+  /*
+    `lint:run` went the same way, one commit later. `src/main/lint/` is a complete subsystem —
+    ruff, eslint and `tsc --noEmit`, chosen by extension, project-local binaries preferred — that
+    was stranded for the same reason the save channels were: the surface that had a file open was
+    gone. The Problems pane reads it now.
+  */
 };
 
 /** Every channel the contract declares. */
@@ -223,8 +221,8 @@ describe("channels with no renderer caller", () => {
      * with its reason rather than discovered by a reader a year later.
      *
      * A **missing** entry means something here is now reachable, and the line should go. That is
-     * the edit `fs:save`, `fs:saveAs` and `fs:confirmDiscard` got when the save surface shipped,
-     * and the one `lint:run` is waiting for.
+     * the edit `fs:save`, `fs:saveAs`, `fs:confirmDiscard` and `lint:run` each got as the editor
+     * surface came back.
      */
     expect(uncalled).toEqual(Object.keys(EXPECTED).sort());
   });

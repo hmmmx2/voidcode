@@ -19,10 +19,17 @@
  *
  * Terminal came first and Problems and Output arrived with the linter — adding them here was all
  * it took for a persisted value naming them to start being honoured, which is why the parser was
- * written against this list rather than against a literal union. Problems has since gone the
- * other way: it was fed by a lint run triggered on a successful save, and the workspace stopped
- * saving, so the tab had no producer left and `parseDockTab` now falls a stored "problems" back
- * to Terminal — which is exactly the case it was written to handle.
+ * written against this list rather than against a literal union.
+ *
+ * PROBLEMS HAS NOW GONE BOTH WAYS, and the round trip is the best evidence this list works. It was
+ * removed when the workspace stopped saving: the tab was fed by a lint run triggered on a
+ * successful save, so it had no producer left and `parseDockTab` fell a stored "problems" back to
+ * Terminal — exactly the case the parser was written to handle. The workspace saves again, so the
+ * producer is back and a stored "problems" resolves rather than falling back. Neither direction
+ * needed anything but this line.
+ *
+ * `DEFAULT_DOCK_TAB` stays Terminal. Opening the dock spawns a shell, and changing the default
+ * would change that behaviour for everyone to surface a pane that is usually empty.
  *
  * Ports and Debug Console are deliberately absent. Nothing in the app owns a port — `protocol.ts`
  * documents that `app://` exists *because* loopback is reachable by every process, and
@@ -31,7 +38,7 @@
  * debugger behind it; what it would have shown lives in Output's channels, which is what VS
  * Code's Output pane actually is.
  */
-export const DOCK_TABS = ["terminal", "output"] as const;
+export const DOCK_TABS = ["problems", "terminal", "output"] as const;
 
 export type DockTab = (typeof DOCK_TABS)[number];
 

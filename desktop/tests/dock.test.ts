@@ -19,6 +19,19 @@ describe("the dock tab a session restores", () => {
     }
   });
 
+  it("resolves a stored problems tab again, now that it has a producer", () => {
+    /**
+     * THE PARSER'S OWN CASE, RUNNING THE OTHER WAY. Problems was removed when the workspace
+     * stopped saving — the tab was fed by a lint run on a successful save, so it had no producer
+     * left and a stored "problems" fell back to Terminal. The workspace saves again and the pane
+     * is back, so the same stored value now resolves. That is what a total parser buys: a
+     * downgrade and an upgrade both open somewhere sensible, and neither needed code beyond the
+     * list.
+     */
+    expect(parseDockTab("problems")).toBe("problems");
+    expect(DOCK_TABS).toContain("problems");
+  });
+
   it("falls back for a tab this build does not have", () => {
     // What a downgrade looks like: a build that shipped a Ports tab wrote it here, and this one
     // deliberately has no such pane. Opening at the default is the right answer, not an error.

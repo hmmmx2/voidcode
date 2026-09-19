@@ -5,6 +5,17 @@ import { useMonaco } from "@monaco-editor/react";
 import MonacoWrapper from "@/components/Editor/MonacoWrapper";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { monacoLanguageFor } from "@shared/languages";
+import { toMarker } from "@/lib/build/problems";
+import type { Diagnostic } from "@shared/diagnostics";
+
+/**
+ * Who owns the squiggles this pane draws.
+ *
+ * One string for every file, because Monaco replaces a set per owner and per model — so each
+ * result supersedes the last with no bookkeeping. Distinct from the language services' own
+ * owners, which is what lets both report on the same file without either clearing the other.
+ */
+const MARKER_OWNER = "voidcode-lint";
 
 /**
  * One file, shown.
@@ -36,6 +47,7 @@ export default function EditorPane({
   visible,
   reveal,
   dirty,
+  diagnostics,
   changedOnDisk,
   watching,
   onChange,
@@ -53,6 +65,8 @@ export default function EditorPane({
   visible: boolean;
   reveal?: { line: number; column: number; nonce: number } | undefined;
   dirty: boolean;
+  /** What the project's linter said about this file, as of the last save. */
+  diagnostics: readonly Diagnostic[];
   changedOnDisk: boolean;
   watching: boolean;
   onChange: (next: string | undefined) => void;
@@ -61,6 +75,32 @@ export default function EditorPane({
   onSaveAs: () => void;
 }) {
   const monaco = useMonaco();
+
+  /**
+   * Put the linter's diagnostics on the file as squiggles.
+   *
+   * ONE OWNER STRING, so each result replaces the previous set for that file with no bookkeeping
+   * of our own. Monaco keys markers by owner; using the file path as the owner instead would
+   * accumulate a set per file that nothing ever cleared.
+   *
+   * MONACO'S OWN WORKERS ARE A SECOND, SEPARATE OWNER, and that is deliberate rather than
+   * tolerated. TypeScript, JavaScript, JSON, CSS and HTML get live diagnostics from the bundled
+   * language services as you type; ruff and friends report on the file as saved. Both show up as
+   * squiggles, and the Problems pane reads `getModelMarkers` so it lists both — one sort, one
+   * click-to-jump, and no double-counting, because they are different markers about different
+   * things rather than two copies of one.
+   */
+  useEffect(() => {
+    if (monaco === undefined || monaco === null || path === undefined) return;
+    const model = monaco.editor.getModel(monaco.Uri.parse(path));
+    if (model === null) return;
+
+    monaco.editor.setModelMarkers(
+      model,
+      MARKER_OWNER,
+      diagnostics.map((diagnostic) => toMarker(diagnostic, monaco.MarkerSeverity))
+    );
+  }, [monaco, path, diagnostics]);
 
   /**
    * Dispose models for files that are no longer open.

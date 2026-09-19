@@ -61,17 +61,26 @@
   --gray-985:  #0d0d0f;
   --gray-870:  #141416;
 
-  /* THE ONLY TWO CHROMATIC VALUES LEFT IN THE PRODUCT.
-     They are reachable through exactly one pair of tokens — `--color-verdict-*`
-     — and that pair has exactly one consumer, `Editor/TestConsole.tsx`.
+  /* THE CHROMATIC VALUES, AND THE RULE THAT KEEPS THEM FROM SPREADING.
+     Each is reachable through a narrow, named pair with a stated consumer —
+     `--color-verdict-*` for `Editor/TestConsole.tsx`, `--color-status-*` for
+     `Shell/StatusBar.tsx`, `--color-problem-*` for the Problems pane. The
+     narrow names ARE the enforcement: a role as broad as "success" or "error"
+     is an open invitation to a second consumer, then a third.
 
      `--green-700` (#2e7d32, Material Green 800) and `--amber-500` (#f59e0b)
-     used to sit here too and have been deleted along with every utility that
-     referenced them. Between them they were the app's primary, accent, focus
-     ring, success and warning; the landing page could not use any of it and
-     said so in three separate component docblocks. */
+     used to sit here and were deleted along with every utility that referenced
+     them. Between them they were the app's primary, accent, focus ring,
+     success and warning; the landing page could not use any of it and said so
+     in three separate component docblocks.
+
+     `--amber-400` is new, and it is a third value rather than a reuse of
+     `--red-500` because a linter's warning and a linter's error have to be
+     told apart at a glance in a list that is mostly warnings. It is the only
+     thing in the app that is amber. */
   --green-400: #4ade80;
   --red-500:   #ef4444;
+  --amber-400: #fbbf24;
 
   --radius-base: 0.5rem;
 }
@@ -311,6 +320,21 @@
      colour blindness intact. */
   --color-status-up: var(--green-400);
   --color-status-down: var(--red-500);
+
+  /* ── Diagnostics ──────────────────────────────────────────────────────
+     A fourth narrow pair, one consumer: `Build/ProblemsPanel.tsx`, plus the
+     matching editor marker colours in `lib/monaco-theme.ts` — which are the
+     same two values, because a squiggle and its row in the list must agree.
+
+     SATURATED, WHILE THE SYNTAX THEME IS NOT, AND THAT IS DELIBERATE. These
+     are status, not syntax: they mark the handful of places something is
+     wrong, whereas token colours cover every character on screen. The same
+     reasoning already lets `--color-diff-remove-ink` sit at full chroma.
+
+     Colour is reinforcement, never the message: every row carries a label and
+     a code beside the mark, so the list survives greyscale intact. */
+  --color-problem-error: var(--red-500);
+  --color-problem-warn: var(--amber-400);
 
   --color-diff-add-bg: color-mix(in srgb, var(--green-400) 14%, transparent);
   --color-diff-remove-bg: color-mix(in srgb, var(--red-500) 14%, transparent);

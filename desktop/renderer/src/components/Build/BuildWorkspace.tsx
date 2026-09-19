@@ -27,6 +27,8 @@ import {
   serializeCentreTab,
   type CentreTab,
 } from "@/lib/build/editor-tabs";
+import { isLatest } from "@/lib/build/problems";
+import type { LintResult } from "@shared/diagnostics";
 import {
   afterSave,
   afterSaveAs,
@@ -160,6 +162,59 @@ export default function BuildWorkspace() {
   const [reveal, setReveal] = useState<
     { line: number; column: number; nonce: number } | undefined
   >(undefined);
+
+  /**
+   * What the linters said about each open file, and which files are still being checked.
+   *
+   * `lint:run` is request/response with no cancellation in main — `contract.ts` and
+   * `src/main/lint/index.ts` both say so, and both say the renderer owns staleness: a run started
+   * before the last save finishes and answers about text that is no longer on disk. `lintSeqRef`
+   * is that: a counter per path, incremented per request, and an answer that is not the latest for
+   * its path is dropped.
+   *
+   * Not a rare case. `tsc --noEmit` is project-scoped and can take tens of seconds under its 60 s
+   * cap, so a burst of saves is exactly what produces it.
+   */
+  const [problems, setProblems] = useState<readonly LintResult[]>([]);
+  const [linting, setLinting] = useState<ReadonlySet<string>>(new Set());
+  const lintSeqRef = useRef<Map<string, number>>(new Map());
+
+  /**
+   * Check one file.
+   *
+   * ON OPEN AND ON SAVE, NEVER ON A KEYSTROKE — and not because a debounce would be expensive.
+   * `lintFile` runs the tool against the file ON DISK; it takes a path, not a buffer. Linting
+   * while someone types would report the last saved version with a delay, which is worse than
+   * reporting it honestly. So there is no debounce, there is a rule, and the pane says
+   * "from the last save" for any buffer that has moved since.
+   */
+  const runLint = useCallback(async (path: string) => {
+    const lint = hostRef.current?.lint;
+    if (lint === undefined) return;
+
+    const seq = (lintSeqRef.current.get(path) ?? 0) + 1;
+    lintSeqRef.current.set(path, seq);
+    setLinting((prev) => new Set(prev).add(path));
+
+    try {
+      const result = await lint.run({ path });
+      // Dropped by request id, as the contract says. A stale answer describes text that is no
+      // longer on disk, and showing it would be worse than showing nothing.
+      if (!isLatest(lintSeqRef.current, path, seq)) return;
+      setProblems((prev) => [...prev.filter((r) => r.path !== path), result]);
+    } catch {
+      // A lint that cannot run is not worth a banner: the pane already has a vocabulary for
+      // "nothing checked this file", and an error here is indistinguishable from that to a user.
+    } finally {
+      if (isLatest(lintSeqRef.current, path, seq)) {
+        setLinting((prev) => {
+          const next = new Set(prev);
+          next.delete(path);
+          return next;
+        });
+      }
+    }
+  }, []);
 
   /**
    * The buffers, readable from a callback that must not depend on them.
@@ -703,6 +758,8 @@ export default function BuildWorkspace() {
         setFiles([]);
         setActivePath(undefined);
         setCentreView("chat");
+        setProblems([]);
+        lintSeqRef.current.clear();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -769,13 +826,14 @@ export default function BuildWorkspace() {
         ]);
         setActivePath(path);
         setCentreView("file");
+        void runLint(path);
       } catch (err) {
         // Unreadable paths — permissions, a file deleted between the tree walk and the click.
         // Reporting the path matters; the click that caused it is otherwise invisible.
         setError(`Could not open ${path}: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [host, files, openPaths]
+    [host, files, openPaths, runLint]
   );
 
   useEffect(() => {
@@ -819,6 +877,8 @@ export default function BuildWorkspace() {
         await fs.save({ path, contents: written, baseline });
         recentlySavedRef.current.set(path, written);
         setFiles((prev) => prev.map((f) => (f.path === path ? afterSave(f, written) : f)));
+        // The disk changed, so what the linter said about it is now out of date.
+        void runLint(path);
         setExternallyChanged((prev) => {
           if (!prev.has(path)) return prev;
           const next = new Set(prev);
@@ -856,7 +916,7 @@ export default function BuildWorkspace() {
         return false;
       }
     },
-    []
+    [runLint]
   );
 
   const saveAll = useCallback(async (): Promise<boolean> => {
@@ -920,6 +980,9 @@ export default function BuildWorkspace() {
       const next = closeTab(openPaths, activePath ?? null, path);
       setFiles((prev) => prev.filter((f) => f.path !== path));
       recentlySavedRef.current.delete(path);
+      // The pane lists open files only, so a closed one's result has to go with it.
+      setProblems((prev) => prev.filter((r) => r.path !== path));
+      lintSeqRef.current.delete(path);
       setActivePath(next.active ?? undefined);
       // Back to the conversation when the last file closes, rather than an empty editor: the
       // strip would otherwise leave you on a tab whose pane says "no file open".
@@ -1262,6 +1325,9 @@ export default function BuildWorkspace() {
                   visible={centreTab.kind === "file"}
                   reveal={reveal}
                   dirty={openFile !== undefined && dirtyPaths.has(openFile.path)}
+                  diagnostics={
+                    problems.find((r) => r.path === openFile?.path)?.diagnostics ?? []
+                  }
                   changedOnDisk={
                     openFile !== undefined && externallyChanged.has(openFile.path)
                   }
@@ -1290,6 +1356,10 @@ export default function BuildWorkspace() {
               outputChannel={outputChannel}
               onOutputChannelChange={setOutputChannel}
               onClearOutput={() => setOutput((prev) => clearChannel(prev, outputChannel))}
+              problems={problems}
+              dirtyPaths={dirtyPaths}
+              linting={linting}
+              onOpenLocation={openLocation}
               onFlush={flushBeforeTerminal}
               onTerminalExit={(id, code, signal) =>
                 appendOutput(

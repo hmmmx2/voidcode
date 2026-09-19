@@ -3225,6 +3225,77 @@ async function runBuildSmoke(): Promise<string[]> {
       }
 
 
+      /**
+       * THE PROBLEMS PANE NAMES ITS STATUS, WHICH IS THE ASSERTION THAT TRAVELS.
+       *
+       * Not "it has rows". This machine and a CI runner may each have ruff, or not, and a
+       * `context-me.py` containing `x = 1` has nothing wrong with it either way — so asserting on
+       * diagnostics would be flaky in one direction and vacuous in the other. What must hold
+       * everywhere is the honesty property the pane exists for: an empty list has to say whether
+       * the file is clean or whether nothing looked at it. Both sentences name the tool, so the
+       * tool's name in the pane is the check.
+       *
+       * Read out of the DOM rather than photographed: the dock may be collapsed, and whether this
+       * *sentence* exists is a different question from whether the pane is on screen. The
+       * screenshot below covers the second.
+       */
+      const problems = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const until = async (fn, ms = 10000) => {
+            const deadline = Date.now() + ms;
+            while (Date.now() < deadline) {
+              if (fn()) return true;
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            return false;
+          };
+          const tab = [...document.querySelectorAll('[role="tab"]')]
+            .find((t) => /^problems/i.test((t.textContent || "").trim()));
+          if (!tab) return JSON.stringify({ stage: "no problems tab" });
+          tab.click();
+
+          /*
+            The paragraph, not any element that happens to contain the text.
+
+            The first version searched querySelectorAll("*"), whose first match in document order
+            is <html> — and closest("div") on <html> is null, so the pane looked absent while it
+            was on screen. Scoped to <p>, which is what renders it.
+          */
+          const pane = () => {
+            const note = [...document.querySelectorAll("p")]
+              .find((el) => (el.textContent || "").includes("Nothing scans the project"));
+            return note ? note.parentElement : null;
+          };
+          if (!(await until(() => pane() !== null))) {
+            return JSON.stringify({ stage: "problems pane said nothing" });
+          }
+          const text = (pane().textContent || "");
+          return JSON.stringify({ stage: "ok", text: text.slice(0, 300) });
+        })()
+      `)) as string;
+      const problemsPane = JSON.parse(problems) as { stage: string; text?: string };
+      if (problemsPane.stage !== "ok") {
+        failures.push(`build/problems pane: ${problemsPane.stage}`);
+      } else if (!(problemsPane.text ?? "").includes("context-me.py")) {
+        failures.push(
+          `build/the problems pane does not name the open file: ${JSON.stringify(
+            problemsPane.text
+          )}`
+        );
+      } else if (!/ruff|no linter/i.test(problemsPane.text ?? "")) {
+        failures.push(
+          `build/the problems pane is empty without saying why: ${JSON.stringify(
+            problemsPane.text
+          )}`
+        );
+      } else {
+        console.log(
+          `[smoke] problems: the pane names the file and what checked it — ${JSON.stringify(
+            (problemsPane.text ?? "").slice(0, 160)
+          )}`
+        );
+      }
+
       /*
         A picture of the one thing this probe is really about.
 

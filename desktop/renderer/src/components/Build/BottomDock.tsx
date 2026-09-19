@@ -5,9 +5,12 @@ import { useEffect, useRef } from "react";
 import { IconClose, IconOutput, IconTerminal, IconWarning } from "@/components/icons";
 import TerminalTabs from "@/components/Build/TerminalTabs";
 import OutputPanel from "@/components/Build/OutputPanel";
+import ProblemsPanel from "@/components/Build/ProblemsPanel";
 import { DOCK_TABS, type DockTab } from "@/lib/build/dock";
 import type { UseTerminals } from "@/lib/build/useTerminals";
 import type { OutputChannel, OutputState } from "@/lib/build/output";
+import { countsFor } from "@/lib/build/problems";
+import type { LintResult } from "@shared/diagnostics";
 
 /**
  * The bottom dock: a tab strip over a stack of panes.
@@ -36,11 +39,13 @@ import type { OutputChannel, OutputState } from "@/lib/build/output";
 const TerminalPanel = dynamic(() => import("@/components/Build/TerminalPanel"), { ssr: false });
 
 const TAB_LABELS: Record<DockTab, string> = {
+  problems: "Problems",
   terminal: "Terminal",
   output: "Output",
 };
 
 const TAB_ICONS: Record<DockTab, (props: { size?: number }) => React.ReactElement> = {
+  problems: IconWarning,
   terminal: IconTerminal,
   output: IconOutput,
 };
@@ -54,6 +59,10 @@ export default function BottomDock({
   outputChannel,
   onOutputChannelChange,
   onClearOutput,
+  problems,
+  dirtyPaths,
+  linting,
+  onOpenLocation,
   onFlush,
   onTerminalExit,
   onClose,
@@ -73,6 +82,13 @@ export default function BottomDock({
   outputChannel: OutputChannel;
   onOutputChannelChange: (channel: OutputChannel) => void;
   onClearOutput: () => void;
+  /** What the linters said about the open files, for the Problems tab. */
+  problems: readonly LintResult[];
+  /** Buffers that differ from disk, so a row can say its diagnostics are from the last save. */
+  dirtyPaths: ReadonlySet<string>;
+  /** Files with a lint run in flight, so a slow `tsc` does not read as a hang. */
+  linting: ReadonlySet<string>;
+  onOpenLocation: (path: string, line: number, column: number) => void;
   /** Write unsaved buffers before a terminal sees input. Threaded through to each pane. */
   onFlush?: () => void;
   /** A shell ended. Threaded per pane so the tab number can be named in Output. */
@@ -81,6 +97,7 @@ export default function BottomDock({
 }) {
   const { open } = terminals;
   const count = terminals.terminals.length;
+  const problemCounts = countsFor(problems);
 
 
   /**
@@ -122,6 +139,24 @@ export default function BottomDock({
               >
                 <Icon size={13} />
                 {TAB_LABELS[id]}
+                {/*
+                  A count, only when there is one — the rule `WorkspaceSurface` already follows
+                  for its own badges. A "0" beside Problems is a number that says nothing and
+                  draws the eye every time you look at the dock.
+
+                  This is the ONLY thing that announces a new diagnostic. The dock never opens
+                  itself: stealing the layout to show a warning is worse than a badge, and a
+                  linter that ran because you saved is not an event that should move the window.
+                */}
+                {id === "problems" && problemCounts.errors + problemCounts.warnings > 0 && (
+                  <span
+                    className={`rounded px-1 font-mono text-[10px] tabular-nums ${
+                      problemCounts.errors > 0 ? "text-problem-error" : "text-problem-warn"
+                    }`}
+                  >
+                    {problemCounts.errors + problemCounts.warnings}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -166,6 +201,15 @@ export default function BottomDock({
           `TabsContent` sets, reintroduced by hand one tab level up. Switching to Output to read
           a line and back to find your build gone would be the worst version of it.
         */}
+
+        <div hidden={tab !== "problems"} className="h-full">
+          <ProblemsPanel
+            results={problems}
+            dirtyPaths={dirtyPaths}
+            running={linting}
+            onOpenLocation={onOpenLocation}
+          />
+        </div>
 
         <div hidden={tab !== "output"} className="h-full">
           <OutputPanel
