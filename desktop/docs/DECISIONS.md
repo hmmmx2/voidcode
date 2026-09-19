@@ -1353,3 +1353,61 @@ delete `setStep("code")`, `RESEND_COOLDOWN_S = 0`, drop `.replace(/\D/g,"")`, re
 `/\d/`, remove `setPassword("")` from the `finally`, send a server field error to the banner instead
 of the field, make the consent check unconditional. All seven fail. The provider test in this file
 is written **to be deleted** by the removal commit, and says so.
+
+## The successful sign-in has never run, so now it does
+
+`npm run smoke` sets `VOIDCODE_DEV_SESSION_TOKEN` against a loopback stub with no session route.
+`sessionToken()` returns that value before it reads the vault, so `storeSession` -- the call that
+puts a token into `safeStorage` -- has never executed in any automated run in this repository. The
+REJECTION path is genuinely covered there. The successful one was not covered at all.
+
+`scripts/account-e2e.mjs` (`npm run smoke:account`) closes that: the real API under uvicorn, a real
+Postgres, the real Electron app driven over CDP, and sixteen checks -- register, session from the
+vault, refresh, sign out, sign in, request a reset code, redeem it, and prove the old password is
+dead and the new one works. It is the GATE on removing provider sign-in, because afterwards the
+forgot-password flow is the only route back in for an account with no password.
+
+### Four refusals, and why each is a refusal rather than a warning
+
+1. **A dev session token is a hard failure, not a skip.** With it set every assertion passes without
+   `storeSession` running, which is the exact hole being closed. Green would be a lie.
+2. **`VOIDCODE_E2E_DATABASE_URL` has no default.** This script deletes rows. A default aims that at
+   a database the caller did not name.
+3. **Neither port may already be in use.** Earned, not anticipated: a uvicorn leaked from an earlier
+   run kept serving 8031, the new one failed to bind, readiness went green against the stale process,
+   and every assertion ran against an API this script neither configured nor could read the log of.
+   The reset code was being written to a file nobody was reading, and the failure presented as "the
+   console email format must have changed".
+4. **It spawns `src.main:app`.** A second app definition is a second answer to "what is the API".
+
+The first three are checked before any dependency is probed, so `account-e2e-guards.test.ts` can
+verify them by RUNNING the script rather than reading it -- a behavioural check a comment cannot
+satisfy.
+
+### Two things measured rather than assumed
+
+**Readiness is `/v1/auth/me`, not `/health`.** `/health` reports on the inference backend, which this
+run removes on purpose, so its considered answer here is "unhealthy" forever; and it reaches Judge0,
+Redis and the database before replying, so it outlives a short client timeout and reads as a closed
+port. Signed out, `/v1/auth/me` answers 401 at once and proves the router under test is mounted.
+
+**Startup is eight minutes of budget for a measured five and a half.** `main.py`'s lifespan polls the
+backend's `/v1/models` thirty times at ten seconds before accepting a connection, hardcoded with no
+knob, and `USE_SGLANG=true` with no backend is how a model is kept out of the process. The script
+prints its progress every minute, because a silent eight-minute wait is indistinguishable from a
+hang -- and killing it is how refusal 3 got earned.
+
+### What it deliberately does not assert
+
+No count of anything: not `count(*) FROM users`, not "one `user_identities` row". Those are facts
+about a live database at one moment, and asserting them turns a real person signing up into a red
+build. Nothing about the other accounts. No `DELETE` without the `desktop-e2e-%` predicate, no
+`TRUNCATE`. Nothing about rate limiting -- `REDIS_URL` points at a closed port so the limiter fails
+open, because a live Redis would enforce `LOGIN`'s ten-per-300s and make the fifth run of an hour red
+for a reason unrelated to the code. The prefix differs from the Python suite's `acct-test-` so the
+two cleanups cannot race.
+
+Seven mutants, all killed: remove the dev-token refusal; drop the `LIKE` predicate; skip the port
+check; spawn a different app; and three against the console email format in `email_service.py` --
+the header, the `to:` label and `Your code is:`. That last group is the point of the guard file: the
+format is written in Python and read in JavaScript, and nothing else holds the two ends together.
