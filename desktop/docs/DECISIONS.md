@@ -293,8 +293,13 @@ The split probe asserted a Monaco editor on `/build`, which `WorkspaceSurface.ts
 not have, and autosave through `fs:save`, which has no renderer caller at all. **Retargeted rather
 than deleted**: three of its steps still cover live behaviour nothing else smokes — `file.openRecent`
 as the one path that opens a folder without a native dialog, the tree rendering from a real
-directory, and a row click putting the file in the assistant's context. That last is what opening a
-file *means* on this surface now.
+directory, and a row click putting the file in the assistant's context.
+
+**That last sentence used to read "that is what opening a file *means* on this surface now", and
+it no longer does.** Build has an editor again — tabs in the centre pane beside Chat — so a row
+click paints the file as well as putting it in the assistant's context, and the probe asserts
+both. The reversal and what survives of the reasoning behind it are recorded in
+`desktop/docs/DECISIONS.md`.
 
 The agent probe searched the textarea's `parentElement` for the Send button. `SlashAutocomplete`
 wrapped the textarea in a `relative` div, making Send a sibling rather than a child, and the probe
@@ -1206,3 +1211,80 @@ A fault that appears in one run out of four cannot be verified by running the sm
 rejection is injected in `tests/smoke-capture.test.ts` instead. Five mutants, all killed: no retry;
 an empty image counted as a picture; the final throw downgraded to a log; the write moved inside the
 retry; the `mkdir` dropped.
+
+---
+
+## Build Mode has an editor again, and what that reverses
+
+**Decided:** the centre pane carries editor tabs beside Chat. Clicking a file in the explorer
+paints it, you can edit it, Ctrl+S writes it through `fs:save`'s baseline guard, and the bottom
+dock's Problems tab reports what the project's linter said.
+
+This reverses a decision recorded across three files, and the reasoning is corrected in place
+rather than deleted, because two thirds of it is still right.
+
+### What was decided before, and why
+
+Build had no editor. `WorkspaceSurface.tsx` and `lib/build/workspace-tabs.ts` both said so: code
+arrives in the conversation as diffs to review, which is where a change is legible -- a reviewed
+hunk says what is changing and why, and a file open in a pane says neither. The editor pane was
+removed, its channels (`fs:save`, `fs:saveAs`, `fs:confirmDiscard`, `lint:run`) were kept behind an
+allowlist in `ipc-callers.test.ts` with a reason each, the Problems dock tab went because its only
+producer was a lint run on a successful save and the workspace had stopped saving, and the CI smoke
+probe was retargeted so that "opening a file" came to mean "putting it in the assistant's context".
+
+### Why it changed
+
+The owner reported it as a bug: clicking a file in the folder tree did not display the file. It was
+not a bug -- the click read the file and stored it, and nothing painted it -- but the report is the
+argument. Clicking a file is the one gesture a file tree promises, and on this surface it produced a
+sentence in another pane.
+
+Reviewing a model's diff and reading your own code are different jobs. The first argument was never
+an argument against the second, and it was being used as one.
+
+### What survives
+
+- **The assistant still proposes rather than writes.** `fs:writeWithDiff` and `fs:commitDiff` are
+  untouched, and the review step in `AssistantPanel` is still where a model-authored change is seen
+  before it lands. `fs:save` writes the buffer the user is looking at, character for character;
+  `src/main/build/save.ts` already argued that distinction and it holds.
+- **The right pane is still not a code editor.** A Code tab there would be a second place showing
+  the same file, which is the same objection `WorkspaceSurface` makes about a second place to act on
+  a run: two surfaces for one thing are two surfaces that can disagree.
+- **`apps/web` stays monochrome.** Its identity is the argument, and its demo is a static
+  placeholder that must not flash when Monaco swaps in. The desktop theme diverges from it
+  deliberately and says so; the claim that the two mirrored each other is removed rather than left
+  to rot.
+
+### What is now true, and what is still not
+
+Editor tabs in the centre pane, Chat first and never closable. Explicit Ctrl+S with a dirty dot and
+a native discard prompt; no autosave, because `fs:save` carries the app's only
+optimistic-concurrency check. The window-close handshake writes every dirty buffer before answering
+`allowClose`, and rescues a refused save to a sibling `.voidcode-conflict` file -- there are three
+seconds and nobody in front of a dialog, so a file the user did not ask for beats a lost edit.
+Problems in the bottom dock, fed by `lint:run`, with a badge and no auto-opening.
+
+Still not true, and worth saying because the alternative is someone assuming otherwise:
+
+- **There is no language server.** Python gets tokenisation and ruff over the last save. No hovers,
+  no go-to-definition, no rename. `lib/monaco-local.ts` used to claim an LSP supplied Build Mode's
+  IntelliSense, citing a spec section; there is no `lsp:` channel, nothing implements one, and the
+  smoke asserts `host.lsp` is absent on purpose. That comment is corrected.
+- **Diagnostics describe the last save.** `lintFile` takes a path and runs the tool against the file
+  on disk, so a dirty buffer's problems are about what was written. The pane says so per file
+  rather than implying otherwise by silence.
+- **Problems is not a project scan.** Markers exist only for open files. "No problems" across two
+  tabs says nothing about the other four hundred, and the pane says that too.
+
+### The defect underneath all of it
+
+Monaco's loader was configured only from `MonacoWrapper`, which mounts on the Study route and
+nowhere else. Every other route asked for Monaco with the package's default jsDelivr path, the CSP
+blocked the script with no error anyone saw, and `useMonaco()` resolved to `undefined` for the life
+of the page -- so every fenced code block in the Build assistant's transcript rendered as plain
+text. `loader.init()` is one-shot, so the fix is placement rather than presence: it is configured
+during module evaluation of the root client component, strictly before any component effect can
+ask. `markdown-render.test.ts`'s plain-text fallback assertion passed throughout, which is what
+made it invisible.

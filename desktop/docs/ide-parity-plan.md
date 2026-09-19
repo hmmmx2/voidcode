@@ -84,8 +84,12 @@ persistable at the same time. Deliberately *not* a copy of VS Code's chrome:
 - **Panes are content, not roles.** VS Code has eight fixed `Parts` with string ids. Ours takes
   any registered view into any leaf, so "Terminal beside the editor" needs no new part type.
 - **The dock is the same primitive as the sidebar.** One engine, four edges.
-- **Monochrome stays.** `lib/monaco-theme.ts` is untouched; the ten greyscale rules are an
-  identity, not an oversight. Sashes read as a 1px line, not a chrome ridge.
+- **Monochrome did not stay, and this line said it would.** It read "`lib/monaco-theme.ts` is
+  untouched; the ten greyscale rules are an identity, not an oversight". That was true of a
+  read-only pane and a marketing demo, and stopped being true when the pane became an editor
+  people read their own repository in. The rules are a desaturated hue set now, keeping the
+  luminance ramp the greyscale carried; `apps/web` stays monochrome, which is where the
+  identity argument still holds. Sashes still read as a 1px line, not a chrome ridge.
 - **Layout is serialisable to a document a human can read**, so a broken layout is debuggable
   and a "reset layout" command is one delete.
 
