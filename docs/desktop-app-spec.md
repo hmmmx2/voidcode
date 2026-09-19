@@ -667,7 +667,14 @@ while a signed-out app starts and renders `/models`, and fails on any.
 - **No content paywall in the binary.** Their `Solution (Free)` badge (§1.8) cannot be enforced in a
   client users compile; a lock removed by a one-line patch only teaches patching. Monetise hosted
   sync, cloud inference or support.
-- **No hardcoded API keys, no required cloud account.**
+- **No hardcoded API keys, no required cloud account.** Two things now ship baked into the binary
+  and neither is one: `__VOIDCODE_BUILD__` carries the API's address and the Google and Microsoft
+  **client IDs**. A client ID identifies the application to the provider, is visible in the address
+  bar during consent, and grants nothing on its own — the only secret in that flow is Google's
+  client secret, which stays in the API's environment because the API redeems the authorization
+  code. A fork's build has empty values and remains a working offline editor;
+  `desktop/tests/release-config.test.ts` fails if a real client ID or a `GOCSPX-` secret appears
+  anywhere under `src`.
 - **No non-redistributable assets**: paper PDFs, NC weights, proprietary fonts or icons.
 
 ---
@@ -713,6 +720,23 @@ while a signed-out app starts and renders `/models`, and fails on any.
    What is genuinely lost: the FastAPI-side tutor prompt assembly (`prepare_messages_hybrid`),
    which has to be rebuilt in main with the §2.12 guardrails, and Judge0 — already superseded
    by the Pyodide tier, which enforces limits Judge0 never did.
+
+   **What happened, recorded because this decision reads as a plan and is now history.** All six
+   routers were dealt with: dashboard, notifications, profile and chat became SQLite in main, and
+   the account, credits and research library became `account:*`, `voidcode:*` and `research:*`
+   channels that talk to the platform API rather than replacing it — the wallet and the papers are
+   server state and cannot be local. The website's logged-in UI was then deleted outright rather
+   than left to rot beside the app.
+
+   `IPC_ROUTES` survives with two entries, `POST /v1/submit` and `POST /v1/execute`, because
+   grading is the one place where the desktop path is better than the web one it replaced: Pyodide
+   with an import allowlist and enforced time and memory limits, instead of Judge0 over a network.
+
+   So **"the renderer is the real `apps/web`" is a statement about where the code came from, not
+   about what is there now.** `apps/web` today is the website — overview, pricing, download and the
+   legal pages — and its app UI exists only in history. A reader comparing `desktop/renderer` with
+   `apps/web` to find what was dropped will be comparing it with the wrong thing; the commit that
+   removed the logged-in UI is the diff worth reading.
 2. **Build an agent core, or vendor one?** `continue`-core and Cline are Apache-2.0 and already solve
    FIM, `@`-context and agent loops. Vendoring could cut Phase 8 substantially at the cost of coupling
    to their abstractions. Worth a spike before committing 4 weeks.

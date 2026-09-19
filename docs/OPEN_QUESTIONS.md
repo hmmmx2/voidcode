@@ -56,11 +56,32 @@ Until then the README's "Installing a build" section documents the prompt rather
 `hardenedRuntime` is on in `desktop/electron-builder.yml` while notarisation is not — the truthful
 configuration rather than a claim to something we do not have.
 
+**The build is now ad-hoc signed, which changes the answer without closing the question.** arm64
+macOS refuses to execute a binary with *no* signature at all, so an unsigned build told an Apple
+silicon user the app was "damaged" — with no **Open Anyway**, because that refusal happens before
+Gatekeeper's policy check and is indistinguishable from a corrupted download.
+`desktop/build/ad-hoc-sign.cjs` runs `codesign --force --deep --sign -` after packing: a signature
+with no identity, which satisfies the kernel and leaves the Gatekeeper prompt the download page
+documents. `desktop.yml` verifies it on the runner and asserts `Signature=adhoc`, because an
+identity appearing there would mean a certificate had leaked into a public build. Not
+`spctl --assess`, which asks whether Gatekeeper would *allow* the app — for an unnotarised build the
+honest answer is no.
+
+Two things that follow, and neither is a claim about a Mac:
+
+- **`hardenedRuntime: true` beside an ad-hoc signature does close to nothing.** The runtime's
+  protections and its entitlements matter when a real identity signs and notarisation follows. It
+  is left on because it is what the real configuration will need, not because it is doing work.
+- **The signature itself is unverified here.** There is no Mac and no `macos-14` runner has ever
+  run this workflow, so what is checked is the wiring: the hook exists, is `--deep`, and CI asserts
+  the result. `desktop/tests/release-config.test.ts` covers exactly that and no more.
+
 Notarisation needs a paid Apple Developer account. The macOS steps in the README are Apple's
 documented behaviour, and the README says so rather than implying they were observed.
 
 *Settled by:* an Apple Developer account **and** someone with a Mac confirming the first-launch
-flow. The second half is the real blocker.
+flow. The second half is the real blocker, and it is now a smaller one: the question is whether the
+Gatekeeper prompt appears as documented, not whether the app starts at all.
 
 ## Q-003 — Auto-update
 

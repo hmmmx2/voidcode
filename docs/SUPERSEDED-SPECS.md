@@ -61,9 +61,25 @@ nothing downstream of it survives"* in `desktop/docs/DECISIONS.md`.
 — are all present, from the platform half. A two-stage recommender exists there.
 
 Still absent from the whole repository: pyspark, `SparkSession`, Parquet, Delta, Hive, metastore,
-FP-Growth, gVisor, Kata, seccomp, Kubernetes, Helm, KEDA, Prometheus, Grafana, Great Expectations,
-Pandera, Thompson sampling, CodeNet, pgvector — along with `docs/RISK_REGISTER.md`, and a `serving/`
-or `configs/` directory.
+FP-Growth, gVisor, Kata, seccomp, Helm, KEDA, Great Expectations, Pandera, Thompson sampling,
+CodeNet, pgvector — along with `docs/RISK_REGISTER.md`, and a `serving/` or `configs/` directory.
+
+**Three of those moved from absent to present, and the list above said otherwise for a while.** It
+read "… seccomp, Kubernetes, Helm, KEDA, Prometheus, Grafana, Great Expectations …" after `deploy/`
+had been written, which is the failure this whole document exists to prevent — and
+`superseded-specs.test.ts` could not see it, because it checked the paths cited in backticks and
+these were bare words in prose. It checks the words now. What is actually there:
+
+| Spec deliverable | Where it is |
+|---|---|
+| **Kubernetes** | `deploy/base/` — a Namespace, two Deployments, two Services, an Ingress, an HPA and two NetworkPolicies, assembled by `deploy/base/kustomization.yaml`. Held to `apps/api/tests/test_deploy_manifests.py`, and **never applied**: `deploy/README.md` records that no cluster was reachable when they were written, so `--dry-run=client` validated nothing |
+| **Grafana** | `deploy/monitoring/grafana-voidcode.json`, a three-panel operational dashboard. A file, not a running Grafana |
+| **Prometheus** | Half. The API exposes `/metrics` and `deploy/base/api-deployment.yaml` carries the `prometheus.io/scrape` annotations, admitted from the monitoring namespace by `network-policy.yaml`. **No Prometheus is deployed here** — the instrumentation exists and the scraper does not |
+| **Helm, KEDA** | Still absent, and by choice: kustomize rather than Helm, and a core `HorizontalPodAutoscaler` rather than KEDA |
+
+**Absent from `desktop/` all the same**, which is the claim this document is really making. None of
+it ships in the application: the manifests deploy the platform half's API and the marketing site to
+somebody's cluster, and the desktop app talks to that API over HTTPS like any other client.
 
 **Absent from `desktop/`, which is the claim this document is really making:** all of it. The
 desktop app has no Spark pipeline, no learned ranker, no Postgres. Postgres is not merely absent

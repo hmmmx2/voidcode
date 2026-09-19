@@ -946,7 +946,9 @@ recorded here so nobody later reads the decision as evidence the tutor got bette
 
 **Decided:** sign-in moves from the website into the desktop app and stays optional. The IDE, grader,
 local models and local profile never ask for it; an account exists for the VoidCode model and the
-credits that pay for it. The website is to be deleted (plan phases 7–8).
+credits that pay for it. The website's logged-in UI **has since been deleted** — what remains at
+`apps/web` is an overview, a pricing page, a download page and the legal documents, holding no
+session and calling no API.
 
 ### What "optional" is held to
 
@@ -990,7 +992,133 @@ shown is worth nothing.
 
 ### Public client IDs are not secrets
 
-For phase 4: the Google and Microsoft client IDs are baked into the build through
+Written before the providers shipped and still the reason it is safe: the Google and Microsoft
+client IDs are baked into the build through
 `__VOIDCODE_BUILD__` (`electron.vite.config.ts`). They identify the app to the provider and grant
 nothing on their own; the only secret in that flow, Google's client secret, stays in the API's
 environment because the API — not the app — redeems the authorization code.
+---
+
+## Everything the account needed, and the four choices that were not obvious
+
+**Decided.** The optional account is finished: Google and Microsoft sign-in, a credits page with its
+history, and the research library — all in the desktop app, against the platform API. Each of the
+four entries below is a choice where the obvious option was the wrong one, which is the only reason
+any of them is written down.
+
+### The desktop runs the browser half, and the API redeems the code
+
+**Decided:** the app opens the person's own browser at the provider, receives the authorisation code
+on a loopback listener, and relays `{code, verifier, redirect_uri, nonce}` to our API, which redeems
+it and verifies the ID token. Three alternatives were live:
+
+- **An embedded window.** Rejected: it means somebody typing their Google password into a window
+  this application controls and can read, with no address bar to check. That is indistinguishable
+  from a phishing page, and RFC 8252 says not to do it. Their own browser also already holds their
+  session, so most sign-ins are one click.
+- **A custom URI scheme** (`voidcode://`) instead of loopback. Rejected: a scheme is registered with
+  the operating system and any other program can register the same one, so on a shared machine a
+  second application claiming it would receive the code. An ephemeral loopback port belongs to this
+  process and nothing else can bind it.
+- **The app redeems the code and sends us the ID token.** Rejected as the default: Google's "Desktop
+  app" client type still wants a `client_secret` at the token endpoint, and relaying keeps that in
+  server configuration. It also means the ID token arrives at the API *from the provider over TLS in
+  response to our own request*, so a client cannot substitute one it obtained elsewhere. Kept as the
+  fallback if a provider ever refuses server-side redemption for native clients — the verifier is
+  unchanged either way.
+
+**A wrong `state` is answered and ignored, not fatal.** The listener returns 400 and keeps waiting.
+Treating it as a failure would hand any page that can guess the port a way to cancel somebody's
+sign-in — a denial of service given away for free, and one that would look like the provider
+failing. The `Host` header is checked against the authority we published, which is what separates
+our own browser's redirect from a page that resolved its own domain to 127.0.0.1.
+
+**Nothing is asked for beyond `openid email profile`, and no refresh token.** A refresh token is
+standing permission to act as someone, held for as long as we keep it, in exchange for nothing we
+need. `prompt=select_account` because both providers otherwise reuse whichever account the browser is
+holding — on a *Connect* button that is the entire question being asked.
+
+### "Has the payment landed" is a new ledger entry, not a bigger balance
+
+**Decided:** the credits page watches for a **new positive ledger entry**, identified by id, and
+falls back to comparing the balance only when the history could not be read.
+
+The obvious version compares the balance against what it was before checkout. It is wrong because
+the banner invites the buyer to keep using VoidCode while they wait, and using it spends credit: a
+question answered mid-settlement writes a negative charge, so the balance can be flat or lower with
+the payment already credited. Ids rather than timestamps because two rows written in one transaction
+share a `created_at` to the microsecond — which is why the ledger's primary key is a BigInteger
+identity.
+
+Two smaller things in the same module, both of which had to be wrong once to be noticed:
+
+- **An unreadable starting balance stays unknown**, not zero. Stored as zero, the next successful
+  read — of an unchanged wallet that already held credit — reads as an increase of the whole
+  balance, and the page announces a payment that never happened.
+- **The deadline is derived from the start and nothing rewrites it.** The equivalent effect in the
+  deleted web client needed a comment and an eslint suppression to keep its balance out of a
+  dependency array, because including it restarted the interval on every poll and pushed the
+  deadline back forever. A value that cannot be recomputed needs neither.
+
+`purchase-watch.ts` is a pure module for exactly this reason: both properties are invisible from a
+component test.
+
+### Holds and releases are not shown, and the page says so
+
+**Decided:** the history lists only entries that changed the balance. A `hold` moves credit from
+available to reserved and a `release` moves it back, so both carry an amount of zero; listing them
+produced several rows per answered question, most of them reading nothing. The footer therefore
+counts **movements**, not ledger rows, and says "All 4 movements" when fewer rows came back than
+were asked for — telling somebody with a four-movement history about "your last 50 ledger entries"
+invites them to wonder what the other forty-six were.
+
+The ledger's own vocabulary stays out of the interface: `grant` and `charge` are accounting terms,
+and the column is headed "What". The label map is held to the Postgres enum by test, so a new entry
+type fails a build instead of rendering as `chargeback` to a learner.
+
+### The research library sends a session when it has one, and survives not having it
+
+**Decided:** `research:list` and `research:get` send the stored session when there is one and, on a
+401, retry **once, anonymously**.
+
+This is the only call in the application that wants a session *optionally*, and it needed a rule of
+its own. The papers are public; the reading ticks are the reader's. A 401 means the stored session is
+dead — that is what it means everywhere here, and `platform/http.ts` has already cleared it by this
+point — but the library was never private, so answering with an authentication error would be
+refusing somebody a public catalogue over a credential they did not need. Exactly one retry, and
+only for a 401: a loop, or a retry on a 500, turns a server having a bad minute into two.
+
+Marking a section read is the opposite and is refused in the client with no request at all. The
+server would refuse it too (`require_user`), and the reason the client refuses first is that a 401
+from that call would end a session that is perfectly valid.
+
+**No PDF pane.** The web version framed arXiv's PDF beside the text, which worked there because
+arXiv sets no `X-Frame-Options`. This renderer is served from `app://` under a policy that allows no
+cross-origin frame at all — a frame is a live page from somebody else's server inside a window that
+holds an IDE — so the PDF opens in the reader's own browser, where their reader and annotations
+already are. `research:openPdf` takes a **slug**: main resolves the address from the paper our API
+returned and checks it is plain https with no embedded credentials, because `shell.openExternal`
+launches whatever the operating system has a handler for.
+
+**Marked on open, not on scroll.** A scroll-depth check sounds more honest and is worse: it never
+fires for a short section and it fires for somebody who flicks to the bottom. Neither measures
+reading, so the library says outright that it counts sections opened rather than sections
+understood — and the Privacy Policy repeats it, pinned by `honest-copy.test.ts` to that sentence in
+the component.
+
+### What this cost in guards, and one that was already broken
+
+Every one of the above is mutation-tested: 29 mutations for the providers, 17 for credits, 21 for the
+library, all killed. Three survivors in the first passes were test gaps rather than inert mutants,
+and a fourth found something older:
+
+`curriculum-parity.test.ts` bans addressing a problem route by curriculum position. Its last
+alternative was meant to be `\bn\b` — a bare variable called `n` — and had reached the file as
+`\x08n\x08`, an ASCII **backspace** either side of the letter, because whatever emitted it resolved
+`\b` as a string escape rather than a regex word boundary. A backspace never appears in source, so
+that alternative had never matched anything. Fixing the escape was not enough: `indexOf(entry) + 1`
+is a position by any reading and matched none of the four names either. A deny-list of ways to spell
+"a number" cannot be completed, so the guard is now an allowlist — an interpolated problem route must
+name a slug or an id — with comments stripped first, because the prose describing the defect it
+fixed would otherwise trip it. It has a positive control over the predicate now, which is what would
+have caught the dead alternative on the day it was written.

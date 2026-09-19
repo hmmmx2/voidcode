@@ -85,6 +85,84 @@ const MUST_STAY_ABSENT = [
   "VOIDCODE_TRAINING_SPEC.md",
 ];
 
+/**
+ * The spec deliverables the document names as absent in PROSE rather than as a path, and the
+ * evidence that would prove each one had arrived.
+ *
+ * WHY THIS LIST EXISTS. The document's sentence beginning "Still absent from the whole repository"
+ * listed Kubernetes, Prometheus and Grafana for some time after `deploy/` had been written — ten
+ * Kubernetes objects and a Grafana dashboard, sitting in the tree while the document said they were
+ * not there. The checks above could not see it: they resolve the paths cited in backticks, and
+ * these were bare words in a sentence.
+ *
+ * So each entry is a word the document claims is absent plus a FILE TEST that would be true if it
+ * were not. Deliberately not a grep for the word — the application's own interview content teaches
+ * distributed training and Kubernetes, `docs/` discusses both at length, and the document says in
+ * as many words that finding the vocabulary is not the same as finding the deliverable. A file is.
+ */
+const ABSENT_IN_PROSE: { word: string; evidenceWouldBe: string; present: () => boolean }[] = [
+  {
+    word: "Helm",
+    evidenceWouldBe: "a chart under deploy/",
+    present: () =>
+      ["deploy/Chart.yaml", "deploy/base/Chart.yaml", "deploy/chart/Chart.yaml"].some((p) =>
+        fs.existsSync(path.join(repo, p))
+      ),
+  },
+  {
+    word: "KEDA",
+    evidenceWouldBe: "a keda.sh ScaledObject in the manifests",
+    present: () => manifestsMention("keda.sh"),
+  },
+  {
+    word: "pyspark",
+    evidenceWouldBe: "pyspark in a requirements file",
+    present: () =>
+      ["requirements-dev.txt", "apps/api/requirements.txt"].some(
+        (p) =>
+          fs.existsSync(path.join(repo, p)) &&
+          /^pyspark/im.test(fs.readFileSync(path.join(repo, p), "utf8"))
+      ),
+  },
+  {
+    word: "gVisor",
+    evidenceWouldBe: "a runsc runtimeClassName in the manifests",
+    present: () => manifestsMention("runsc"),
+  },
+];
+
+/**
+ * The sentence listing what is absent, from its opening words to the end of its paragraph.
+ *
+ * Read with string operations rather than a regex on purpose: the first version spelled the
+ * paragraph break as an escape inside a regex literal and arrived in this file as a real line
+ * break, which broke the literal across two lines and failed to parse. There is nothing here that
+ * needs escaping.
+ */
+function absenceSentence(): string {
+  // CRLF NORMALISED FIRST. Every file in this repository is checked out with Windows line endings,
+  // so a paragraph break is four bytes, not two — and searching for the two-byte form found
+  // nothing, ran the slice to the end of the document, and swallowed the very table that corrects
+  // the sentence. The assertion then failed on the correction it was meant to protect.
+  const text = doc.split(String.fromCharCode(13)).join("");
+  const from = text.indexOf("Still absent from the whole repository:");
+  if (from === -1) return "";
+  const to = text.indexOf(String.fromCharCode(10, 10), from);
+  return text.slice(from, to === -1 ? undefined : to);
+}
+
+/** Whether any deploy manifest contains a token. The manifests are the deliverable for these. */
+function manifestsMention(token: string): boolean {
+  const dir = path.join(repo, "deploy");
+  if (!fs.existsSync(dir)) return false;
+  const walk = (at: string): string[] =>
+    fs.readdirSync(at, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(at, entry.name);
+      return entry.isDirectory() ? walk(full) : /\.(ya?ml|json)$/.test(entry.name) ? [full] : [];
+    });
+  return walk(dir).some((file) => fs.readFileSync(file, "utf8").includes(token));
+}
+
 describe("the superseded-specs document", () => {
   it("cites enough to be worth checking", () => {
     // Guards the extractor. If the regex or the fence style changes and this finds nothing, every
@@ -109,6 +187,40 @@ describe("the superseded-specs document", () => {
     // If this fails, do not edit the list — reread the document. Something it describes as another
     // branch's work now exists on this one.
     expect(appeared, "the document says these do not exist here").toEqual([]);
+  });
+
+  it("is still right about the deliverables it names in prose", () => {
+    /**
+     * The half of the absence claim that is not a path, and the half that went wrong. See
+     * `ABSENT_IN_PROSE` for what happened and why each check is a file rather than a grep.
+     */
+    const sentence = absenceSentence();
+    expect(sentence, "the absence sentence is not where this test looks for it").not.toBe("");
+
+    for (const { word, evidenceWouldBe, present } of ABSENT_IN_PROSE) {
+      // Both directions: the document must still claim it, and the claim must still be true.
+      expect(sentence, `the document no longer lists ${word} as absent`).toContain(word);
+      expect(present(), `${word} is in the tree now (${evidenceWouldBe}) and the document says it is not`).toBe(
+        false
+      );
+    }
+  });
+
+  it("no longer claims the things deploy/ actually contains are absent", () => {
+    /**
+     * The correction itself, pinned so it cannot be undone by a careless edit: these three ARE in
+     * the tree, so naming them in the absence sentence would make the document false again.
+     */
+    const sentence = absenceSentence();
+    for (const word of ["Kubernetes", "Grafana", "Prometheus"]) {
+      expect(sentence, `${word} is back in the absence sentence, and it is in deploy/`).not.toContain(
+        word
+      );
+    }
+    // And the evidence for saying so.
+    expect(fs.existsSync(path.join(repo, "deploy/base/kustomization.yaml"))).toBe(true);
+    expect(fs.existsSync(path.join(repo, "deploy/monitoring/grafana-voidcode.json"))).toBe(true);
+    expect(manifestsMention("prometheus.io/scrape")).toBe(true);
   });
 
   it("states no content counts", () => {

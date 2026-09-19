@@ -18,7 +18,7 @@ Unlike the manifests. `voidcode-web:test` was built and run:
 | size | 344 MB (`output: "standalone"`; without it the image needs the whole `node_modules`) |
 | runs as | uid 1000, non-root |
 | `.env` in the filesystem | none — the guard the release workflow enforces, run by hand |
-| `/`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | all 200, real content |
+| `/`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | all 200, real content — **this run predates `/pricing` and `/download`**, which were split out of the overview afterwards and are not covered by the measurement above |
 | Docker `HEALTHCHECK` | `healthy` |
 | errors in logs | 0 |
 

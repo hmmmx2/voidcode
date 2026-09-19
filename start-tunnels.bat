@@ -1,53 +1,51 @@
 @echo off
 REM ===========================================================================
-REM VoidCode AI - Quick Tunnel Launcher (No Account Required)
+REM VoidCode AI - Quick API Tunnel (No Account Required)
 REM
-REM Opens TWO free Cloudflare tunnels with random subdomains:
-REM   - Backend:  https://xxxxx.trycloudflare.com  (port 8000) — Windows
-REM   - Frontend: https://yyyyy.trycloudflare.com  (port 3000) — Windows
+REM ONE tunnel, to the API. This script used to open two -- one for the API and
+REM one for a Next.js app on :3000 that users would visit -- and then told you to
+REM paste both URLs into apps/web/.env.local as NEXT_PUBLIC_API_URL and AUTH_URL.
 REM
-REM Both tunnels run on Windows because the backend is now a Docker container
-REM bound to localhost:8000 — reachable directly from Windows cloudflared.
-REM (Previously the backend tunnel ran inside WSL2 because uvicorn ran there.)
+REM None of that applies any more. The logged-in UI is the desktop application,
+REM which people install rather than visit, so there is no front end to share a
+REM link to; and the website that remains holds no session and calls no API, so
+REM those two variables are read by nothing. A stale value left in .env.local was
+REM a documented time sink, which is why this comment is longer than the script.
 REM
-REM IMPORTANT: After starting, copy the tunnel URLs and set them in
-REM   apps/web/.env.local:
-REM     NEXT_PUBLIC_API_URL = backend tunnel URL
-REM     AUTH_URL            = frontend tunnel URL
-REM   Then restart the frontend (pnpm dev).
+REM What a tunnel is still for: giving a desktop app on somebody else's machine a
+REM reachable HTTPS address for the API on this one. See docs/specs/TUNNEL_SETUP.md.
+REM
+REM PORT: 8020, which is what the desktop app defaults to and what
+REM apps/api/tests/conftest.py expects. The GPU container publishes 8000 instead
+REM -- pass it as the first argument if that is what you are running:
+REM
+REM     start-tunnels.bat 8000
 REM ===========================================================================
 
+setlocal
+set PORT=%1
+if "%PORT%"=="" set PORT=8020
+
 echo.
 echo ============================================
-echo  VoidCode AI - Cloudflare Tunnels
+echo  VoidCode AI - API tunnel (port %PORT%)
 echo ============================================
 echo.
-echo Starting TWO tunnel windows (both on Windows)...
-echo   - Backend tunnel:  port 8000 (Docker container)
-echo   - Frontend tunnel: port 3000 (Next.js dev server)
+echo Opening one tunnel to http://127.0.0.1:%PORT%
 echo.
-echo After both tunnels start, you will see URLs like:
-echo   https://some-random-words.trycloudflare.com
+echo When it prints a URL like https://some-random-words.trycloudflare.com,
+echo start the desktop app against it FROM SOURCE:
 echo.
-echo STEP 1: Copy the BACKEND tunnel URL
-echo STEP 2: Copy the FRONTEND tunnel URL
-echo STEP 3: Put them in apps/web/.env.local:
-echo           NEXT_PUBLIC_API_URL = backend URL
-echo           AUTH_URL            = frontend URL
-echo STEP 4: Restart the frontend (pnpm dev)
-echo STEP 5: Share the FRONTEND tunnel URL with users
+echo   cd desktop
+echo   cross-env VOIDCODE_API_URL=https://some-random-words.trycloudflare.com/v1 npm run dev
+echo.
+echo The /v1 suffix is part of the address. A PACKAGED build ignores that
+echo variable on purpose -- build it with VOIDCODE_BUILD_API_URL instead.
 echo.
 
-REM Start backend tunnel on Windows (Docker container exposes port 8000 to host)
-start "Tunnel: Backend (8000)" cmd /k "echo [BACKEND TUNNEL - port 8000] && echo. && cloudflared tunnel --edge-ip-version 4 --protocol quic --url http://127.0.0.1:8000"
+start "Tunnel: API (%PORT%)" cmd /k "echo [API TUNNEL - port %PORT%] && echo. && cloudflared tunnel --edge-ip-version 4 --protocol quic --url http://127.0.0.1:%PORT%"
 
-REM Wait a moment so the windows don't collide
-timeout /t 2 /nobreak > nul
-
-REM Start frontend tunnel on Windows
-start "Tunnel: Frontend (3000)" cmd /k "echo [FRONTEND TUNNEL - port 3000] && echo. && cloudflared tunnel --edge-ip-version 4 --protocol quic --url http://127.0.0.1:3000"
-
-echo.
-echo Tunnel windows opened. Watch them for your public URLs.
+echo Tunnel window opened. Watch it for the public URL.
 echo Press any key to exit this launcher...
 pause > nul
+endlocal

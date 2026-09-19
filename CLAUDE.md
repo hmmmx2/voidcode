@@ -50,20 +50,40 @@ docker restart voidcode-vllm-api   # pick up code changes (~40 s warm start)
 curl http://localhost:8000/health
 ```
 
+**The API's port is not settled, and the desktop app assumes one of the answers.** The container
+above publishes **8000**, as does the root `package.json`'s `dev:api`; `platform/config.ts` falls
+back to **8020** and `apps/api/tests/conftest.py` expects 8020. Nothing reconciles them, so an app
+started against the container reports "VoidCode isn't set up in this build" until you say so:
+
+```bash
+cd desktop && cross-env VOIDCODE_API_URL=http://127.0.0.1:8000/v1 npm run dev
+```
+
+`/health` is reachable locally and **is not published**: `deploy/base/ingress.yaml` routes `/v1` and
+nothing else, because `/health` names the backend, the model and the GPU's free memory.
+
 ### The product is the desktop app
 ```bash
 cd desktop && npm ci && npm --prefix renderer ci
-npm run dev           # Electron: the IDE, the problems, the tutor, accounts
+npm run dev           # Electron: the IDE, the problems, the tutor
 ```
+The account surfaces are `/account`, `/account/credits` and `/research` — all optional, and all
+signed-out-clean: a launch with no session makes no request to our server, which `npm run smoke`
+counts against a loopback API and fails on.
 
 ### The website is a landing page
 ```bash
 pnpm install          # workspace deps
 pnpm dev:web          # Next.js marketing site (:3000)
 ```
-Five static pages: the landing page with the download section on it, Terms, Privacy and the two
-pages Stripe returns a buyer to. It has no sign-in, no session and makes no call to the API — the
-logged-in UI it used to carry is the desktop app now.
+Seven pages, all prerendered: the overview (`/`), `/pricing`, `/download`, `/terms`, `/privacy`,
+and the two Stripe returns at `/purchase/success` and `/purchase/cancelled`. It has no sign-in, no
+session and makes no call to our API — the logged-in UI it used to carry is the desktop app now. The
+one network call it makes is to `api.github.com` for the latest release's assets, and `/download`
+degrades to a link when that fails.
+
+It is a Next.js **server** (`output: "standalone"`), not a static export: `deploy/base/`
+deploys it as `voidcode-web` and the ingress routes the site's host to it.
 
 ### Docker (Infrastructure only — no API)
 ```bash

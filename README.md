@@ -109,13 +109,27 @@ already, which is why each is named separately here.
 
 ```bash
 docker compose up -d postgres redis judge0-server   # infrastructure
+cd apps/api && python -m uvicorn src.main:app --port 8020          # the API
 cd desktop && npm ci && npm --prefix renderer ci && npm run dev   # the app itself
-pnpm install && pnpm dev                            # the landing site on :3000
+pnpm install && pnpm dev                            # the website on :3000
 ```
 
-The desktop app is the product: the editor, the problem sets, the tutor and the optional account
-all live there. `apps/web` is the landing page that hands out the installer, plus the legal
-documents and Stripe's two return pages.
+**The API's port is not settled, and the desktop app assumes one of the answers.** `platform/config.ts`
+falls back to `http://127.0.0.1:8020/v1` and `apps/api/tests/conftest.py` expects 8020; the root
+`package.json`'s `dev:api` script and `docker-compose.gpu.yml` both use 8000. Nothing reconciles
+them, so either start the API on 8020 as above, or tell the app where it is:
+
+```bash
+cd desktop && cross-env VOIDCODE_API_URL=http://127.0.0.1:8000/v1 npm run dev
+```
+
+Pointed at an address nothing answers on, the account surfaces say VoidCode is not set up in this
+build — which is the honest message, and an unhelpful one to get from a port mismatch.
+
+The desktop app is the product: the editor, the problem sets, the tutor, and the optional account
+with its credits and research library all live there. `apps/web` is the website — an overview, a
+pricing page, a download page, the two legal documents and Stripe's two return pages. It holds no
+session and calls our API not at all.
 
 The `Makefile` targets are written to run **inside WSL2 Ubuntu** (JDK, venv and Spark data live on
 ext4); they will not work from Git Bash. RL targets are prefixed `rl-` — `make rl-test`,
@@ -130,9 +144,20 @@ cd apps/api && python -m scripts.verify_problems \
             && python -m scripts.verify_interview_problems    # 125 items, 699 cases
 pytest tests -q                                               # both halves' suites
 pytest apps/api/tests -q                                      # needs Postgres up
-pnpm typecheck && pnpm build                                  # landing site
+pnpm typecheck && pnpm build                                  # the website
 cd desktop && npm run typecheck && npm test && npm run smoke  # the app
 ```
+
+Two notes on that list, both learned the hard way:
+
+- **`apps/api/tests` from Windows may hang on the first connection.** Docker Desktop's port proxy
+  drops the first SYN to the published Postgres port often enough to matter. Running pytest *inside*
+  a container on the compose network avoids the proxy entirely — `--network`
+  `<project>_default`, `TEST_DATABASE_URL` pointing at `voidcode-postgres:5432`. The exception is
+  `test_deploy_manifests.py`, which needs `kubectl` on the host and errors in the container.
+- **`npm run smoke` hides renderer console errors unless you ask for screenshots.** Console output
+  is collected only inside the `VOIDCODE_SMOKE_SHOTS` block, so a React hydration error passes a
+  plain run. Set the variable to a directory when you change anything in the renderer.
 
 ---
 
