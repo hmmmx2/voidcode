@@ -7,15 +7,26 @@ import FileTree from "./FileTree";
 import AssistantPanel from "./AssistantPanel";
 import { usePublishBuildActions, type BuildActions } from "@/lib/shell/build-actions";
 import { usePanelState } from "@/lib/shell/usePanels";
-import { DEFAULT_DOCK_TAB, parseDockTab, type DockTab } from "@/lib/build/dock";
+import { DEFAULT_DOCK_TAB, type DockTab } from "@/lib/build/dock";
+import { DEFAULT_WORKSPACE_TAB, type WorkspaceTab } from "@/lib/build/workspace-tabs";
 import {
-  DEFAULT_WORKSPACE_TAB,
-  parseWorkspaceTab,
-  type WorkspaceTab,
-} from "@/lib/build/workspace-tabs";
+  parseWorkspaceDocument,
+  serializeWorkspaceDocument,
+} from "@/lib/build/workspace-session";
 import { EMPTY_RUN_VIEW, type RunView } from "@/lib/build/run-view";
 import type { AgentStepPayload } from "@/lib/build/agent-stream";
 import WorkspaceSurface from "./WorkspaceSurface";
+import EditorTabs from "./EditorTabs";
+import EditorPane from "./EditorPane";
+import {
+  CHAT_TAB,
+  MAX_OPEN_TABS,
+  atCapacity,
+  closeTab,
+  parseCentreTab,
+  serializeCentreTab,
+  type CentreTab,
+} from "@/lib/build/editor-tabs";
 import { useTerminals } from "@/lib/build/useTerminals";
 import {
   appendTo,
@@ -28,11 +39,7 @@ import {
   applyVisibility,
   defaultWorkspaceLayout,
   isDefaultWorkspaceLayout,
-  deserializeWorkspace,
-  GRID_SINCE_VERSION,
-  fromLegacy,
   serializeWorkspace,
-  WORKSPACE_LAYOUT_VERSION,
   workspaceConstraints,
   type WorkspacePane,
 } from "@/lib/build/workspace-layout";
@@ -74,9 +81,16 @@ const DEFAULT_MODEL = "qwen3:8b";
 /**
  * A file the workspace has read.
  *
- * `baseline` is what was last seen on disk. Nothing here edits, so it never diverges from
- * `contents` by typing — it is kept because the watcher compares against it to decide whether a
- * file changed underneath us, which is still worth knowing when the assistant is writing.
+ * `baseline` is what was last seen on disk. Nothing here edits *yet* — the viewer is read-only
+ * until the save family lands — so it does not currently diverge from `contents` by typing. It
+ * is what the watcher compares against to decide whether a file changed underneath us, and it is
+ * what `fs:save`'s optimistic-concurrency check will be handed when editing arrives. `null`
+ * means the file is gone from disk, which `deleteEntry` and `reconcile` both set.
+ *
+ * THIS LIST IS THE TAB STRIP. There is no second array of open paths, deliberately: `renameEntry`
+ * and `reconcile` already rewrite paths here, and a parallel list would be a second place to
+ * remember to do that. `lib/build/editor-tabs.ts` holds the transitions as pure functions over
+ * the paths this list yields.
  */
 interface FileBuffer {
   path: string;
@@ -97,22 +111,45 @@ export default function BuildWorkspace() {
    */
   const [files, setFiles] = useState<FileBuffer[]>([]);
   /**
-   * Which panes exist, what each has open, and which one is focused.
-   *
-   * The buffers above are shared across panes and keyed by path; this holds only paths. A
-   * `FileBuffer` per pane would mean two divergent copies of one file and a save race — and
-   * split view exists precisely so one file can be visible in two places. See
-   * `lib/build/editor-groups.ts`, where all the transitions live as pure functions.
-   */
-  /**
    * The file the viewer is showing.
    *
    * This was an `EditorLayout` — a tree of groups, each with its own tab list and focus — because
    * the pane was an editor you could split. One string replaces all of it: there is one viewer,
-   * it shows one file, and the panes that can still be arranged are the grid's.
+   * it shows one file, and the panes that can still be arranged are the grid's. Splits are not
+   * coming back with the tab strip; the grid is the only thing that arranges panes here.
    */
   const [activePath, setActivePath] = useState<string | undefined>(undefined);
   const openFile = files.find((f) => f.path === activePath);
+
+  /**
+   * Whether the centre pane is showing the conversation or the file.
+   *
+   * TWO VALUES, NOT ONE, and the second is only a discriminator. The path lives in `activePath`
+   * and nowhere else, so a rename — which `renameEntry` and `reconcile` both perform on `files`
+   * and `activePath` — cannot leave the tab pointing at a name that no longer exists. Storing the
+   * path here as well would be a third copy of it and a third place to follow a rename.
+   *
+   * It also keeps the two axes separate: which file the viewer holds, and whether the viewer is
+   * what you are looking at. Collapsing them would drop the file tabs out of the strip the moment
+   * you switched to Chat, and blink the file tree's own highlight off with them.
+   */
+  const [centreView, setCentreView] = useState<"chat" | "file">("chat");
+  const openPaths = useMemo(() => files.map((f) => f.path), [files]);
+  const centreTab: CentreTab =
+    centreView === "file" && activePath !== undefined
+      ? { kind: "file", path: activePath }
+      : CHAT_TAB;
+
+  /**
+   * A line to reveal, and a nonce so revealing the same one twice still works.
+   *
+   * `@monaco-editor/react`'s own `line` prop is an update-effect keyed on the value, so asking
+   * for line 42 a second time does nothing — and "jump to the error I just clicked" is precisely
+   * the case where the same line is asked for again.
+   */
+  const [reveal, setReveal] = useState<
+    { line: number; column: number; nonce: number } | undefined
+  >(undefined);
 
   /**
    * The buffers, readable from a callback that must not depend on them.
@@ -304,69 +341,48 @@ export default function BuildWorkspace() {
       try {
         const { state } = await host.session!.load();
         if (state === null) return;
-        const parsed = JSON.parse(state) as {
-          version?: number;
-          active?: unknown;
-          panes?: unknown;
-          centre?: unknown;
-          dock?: unknown;
-          workspace?: unknown;
-          grid?: unknown;
-        };
-        /**
-         * Version 1 documents are still read.
-         *
-         * They carry the editor layout and no pane sizes, which is exactly what the defaults
-         * cover — refusing them would throw away a working tab arrangement to avoid guessing
-         * at two numbers.
-         */
-        if (parsed.version === undefined || parsed.version < 1) return;
-        // Compared against the constant, not a literal. A future document is not readable and
-        // must not be half-applied — the previous form of this line hard-coded the then-current
-        // version, so the next bump made every existing document look like one from the future.
-        if (parsed.version > WORKSPACE_LAYOUT_VERSION) return;
-        // Absent on 1 and 2, which is why `parseDockTab` is total rather than a validator: those
-        // documents restore to the default and open where they always did.
-        setDockTab(parseDockTab(parsed.dock));
-        // Absent on every document written before the right pane had tabs, which is the case
-        // `parseWorkspaceTab` is total for: those restore to Plan rather than to nothing.
-        setWorkspaceTab(parseWorkspaceTab(parsed.workspace));
+        const document = parseWorkspaceDocument(state);
+        if (document === null) return;
+
+        setDockTab(document.dock);
+        setWorkspaceTab(document.workspace);
+        setDockLayout(document.grid);
 
         /**
-         * Versions 4 and 5 store a grid; 1 to 3 stored `panes` and `centre`, which is that grid
-         * flattened. Converting rather than discarding, because a gate that dropped them would
-         * look fine in a fresh window and silently reset the layout of every existing one — the
-         * kind of regression nobody reports, they just drag it back and assume they misremembered.
+         * Only paths that still exist. A file deleted since last session would otherwise restore
+         * a tab that errors the moment it is clicked.
          *
-         * The test is `>=`, not equality. A v4 document holds a perfectly good grid whose centre
-         * pane is called `editor`; `deserializeWorkspace` renames it. Requiring the current version
-         * exactly would send it to the legacy reader, which looks for `panes` and `centre` that a
-         * v4 document does not carry, and quietly hand back the defaults.
+         * Read in parallel and then filtered rather than short-circuiting on the first miss: one
+         * deleted file must not cost the rest of the strip. A path that has become a binary is
+         * dropped too, for the same reason `openFileAt` refuses one — a tab holding replacement
+         * characters is worse than no tab.
          */
-        const restoredGrid =
-          parsed.version >= GRID_SINCE_VERSION ? deserializeWorkspace(parsed.grid) : null;
-        setDockLayout(restoredGrid ?? fromLegacy(parsed.panes, parsed.centre));
-
-        // Only paths that still exist. A file deleted since last session would otherwise open
-        // a tab that errors the moment it is clicked.
-        // Only the file the viewer was showing, and only if it is still there — a path deleted
-        // since last session would otherwise restore straight into an error.
-        const wanted = typeof parsed.active === "string" ? [parsed.active] : [];
         const contents = await Promise.all(
-          wanted.map(async (path) => {
+          document.openPaths.map(async (path) => {
             try {
-              return { path, contents: (await host.fs!.read({ path })).contents };
+              const file = await host.fs!.read({ path });
+              return file.binary ? undefined : { path, contents: file.contents };
             } catch {
               return undefined;
             }
           })
         );
-        const loaded = contents.filter((f): f is { path: string; contents: string } => f !== undefined);
-        const alive = new Set(loaded.map((f) => f.path));
+        const loaded = contents.filter(
+          (f): f is { path: string; contents: string } => f !== undefined
+        );
 
-        setFiles(loaded.map((f) => ({ path: f.path, contents: f.contents, baseline: f.contents })));
-        // Only if the file is still there; a path that vanished shows nothing rather than an error.
-        setActivePath(typeof parsed.active === "string" && alive.has(parsed.active) ? parsed.active : undefined);
+        setFiles(
+          loaded.map((f) => ({ path: f.path, contents: f.contents, baseline: f.contents }))
+        );
+        const alive = loaded.map((f) => f.path);
+        const active =
+          document.active !== null && alive.includes(document.active)
+            ? document.active
+            : // The document's active file is gone; show the first that came back rather than
+              // nothing, since the strip is about to render its tabs either way.
+              alive[0];
+        setActivePath(active);
+        setCentreView(parseCentreTab(document.centre, alive, active ?? null).kind);
       } catch {
         // A restore that cannot complete is not worth reporting: the window is perfectly
         // usable empty, and an error banner on launch would be alarming out of proportion.
@@ -381,18 +397,27 @@ export default function BuildWorkspace() {
 
   useEffect(() => {
     if (host?.session === undefined || !restored) return;
-    // Paths and arrangement only — see above.
-    const state = JSON.stringify({
-      version: WORKSPACE_LAYOUT_VERSION,
-      active: activePath,
-      // The dimensions are metadata: our sizes are already shares, so restore never reads them.
-      // Written anyway to keep the document byte-compatible with the format it is modelled on.
+    // Paths and arrangement only — see above. The format lives in `workspace-session.ts`, so the
+    // reader and the writer cannot describe different documents.
+    const state = serializeWorkspaceDocument({
       grid: serializeWorkspace(dockLayout, window.innerWidth, window.innerHeight),
       dock: dockTab,
       workspace: workspaceTab,
+      openPaths,
+      active: activePath,
+      centre: serializeCentreTab(centreTab),
     });
     void host.session.save({ state }).catch(() => {});
-  }, [host, activePath, dockLayout, dockTab, workspaceTab, restored]);
+  }, [
+    host,
+    activePath,
+    openPaths,
+    centreTab,
+    dockLayout,
+    dockTab,
+    workspaceTab,
+    restored,
+  ]);
 
   const openProject = useCallback(async () => {
     if (host?.fs === undefined) return;
@@ -404,9 +429,12 @@ export default function BuildWorkspace() {
         setTree(result.tree);
         setWatch({ watching: result.watching, reason: result.watchReason });
         // Buffers are paths inside the old project; keeping them would leave tabs pointing
-        // at files that are no longer reachable.
+        // at files that are no longer reachable. `EditorPane` disposes the Monaco models that
+        // went with them, keyed off this now-empty list — without that, a same-named file in the
+        // new project would inherit the old one's undo stack.
         setFiles([]);
         setActivePath(undefined);
+        setCentreView("chat");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -639,8 +667,11 @@ export default function BuildWorkspace() {
         const result = await host.fs.openRecent({ path });
         setTree(result.tree);
         setWatch({ watching: result.watching, reason: result.watchReason });
+        // Same as `openProject`: a project change empties the strip, which is also what disposes
+        // the Monaco models that belonged to the old project's paths.
         setFiles([]);
         setActivePath(undefined);
+        setCentreView("chat");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -668,6 +699,21 @@ export default function BuildWorkspace() {
       // which is the exact bug tabs exist to prevent.
       if (files.some((f) => f.path === path)) {
         setActivePath(path);
+        setCentreView("file");
+        return;
+      }
+
+      /**
+       * Refused at the cap, not silently evicted.
+       *
+       * Evicting the oldest tab is the other obvious answer and it is the wrong one: it throws
+       * away a buffer without asking, which is the bug the tab list exists to prevent. Said out
+       * loud with the number in it, so the remedy is obvious.
+       */
+      if (atCapacity(openPaths)) {
+        setError(
+          `${String(MAX_OPEN_TABS)} files are already open. Close one to open ${path}.`
+        );
         return;
       }
 
@@ -691,13 +737,14 @@ export default function BuildWorkspace() {
           { path, contents: file.contents, baseline: file.contents },
         ]);
         setActivePath(path);
+        setCentreView("file");
       } catch (err) {
         // Unreadable paths — permissions, a file deleted between the tree walk and the click.
         // Reporting the path matters; the click that caused it is otherwise invisible.
         setError(`Could not open ${path}: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [host, files]
+    [host, files, openPaths]
   );
 
   useEffect(() => {
@@ -705,24 +752,42 @@ export default function BuildWorkspace() {
   }, [openFileAt]);
 
   /**
+   * Close one tab: drop the buffer and move the selection.
+   *
+   * No prompt, because nothing here can be dirty yet — the viewer is read-only. The discard
+   * handshake through `fs:confirmDiscard` arrives with editing, and this is the function it will
+   * gate.
+   */
+  const closeFile = useCallback(
+    (path: string) => {
+      const next = closeTab(openPaths, activePath ?? null, path);
+      setFiles((prev) => prev.filter((f) => f.path !== path));
+      setActivePath(next.active ?? undefined);
+      // Back to the conversation when the last file closes, rather than an empty editor: the
+      // strip would otherwise leave you on a tab whose pane says "no file open".
+      if (next.active === null) setCentreView("chat");
+    },
+    [openPaths, activePath]
+  );
+
+  /**
    * Open a cross-reference result at the line it named.
    *
-   * There is no editor left in this workspace to put a cursor in, so this now selects the file
-   * as context and the line is carried for whatever renders it — the reveal is deferred a frame
-   * for the same reason it always was, because `openFileAt` sets state and acting on the result
-   * before that state lands addresses the previous file.
+   * THE LINE IS USED AGAIN. This took the line and threw it away — `_line`, with a comment
+   * saying "there is nothing in this window to reveal it in" — for as long as the centre pane
+   * had no editor. Now there is one, so a search hit lands on the line rather than at the top of
+   * the file, which is most of what makes search worth using.
+   *
+   * The reveal is set after `openFileAt` resolves, not beside it. The pane has to be showing the
+   * right file before a line in it means anything, and `openFileAt` is what switches it; asking
+   * to reveal first would address the file that was open a moment ago.
    */
   const openLocation = useCallback(
-    /**
-     * `_line`, deliberately: there is nothing in this window to reveal it in.
-     *
-     * This used to open the file in an editor group and put the cursor on the line. The line is
-     * still passed — search hits and screenshot matches genuinely have one, and dropping it from
-     * the signature would mean recovering it later from callers that no longer carry it — but
-     * nothing consumes it until the workspace pane has a surface that can show a position.
-     */
-    (path: string, _line: number) => {
-      void openFileAt(path);
+    (path: string, line: number, column = 1) => {
+      void openFileAt(path).then(() => {
+        // The nonce is what makes a repeat request arrive — see `reveal`'s declaration.
+        setReveal((prev) => ({ line, column, nonce: (prev?.nonce ?? 0) + 1 }));
+      });
     },
     [openFileAt]
   );
@@ -886,12 +951,12 @@ export default function BuildWorkspace() {
         {pane === "left" ? (
           leftView === "search" ? (
           <SearchPanel
-            onOpenMatch={(path) => void openFileAt(path)}
+            onOpenMatch={openLocation}
             onClose={() => setLeftView("explorer")}
           />
         ) : leftView === "memory" ? (
           <MemoryPanel
-            onOpenMatch={(path) => void openFileAt(path)}
+            onOpenMatch={openLocation}
             onClose={() => setLeftView("explorer")}
           />
         ) : (
@@ -911,21 +976,68 @@ export default function BuildWorkspace() {
           )
         ) : pane === "chat" ? (
           /*
-            The centre pane: the conversation, which is the workspace.
+            The centre pane: the conversation and the open files, as tabs.
 
             No `onClose`. The prop is optional and its button renders only when it is passed, so
             omitting it is the whole change — and it should be omitted, because the centre is the
             one pane `applyVisibility` never collapses. A close button that cannot close anything
             is worse than none, and its accelerator would toggle a flag nothing reads.
+
+            BOTH CHILDREN ARE RENDERED, ALWAYS. `hidden` switches which one you see, exactly as
+            `BottomDock` does with its panes and for the same class of reason — except that here
+            each child is expensive in a different way. Gating on `centreTab.kind === "chat"`
+            would unmount `AssistantPanel` on every tab click, dropping the transcript, the
+            streaming cancel handle and the session id; and unmounting `EditorPane` would dispose
+            the editor and every buffer's undo stack. Both failures look like the app forgetting
+            what you were doing.
+
+            The pane owns the frame now, which is why `AssistantPanel` is no longer wrapped in one
+            of its own: two nested `IdePanel`s draw two borders (`IdeFrame.tsx`).
           */
-          <AssistantPanel
-            host={host}
-            model={DEFAULT_MODEL}
-            openFile={openFile}
-            onOpenLocation={openLocation}
-            onAgentLog={(text) => appendOutput("agent", text)}
-            onRunView={setRunView}
-          />
+          <IdePanel className="min-h-0">
+            <div className="flex h-9 shrink-0 items-stretch border-b border-line bg-ide-bar">
+              <EditorTabs
+                paths={openPaths}
+                tab={centreTab}
+                onSelect={(next) => {
+                  if (next.kind === "chat") {
+                    setCentreView("chat");
+                    return;
+                  }
+                  setActivePath(next.path);
+                  setCentreView("file");
+                }}
+                onClose={closeFile}
+              />
+            </div>
+
+            <div className="min-h-0 flex-1">
+              <div hidden={centreTab.kind !== "chat"} className="h-full">
+                <AssistantPanel
+                  host={host}
+                  model={DEFAULT_MODEL}
+                  openFile={openFile}
+                  onOpenLocation={openLocation}
+                  onAgentLog={(text) => appendOutput("agent", text)}
+                  onRunView={setRunView}
+                />
+              </div>
+
+              <div hidden={centreTab.kind !== "file"} className="h-full">
+                <EditorPane
+                  path={openFile?.path}
+                  contents={openFile?.contents}
+                  openPaths={openPaths}
+                  visible={centreTab.kind === "file"}
+                  reveal={reveal}
+                  changedOnDisk={
+                    openFile !== undefined && externallyChanged.has(openFile.path)
+                  }
+                  watching={watch.watching}
+                />
+              </div>
+            </div>
+          </IdePanel>
         ) : pane === "dock" ? (
           <IdePanel className="min-h-0 overflow-hidden bg-ide-code">
             <BottomDock

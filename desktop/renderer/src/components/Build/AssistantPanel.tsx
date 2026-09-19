@@ -19,7 +19,7 @@ import SessionList, { type SessionRow } from "./SessionList";
 import DiffView from "./DiffView";
 import PlanCard from "./PlanCard";
 import { runViewOf, type RunView } from "@/lib/build/run-view";
-import { IdePanel, IdeBar, EmptyState, useToast } from "@/components/app";
+import { IdeBar, EmptyState, useToast } from "@/components/app";
 import { describeStep } from "@/lib/build/output";
 import SlashAutocomplete from "./SlashAutocomplete";
 import QuickOpen from "./QuickOpen";
@@ -988,8 +988,21 @@ export default function AssistantPanel({
     [host, appendStep]
   );
 
+  /*
+    A plain box, not an `IdePanel`.
+
+    The centre pane owns the frame now: it is a tab strip over this panel and the file viewer, so
+    the border and rounding belong one level up. Keeping an `IdePanel` here would draw a second
+    border inside the first (`app/IdeFrame.tsx`), which reads as a panel inside a panel.
+
+    The `IdeBar` below stays. It selects among the assistant's *own* three surfaces — chat,
+    sessions, history — which is a different axis from "chat or a file", and folding it into the
+    tab strip would put the session drawer and the history list underneath a tab that says
+    "Chat". The result is two 36px rows on the Chat tab, which is the tabs-plus-breadcrumbs
+    arrangement every editor uses.
+  */
   return (
-    <IdePanel>
+    <div className="flex h-full min-h-0 flex-col">
       <IdeBar>
         <span className="text-[11px] font-medium uppercase tracking-wide text-ink-3">
           AI Assistant
@@ -1767,7 +1780,7 @@ export default function AssistantPanel({
           onClose={() => setPicking(null)}
         />
       )}
-    </IdePanel>
+    </div>
   );
 }
 

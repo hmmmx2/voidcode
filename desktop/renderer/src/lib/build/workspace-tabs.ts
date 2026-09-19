@@ -24,10 +24,16 @@
  * written against the list rather than against a literal union, a persisted `"design"` written
  * by a newer build started being honoured the moment the surface existed.
  *
- * Code is deliberately absent, and that is a decision rather than an omission. Build has no
- * editor: code arrives in the conversation as diffs, which is where a change is legible — a
- * reviewed hunk says what is changing and why, and a file open in a pane says neither. Interview
- * Prep keeps a real editor, because writing a solution is authoring and this is not.
+ * Code is still deliberately absent, for a reason that has changed. This said "Build has no
+ * editor", and Build now does: the centre pane carries editor tabs beside Chat, because clicking a
+ * file in the explorer is the one gesture a file tree promises and it used to produce a sentence
+ * in another pane. What survives is the narrower claim — a Code tab *here* would be a second
+ * place showing the same file, which is exactly the objection `WorkspaceSurface` makes about a
+ * second place to act on a run: two surfaces for one thing is two surfaces that can disagree.
+ *
+ * The reviewed-diff argument also survives, and is about a different job. A model's change is
+ * legible as a hunk and not as a file, which is why the assistant still proposes rather than
+ * writes. Reading your own code was never what that argument was about.
  */
 export const WORKSPACE_TABS = ["plan", "steps", "design", "preview"] as const;
 

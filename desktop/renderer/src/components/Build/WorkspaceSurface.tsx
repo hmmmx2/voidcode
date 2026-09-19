@@ -21,10 +21,18 @@ import type { AgentStepPayload } from "@/lib/build/agent-stream";
  * costs a click to learn nothing; `workspace-tabs.ts` records why Design and Preview are absent
  * and what adding them will take.
  *
- * **Deliberately not a code editor**, and that is a decision rather than a gap. Code arrives in
- * the conversation as diffs to review, which is where a change is legible: a reviewed hunk says
- * what is changing and why, and a file open in a pane says neither. Interview Prep keeps a real
- * editor, because writing a solution is authoring and this is not.
+ * **Deliberately not a code editor**, and still a decision rather than a gap — but the reason has
+ * narrowed and the old wording is no longer true.
+ *
+ * It used to say Build had no editor at all: a model's change arrives as a diff to review, which
+ * is where a change is legible — a reviewed hunk says what is changing and why, and a file open
+ * in a pane says neither. That argument is intact and is about *reviewing a model's work*. It was
+ * never an argument against reading your own code, and clicking a file in the explorer is the one
+ * gesture a file tree promises. So the centre pane now has editor tabs beside Chat.
+ *
+ * What that leaves for *this* pane is unchanged: a Code tab here would be a second place showing
+ * the same file, which is the same objection the paragraph below makes about a second place to act
+ * on a run. `workspace-tabs.ts` records it beside the list.
  *
  * Everything here is read-only. Nothing in this pane starts, stops, retries or edits anything —
  * the chat is where you act, and a second place to act on the same run is a second place for the

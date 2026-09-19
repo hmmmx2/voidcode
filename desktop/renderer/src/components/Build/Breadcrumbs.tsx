@@ -7,9 +7,12 @@
  * plain text — it advertises navigation the app cannot perform until the tree supports revealing
  * a directory.
  *
- * **Its own file because its only caller is the file tree, not the tabs.** It lived in
- * `EditorTabs.tsx` and was imported from `FileTree.tsx`, which meant deleting the editor's tab
- * strip would have taken the left pane's header with it — a component the chat-first layout keeps.
+ * **Its own file because it has two callers that must not be able to delete each other.** It
+ * lived in `EditorTabs.tsx` and was imported from `FileTree.tsx`, so removing the editor's tab
+ * strip would have taken the left pane's header with it — which is what happened when the editor
+ * was removed, and why this became its own module. Both callers exist again (`FileTree` for the
+ * tree's header, `EditorPane` for the open file's), and the reason for the split is the same: a
+ * shared leaf belongs to neither of its users.
  */
 export function Breadcrumbs({ path }: { path: string }) {
   const segments = path.split("/").filter(Boolean);

@@ -152,8 +152,15 @@ export function applyVisibility(
   return next;
 }
 
-/** The persisted form. Versions 4 and 5 store a grid; 1–3 stored two size arrays. */
-export const WORKSPACE_LAYOUT_VERSION = 5;
+/**
+ * The persisted form. Versions 4 and up store a grid; 1–3 stored two size arrays.
+ *
+ * 6 added the centre pane's tab strip: `open` (every file that was open, in strip order) and
+ * `centreTab` ("chat" or "file"). A version 5 document carries only `active`, and
+ * `workspace-session.ts` converts it to a one-tab strip rather than refusing it — that *was* the
+ * behaviour of those windows, which held one file at a time.
+ */
+export const WORKSPACE_LAYOUT_VERSION = 6;
 
 /**
  * The first version whose document holds a serialised grid.

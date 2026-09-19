@@ -24,7 +24,8 @@ export default function SearchPanel({
   onOpenMatch,
   onClose,
 }: {
-  onOpenMatch: (path: string) => void;
+  /** Path, plus where in it: a hit that opened at line 1 would be a hit you have to find again. */
+  onOpenMatch: (path: string, line: number, column: number) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -107,7 +108,7 @@ export default function SearchPanel({
           <button
             key={`${match.path}:${match.line}:${match.column}`}
             type="button"
-            onClick={() => onOpenMatch(match.path)}
+            onClick={() => onOpenMatch(match.path, match.line, match.column)}
             className="block w-full rounded px-2 py-1.5 text-left transition-colors hover:bg-ide-raised focus-visible:outline-none focus-visible:bg-ide-raised"
           >
             <span className="block truncate text-[11px] text-ink-3">

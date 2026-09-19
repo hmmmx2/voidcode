@@ -2,7 +2,7 @@
  * Which tab the bottom dock is showing.
  *
  * Its own module, and pure, so the parser can be tested without mounting a workspace — the same
- * reason `editor-groups.ts` and `assistant-view.ts` sit beside it.
+ * reason `editor-tabs.ts` and `assistant-view.ts` sit beside it.
  *
  * **The value arrives off a persisted document.** `host.session.load()` returns a string this
  * window wrote, but "this window wrote it" is not a guarantee about its contents: it survives

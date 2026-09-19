@@ -11,7 +11,7 @@
  * is the shape a missing state machine leaves behind.
  *
  * Pure and separate from the panel so it can be tested without mounting 1200 lines of
- * streaming, attachments and diff review — the same reasoning as `lib/build/editor-groups.ts`.
+ * streaming, attachments and diff review — the same reasoning as `lib/build/editor-tabs.ts`.
  */
 
 export type AssistantView = "chat" | "sessions" | "history";

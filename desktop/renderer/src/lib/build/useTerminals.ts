@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from "react";
  * Which terminals this window has open, and which one you are looking at.
  *
  * The transitions are pure functions with the hook as a thin wrapper, following
- * `editor-groups.ts` and `assistant-view.ts` — a test for "closing the active tab picks a
+ * `editor-tabs.ts` and `assistant-view.ts` — a test for "closing the active tab picks a
  * sensible neighbour" should not have to mount 1245 lines of workspace to ask.
  *
  * **Nothing here spawns anything.** A `TerminalTab` is an id and a label; the pty behind it

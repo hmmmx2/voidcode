@@ -38,7 +38,8 @@ export default function MemoryPanel({
   onOpenMatch,
   onClose,
 }: {
-  onOpenMatch: (path: string) => void;
+  /** Path, plus the chunk's first line — see `SearchPanel`. */
+  onOpenMatch: (path: string, line: number, column: number) => void;
   onClose: () => void;
 }) {
   const notify = useToast();
@@ -191,7 +192,7 @@ export default function MemoryPanel({
           <button
             key={`${hit.chunk.path}:${hit.chunk.startLine}`}
             type="button"
-            onClick={() => onOpenMatch(hit.chunk.path)}
+            onClick={() => onOpenMatch(hit.chunk.path, hit.chunk.startLine, 1)}
             className="block w-full rounded px-2 py-1.5 text-left transition-colors hover:bg-ide-raised focus-visible:outline-none focus-visible:bg-ide-raised"
           >
             <span className="block truncate text-[11px] text-ink-3">

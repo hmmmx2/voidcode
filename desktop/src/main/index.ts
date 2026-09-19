@@ -3008,8 +3008,9 @@ async function runBuildSmoke(): Promise<string[]> {
        * no editor mounted and nothing having asked for Monaco, is direct evidence that the
        * configuration ran on this route — which is the whole of the defect.
        *
-       * The injected-src path is `tests/monaco-loader.test.ts`, and becomes reachable here the
-       * moment this surface mounts an editor of its own.
+       * The injected-src assertion below is what closes that gap: once the row click mounts an
+       * editor, Monaco really is asked for on this route, and the src it is asked from is the
+       * thing the defect was about.
        */
       const monacoOrigin = (await window.webContents.executeJavaScript(`
         JSON.stringify({
@@ -3065,18 +3066,104 @@ async function runBuildSmoke(): Promise<string[]> {
           if (!(await until(inContext))) {
             return JSON.stringify({ stage: "not in context" });
           }
-          return JSON.stringify({ stage: "ok" });
+
+          // A tab appeared for it, in the strip beside Chat.
+          const strip = () => document.querySelector('[role="tablist"][aria-label="Editors"]');
+          if (!(await until(() => (strip()?.textContent ?? "").includes("context-me.py")))) {
+            return JSON.stringify({ stage: "no tab" });
+          }
+          const tabs = (strip()?.textContent ?? "");
+
+          // And the file is PAINTED. Monaco mounting is not the claim — a mounted editor
+          // showing nothing is exactly what a blocked loader or a zero-height container looks
+          // like — so this waits for the file's own text inside the editor's DOM.
+          const mounted = () => document.querySelector(".monaco-editor") !== null;
+          if (!(await until(mounted, 15000))) {
+            return JSON.stringify({ stage: "no editor", tabs });
+          }
+          /**
+           * Monaco writes non-breaking spaces between tokens, so a plain includes("x = 1")
+           * fails against text that reads "x = 1" on screen and in a debug print. Normalised
+           * with fromCharCode rather than an escape, because this block is inside a template
+           * literal and a backslash here is eaten before the page sees it.
+           */
+          const painted = () => {
+            const editor = document.querySelector(".monaco-editor");
+            const text = (editor?.textContent ?? "").split(String.fromCharCode(160)).join(" ");
+            return text.includes("x = 1");
+          };
+          if (!(await until(painted, 15000))) {
+            const editor = document.querySelector(".monaco-editor");
+            return JSON.stringify({
+              stage: "editor painted nothing",
+              tabs,
+              // Printed, because "the text is not there" is the assertion that most often means
+              // "it is there and I looked in the wrong place".
+              saw: (editor?.textContent ?? "").slice(0, 120),
+              rect: JSON.stringify(editor?.getBoundingClientRect() ?? null),
+            });
+          }
+
+          // The injected loader script, now that something has actually asked for Monaco.
+          const monacoScript = Array.from(document.querySelectorAll("script[src]"))
+            .map((s) => s.src)
+            .find((src) => src.includes("/vs/loader.js")) ?? null;
+
+          return JSON.stringify({ stage: "ok", tabs, monacoScript });
         })()
       `)) as string;
+
+      /*
+        A picture of the one thing this probe is really about.
+
+        Captured before the project is forgotten, so the tree, the strip and the painted file are
+        all still on screen. Opt-in under the same variable as the shell captures, and for the
+        same reason: a text assertion cannot tell a painted editor from a zero-height one, and
+        this repository has twice photographed an empty workbench and called it a pass.
+      */
+      if (process.env.VOIDCODE_SMOKE_SHOTS !== undefined) {
+        const { writeFile } = await import("node:fs/promises");
+        const image = await window.webContents.capturePage();
+        await writeFile(
+          `${process.env.VOIDCODE_SMOKE_SHOTS}/build-file-open.png`,
+          image.toPNG()
+        );
+      }
 
       forgetProject(projectRoot);
       await fsp.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
 
-      const result = JSON.parse(opened) as { stage: string };
+      const result = JSON.parse(opened) as {
+        stage: string;
+        tabs?: string;
+        saw?: string;
+        rect?: string;
+        monacoScript?: string | null;
+      };
       if (result.stage !== "ok") {
-        failures.push(`build/opening a file into context: ${result.stage}`);
+        failures.push(
+          `build/opening a file: ${result.stage}` +
+            (result.tabs === undefined ? "" : ` | strip: ${result.tabs.trim()}`) +
+            (result.saw === undefined ? "" : ` | editor text: ${JSON.stringify(result.saw)}`) +
+            (result.rect === undefined ? "" : ` | rect: ${result.rect}`)
+        );
+      } else if (
+        result.monacoScript !== null &&
+        result.monacoScript !== undefined &&
+        !result.monacoScript.startsWith("app://")
+      ) {
+        // Monaco has now genuinely been asked for on this route, so where it was asked FROM is
+        // an assertion rather than a vacuous one. This is the defect `tests/monaco-loader.test.ts`
+        // pins in a unit test, observed end to end.
+        failures.push(`build/ loaded Monaco from ${result.monacoScript}`);
       } else {
-        console.log("[smoke] open file: a tree row put the file in the assistant's context");
+        console.log(
+          `[smoke] open file: the row painted the file in the editor (${String(
+            result.monacoScript
+          )}), put it in the assistant's context, and added a tab — strip reads "${String(
+            result.tabs
+          ).trim()}"`
+        );
       }
 
       /**
@@ -3440,17 +3527,21 @@ async function runBuildSmoke(): Promise<string[]> {
               applyButton: [...column.querySelectorAll("button")]
                 .some((b) => /Review and apply/i.test(b.textContent || "")),
               /**
-               * Mode tabs specifically, matched on their text.
+               * Mode tabs specifically: the Chat/Agent split, which is gone and must stay gone.
                *
-               * A bare role=tab count reached the editor file tabs, which use the same role —
-               * it reported 2 and meant nothing. The split is only back if a tab is labelled
-               * Chat or Agent.
+               * FOOLED TWICE BY role=tab, WHICH IS WHY THE FILTER IS TWO CLAUSES NOW. A bare
+               * count reached the old editor file tabs, reported 2 and meant nothing, so it was
+               * narrowed to tabs labelled Chat or Agent. Then the centre pane gained a tab strip
+               * whose first tab is literally labelled Chat — a different thing entirely, and the
+               * text filter matched it. So the strip is excluded by name as well. A returning
+               * mode split would be its own control inside the assistant, not this one.
                *
                * (No backticks in here — this whole block is inside a template literal, and a
                * backtick closes it. That has now cost three separate debugging rounds in this
                * file.)
                */
               tabs: [...document.querySelectorAll('[role="tab"]')]
+                .filter((t) => !t.closest('[role="tablist"][aria-label="Editors"]'))
                 .filter((t) => /^(chat|agent)$/i.test((t.textContent || "").trim())).length,
               text: (column.innerText || "").slice(0, 600),
             };
