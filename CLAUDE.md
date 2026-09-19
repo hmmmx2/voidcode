@@ -67,11 +67,12 @@ nothing else, because `/health` names the backend, the model and the GPU's free 
 cd desktop && npm ci && npm --prefix renderer ci
 npm run dev           # Electron: the IDE, the problems, the tutor
 ```
-The account surfaces are `/account`, `/account/credits` and `/research` — all optional, and all
-signed-out-clean: a launch with no session makes no request to our server, which `npm run smoke`
-counts against a loopback API and fails on.
+The network surfaces are `/account`, `/account/credits` and `/research`, and they differ: the first
+two need a session, while the research library is public and a session only adds the reader's own
+ticks. All three are optional and none is touched at startup — a launch with no session makes no
+request to our server at all, which `npm run smoke` counts against a loopback API and fails on.
 
-### The website is a landing page
+### The website hands out the installer
 ```bash
 pnpm install          # workspace deps
 pnpm dev:web          # Next.js marketing site (:3000)
