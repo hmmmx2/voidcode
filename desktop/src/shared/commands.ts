@@ -59,6 +59,18 @@ export const COMMAND_IDS = [
   "file.openFolder",
   "file.openRecent",
   "file.closeFolder",
+  /**
+   * The save family, back after the Build editor returned.
+   *
+   * These were removed when the workspace stopped holding editable buffers, and the note
+   * left behind said a permanently unavailable menu item is a worse answer than no item.
+   * That was right then and is wrong now: there is an editable buffer again, so the items
+   * act on something and grey out only when nothing is dirty.
+   */
+  "file.save",
+  "file.saveAll",
+  "file.saveAs",
+  "file.closeEditor",
   "file.preferences",
 
   // Edit
@@ -133,6 +145,10 @@ export const COMMAND_LABELS: Record<CommandId, string> = {
   "file.openFolder": "Open Folder…",
   "file.openRecent": "Open Recent",
   "file.closeFolder": "Close Folder",
+  "file.save": "Save",
+  "file.saveAll": "Save All",
+  "file.saveAs": "Save As…",
+  "file.closeEditor": "Close Editor",
   "file.preferences": "Preferences",
 
   "edit.find": "Find…",
@@ -212,6 +228,23 @@ export const COMMAND_ACCELERATORS: Record<CommandId, string | null> = {
   // No accelerator: it is a submenu, and the items inside it carry the paths.
   "file.openRecent": null,
   "file.closeFolder": null,
+  "file.save": "CmdOrCtrl+S",
+  /**
+   * Not VS Code's `Ctrl+K S`. `parseAccelerator` has no chord support and throws on one,
+   * so a two-stroke binding would be a crash rather than a shortcut.
+   */
+  "file.saveAll": "CmdOrCtrl+Alt+S",
+  "file.saveAs": "CmdOrCtrl+Shift+S",
+  /**
+   * Deliberately unbound, and `CmdOrCtrl+W` is the reason.
+   *
+   * That chord belongs to the `platformClose` role, which on macOS is registered natively
+   * and fires before the page sees the key — binding it here would close the window instead
+   * of the tab. The cross on the tab and middle-click cover it, and `menu.test.ts` keeps
+   * `CmdOrCtrl+W` on its reserved list so the next person meets the explanation rather than
+   * the bug.
+   */
+  "file.closeEditor": null,
   "file.preferences": "CmdOrCtrl+,",
 
   "edit.find": "CmdOrCtrl+F",
@@ -325,6 +358,10 @@ export const MENU_STRUCTURE: Record<MenuId, readonly MenuEntry[]> = {
     { dynamic: "recentProjects" },
     "file.closeFolder",
     "-",
+    "file.save",
+    "file.saveAll",
+    "file.saveAs",
+    "file.closeEditor",
     "-",
     "file.preferences",
     "-",

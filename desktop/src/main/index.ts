@@ -20,6 +20,7 @@ import { installQuitHandlers } from "./quit.js";
 import { restoreSession, handleSecondInstance } from "./session/restore.js";
 import { registerHandlers } from "./ipc/handlers/index.js";
 import { createWindow } from "./windows.js";
+import { captureShot } from "./smoke-capture.js";
 import { installApplicationMenu } from "./menu.js";
 import { openDatabase } from "./store/db.js";
 import { onNotificationCreated, seedWelcomeNotification } from "./store/notifications.js";
@@ -795,11 +796,7 @@ async function runSignedInSmoke(window: Electron.BrowserWindow): Promise<string[
         failures.push(`signed-in/${name} console error: ${message}`);
       }
 
-      if (shots !== undefined) {
-        const { writeFile } = await import("node:fs/promises");
-        const image = await window.webContents.capturePage();
-        await writeFile(`${shots}/${name}.png`, image.toPNG());
-      }
+      if (shots !== undefined) await captureShot(window, shots, name);
     }
 
     /**
@@ -3113,6 +3110,121 @@ async function runBuildSmoke(): Promise<string[]> {
         })()
       `)) as string;
 
+      /**
+       * TYPE, SAVE, AND READ THE BYTES BACK OFF DISK.
+       *
+       * The assertions above prove a file is displayed. This one proves the other half of what
+       * an editor is for, and it is checked from MAIN rather than from the page: the renderer
+       * reporting "saved" is the claim under test, so believing it would be circular. `readFile`
+       * on the real path is the only thing that settles it.
+       *
+       * `insertText` rather than a synthetic key sequence, because Monaco listens on a hidden
+       * textarea and reconstructs the buffer from composition events — dispatching `keydown` at
+       * the container does nothing at all, which looks exactly like a broken editor.
+       */
+      const typed = "# smoke edit";
+      const editResult = (await window.webContents.executeJavaScript(`
+        (async () => {
+          const until = async (fn, ms = 8000) => {
+            const deadline = Date.now() + ms;
+            while (Date.now() < deadline) {
+              if (fn()) return true;
+              await new Promise((r) => setTimeout(r, 100));
+            }
+            return false;
+          };
+
+          const area = document.querySelector(".monaco-editor textarea");
+          if (!area) return JSON.stringify({ stage: "no editor textarea" });
+          area.focus();
+          if (document.activeElement !== area) {
+            return JSON.stringify({ stage: "editor would not take focus" });
+          }
+
+          /*
+            execCommand, not webContents.insertText, and not a synthetic keydown.
+
+            A keydown at the container does nothing: Monaco reads from a hidden textarea and
+            reconstructs the buffer from input events. insertText from main does work, but it is
+            a second IPC round trip after the focus call, and two runs of this probe failed at
+            two different points because of that race. execCommand emits the real
+            beforeinput/input pair, page-side, in one step, with nothing to race.
+          */
+          document.execCommand("insertText", false, "# smoke edit");
+
+          const dot = () => document.querySelector('[aria-label="Unsaved changes"]') !== null;
+          if (!(await until(dot))) {
+            const editor = document.querySelector(".monaco-editor");
+            return JSON.stringify({
+              stage: "no dirty dot after typing",
+              saw: (editor && editor.textContent ? editor.textContent : "").slice(0, 120),
+            });
+          }
+          return JSON.stringify({ stage: "dirty" });
+        })()
+      `)) as string;
+      const edit = JSON.parse(editResult) as { stage: string; saw?: string };
+
+      if (edit.stage !== "dirty") {
+        failures.push(
+          `build/typing did not mark the buffer unsaved: ${edit.stage}` +
+            (edit.saw === undefined ? "" : ` | editor text: ${JSON.stringify(edit.saw)}`)
+        );
+      } else {
+        // Through the shell command, which is the path Ctrl+S and the File menu both take.
+        window.webContents.send("shell:command", { command: "file.save" });
+
+        const cleared = (await window.webContents.executeJavaScript(`
+          (async () => {
+            const until = async (fn, ms = 8000) => {
+              const deadline = Date.now() + ms;
+              while (Date.now() < deadline) {
+                if (fn()) return true;
+                await new Promise((r) => setTimeout(r, 100));
+              }
+              return false;
+            };
+            const clean = () =>
+              document.querySelector('[aria-label="Unsaved changes"]') === null;
+            const ok = await until(clean);
+            // The screen, printed on failure. "It did not save" is the kind of assertion that
+            // most often means "it said why and nobody read it".
+            const main = document.querySelector("main");
+            return JSON.stringify({
+              cleared: ok,
+              reported: ok ? "" : (main && main.innerText ? main.innerText : "").slice(0, 400),
+            });
+          })()
+        `)) as string;
+        const clearedResult = JSON.parse(cleared) as { cleared: boolean; reported: string };
+
+        /**
+         * READ FROM MAIN, NOT FROM THE PAGE. The renderer reporting "saved" is the claim under
+         * test, so believing it would be circular. The bytes on disk are what settle it.
+         */
+        const onDisk = await fsp
+          .readFile(nodePath.join(projectRoot, "context-me.py"), "utf8")
+          .catch(() => "");
+
+        if (!clearedResult.cleared) {
+          failures.push(
+            `build/the dirty dot never cleared after Save | screen: ${JSON.stringify(
+              clearedResult.reported
+            )}`
+          );
+        } else if (!onDisk.includes("smoke edit")) {
+          failures.push(
+            `build/Save reported success and wrote nothing: ${JSON.stringify(onDisk)}`
+          );
+        } else {
+          console.log(
+            "[smoke] edit: typed into the editor, the tab went dirty, file.save cleared it, " +
+              "and main read the new bytes off disk"
+          );
+        }
+      }
+
+
       /*
         A picture of the one thing this probe is really about.
 
@@ -3122,12 +3234,7 @@ async function runBuildSmoke(): Promise<string[]> {
         this repository has twice photographed an empty workbench and called it a pass.
       */
       if (process.env.VOIDCODE_SMOKE_SHOTS !== undefined) {
-        const { writeFile } = await import("node:fs/promises");
-        const image = await window.webContents.capturePage();
-        await writeFile(
-          `${process.env.VOIDCODE_SMOKE_SHOTS}/build-file-open.png`,
-          image.toPNG()
-        );
+        await captureShot(window, process.env.VOIDCODE_SMOKE_SHOTS, "build-file-open");
       }
 
       forgetProject(projectRoot);
@@ -3137,6 +3244,8 @@ async function runBuildSmoke(): Promise<string[]> {
         stage: string;
         tabs?: string;
         saw?: string;
+        lines?: number;
+        present?: boolean;
         rect?: string;
         monacoScript?: string | null;
       };
@@ -3145,6 +3254,8 @@ async function runBuildSmoke(): Promise<string[]> {
           `build/opening a file: ${result.stage}` +
             (result.tabs === undefined ? "" : ` | strip: ${result.tabs.trim()}`) +
             (result.saw === undefined ? "" : ` | editor text: ${JSON.stringify(result.saw)}`) +
+            (result.present === undefined ? "" : ` | element present: ${String(result.present)}`) +
+            (result.lines === undefined ? "" : ` | .view-line nodes: ${String(result.lines)}`) +
             (result.rect === undefined ? "" : ` | rect: ${result.rect}`)
         );
       } else if (
@@ -3898,7 +4009,6 @@ async function runBuildSmoke(): Promise<string[]> {
     // `window.host` is absent outside Electron, so serving the static export shows the
     // "not available here" state instead of the IDE. Opt-in, so CI does not write files.
     if (process.env.VOIDCODE_SMOKE_SHOTS !== undefined) {
-      const { writeFile } = await import("node:fs/promises");
       const directory = process.env.VOIDCODE_SMOKE_SHOTS;
 
       // Both destinations, because the claim being reviewed is that they are one product.
@@ -3971,8 +4081,7 @@ async function runBuildSmoke(): Promise<string[]> {
         `);
         console.log(`[smoke] ${name} geometry: ${JSON.stringify(geometry)}`);
 
-        const image = await window.webContents.capturePage();
-        await writeFile(`${directory}/${name}.png`, image.toPNG());
+        await captureShot(window, directory, name);
       }
 
       // The sign-in dialog is not a route, so it is opened the way a person opens it — from the
@@ -3987,8 +4096,7 @@ async function runBuildSmoke(): Promise<string[]> {
         const opened = await waitFor(window, `document.querySelector("dialog[open]") !== null`);
         await new Promise((resolve) => setTimeout(resolve, 600));
         if (!opened) failures.push(`build/${name} dialog did not open`);
-        const image = await window.webContents.capturePage();
-        await writeFile(`${directory}/${name}.png`, image.toPNG());
+        await captureShot(window, directory, name);
       }
       console.log(`[smoke] captured shell screenshots -> ${directory}`);
     }

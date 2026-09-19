@@ -27,6 +27,15 @@ import {
   serializeCentreTab,
   type CentreTab,
 } from "@/lib/build/editor-tabs";
+import {
+  afterSave,
+  afterSaveAs,
+  classifySaveFailure,
+  conflictPathFor,
+  isDirty,
+  isOwnWrite,
+  planCloseSaves,
+} from "@/lib/build/editor-save";
 import { useTerminals } from "@/lib/build/useTerminals";
 import {
   appendTo,
@@ -81,11 +90,12 @@ const DEFAULT_MODEL = "qwen3:8b";
 /**
  * A file the workspace has read.
  *
- * `baseline` is what was last seen on disk. Nothing here edits *yet* — the viewer is read-only
- * until the save family lands — so it does not currently diverge from `contents` by typing. It
- * is what the watcher compares against to decide whether a file changed underneath us, and it is
- * what `fs:save`'s optimistic-concurrency check will be handed when editing arrives. `null`
- * means the file is gone from disk, which `deleteEntry` and `reconcile` both set.
+ * `baseline` is what was last seen on disk, and `contents !== baseline` is the whole definition
+ * of dirty — there is no separate flag, so the two cannot disagree. It is what the watcher
+ * compares against to decide whether a file changed underneath us, and it is what `fs:save`'s
+ * optimistic-concurrency check is pinned to. `null` means the file is gone from disk, which
+ * `deleteEntry` and `reconcile` both set, and which counts as dirty: the text is still the
+ * user's.
  *
  * THIS LIST IS THE TAB STRIP. There is no second array of open paths, deliberately: `renameEntry`
  * and `reconcile` already rewrite paths here, and a parallel list would be a second place to
@@ -499,17 +509,38 @@ export default function BuildWorkspace() {
         }
 
         const dirty = buffer.contents !== buffer.baseline;
+
+        let onDisk: string | null = null;
+        try {
+          const file = await host.fs.read({ path: buffer.path });
+          onDisk = file.binary ? null : file.contents;
+        } catch {
+          // Gone between the event and the read. The next batch will call it deleted.
+        }
+
+        /**
+         * OUR OWN SAVE COMING BACK, WHICH MUST NOT BE REPORTED AS SOMEBODY ELSE'S EDIT.
+         *
+         * `noteOwnWrite` in main suppresses the change event for `SELF_WRITE_GRACE_MS` (500 ms).
+         * When the write-to-event latency exceeds that *and* the user typed in the gap, the
+         * buffer is dirty again by the time this runs and the branch below would warn them about
+         * their own save — which reads as data loss and is not.
+         *
+         * Keyed on the text rather than on a second timer, because "disk is exactly what we last
+         * wrote" is the fact that settles it, and a second grace window would be a second thing
+         * to tune.
+         */
+        if (onDisk !== null && isOwnWrite(recentlySavedRef.current, buffer.path, onDisk)) {
+          recentlySavedRef.current.delete(buffer.path);
+          continue;
+        }
+
         if (dirty) {
           conflicted.push(buffer.path);
           continue;
         }
 
-        try {
-          const { contents } = await host.fs.read({ path: buffer.path });
-          reloads.push({ path: buffer.path, contents });
-        } catch {
-          // Gone between the event and the read. The next batch will call it deleted.
-        }
+        if (onDisk !== null) reloads.push({ path: buffer.path, contents: onDisk });
       }
 
       if (reloads.length > 0 || orphaned.length > 0) {
@@ -752,23 +783,175 @@ export default function BuildWorkspace() {
   }, [openFileAt]);
 
   /**
+   * Text this window wrote, so the watcher can tell our own save from somebody else's edit.
+   *
+   * A ref and not state, deliberately. `reconcile` runs from the watcher subscription and has to
+   * read this synchronously — reading it from state and then writing state is the
+   * await-then-setState shape that `BuildWorkspace`'s own notes record as a retired data-loss
+   * defect. `noteOwnWrite` in main already suppresses the event for 500 ms; this covers the case
+   * where the write-to-event latency exceeds that and the user typed in the gap, which otherwise
+   * warns them about their own save.
+   */
+  const recentlySavedRef = useRef<Map<string, string>>(new Map());
+
+  const dirtyPaths = useMemo(
+    () => new Set(files.filter(isDirty).map((f) => f.path)),
+    [files]
+  );
+
+  /**
+   * Write one buffer.
+   *
+   * Returns whether it landed, because the close handshake has to know and a menu item does not.
+   */
+  const saveFile = useCallback(
+    async (path: string): Promise<boolean> => {
+      const fs = hostRef.current?.fs;
+      const buffer = filesRef.current.find((f) => f.path === path);
+      if (fs === undefined || buffer === undefined) return false;
+
+      // Captured BEFORE the await. Everything downstream is about this exact text, not about
+      // whatever the buffer holds by the time the write returns.
+      const written = buffer.contents;
+      const baseline = buffer.baseline;
+
+      try {
+        await fs.save({ path, contents: written, baseline });
+        recentlySavedRef.current.set(path, written);
+        setFiles((prev) => prev.map((f) => (f.path === path ? afterSave(f, written) : f)));
+        setExternallyChanged((prev) => {
+          if (!prev.has(path)) return prev;
+          const next = new Set(prev);
+          next.delete(path);
+          return next;
+        });
+        return true;
+      } catch (err) {
+        /**
+         * Re-read and compare, rather than reading a code off the rejection.
+         *
+         * `IpcError`'s custom properties do not survive the preload boundary, and the message is
+         * an English sentence built in `build/save.ts` that a rewording would break. Disk not
+         * matching the baseline the save was pinned to *is* the definition of the conflict.
+         */
+        let onDisk: string | null = null;
+        try {
+          const current = await fs.read({ path });
+          onDisk = current.binary ? null : current.contents;
+        } catch {
+          onDisk = null;
+        }
+
+        if (classifySaveFailure(baseline, onDisk) === "conflict") {
+          setExternallyChanged((prev) => new Set(prev).add(path));
+          setError(
+            `${path} changed on disk since it was opened, so nothing was written. Reload it, or ` +
+              `use Save As to keep your version.`
+          );
+        } else {
+          setError(
+            `Could not save ${path}: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+        return false;
+      }
+    },
+    []
+  );
+
+  const saveAll = useCallback(async (): Promise<boolean> => {
+    // Sequential, not `Promise.all`: each write updates `files`, and a batch of concurrent
+    // updaters over the same state is how one of them ends up reading a stale baseline.
+    let ok = true;
+    for (const buffer of planCloseSaves(filesRef.current)) {
+      if (!(await saveFile(buffer.path))) ok = false;
+    }
+    return ok;
+  }, [saveFile]);
+
+  /**
+   * Save the window's work because it is closing, and rescue anything refused.
+   *
+   * NOT A PROMPT. `windows.ts` gives this three seconds and then closes the window regardless, so
+   * a dialog would be asked of somebody who has already walked away — and `Workbench`'s own note
+   * says prompting per file at shutdown is the behaviour everyone clicks through without reading.
+   *
+   * A refused save is the case with no good answer: the file changed underneath, there is no time
+   * to ask, and the window is going. A sibling file is the least-bad outcome — it is confined by
+   * `RendererPath`, needs no dialog, fits in the grace window, and is visible in the tree next
+   * time. `fs:save` with a `null` baseline refuses to clobber, so the name is numbered off the
+   * paths already open.
+   */
+  const flushAll = useCallback(async (): Promise<void> => {
+    const fs = hostRef.current?.fs;
+    if (fs === undefined) return;
+
+    for (const buffer of planCloseSaves(filesRef.current)) {
+      if (await saveFile(buffer.path)) continue;
+      const taken = new Set(filesRef.current.map((f) => f.path));
+      const rescue = conflictPathFor(buffer.path, taken);
+      try {
+        await fs.save({ path: rescue, contents: buffer.contents, baseline: null });
+      } catch {
+        // Nothing further is available here: no dialog, no time, and the window is going. The
+        // edit is lost, and saying so in a toast nobody will see would not change that.
+      }
+    }
+  }, [saveFile]);
+
+  /**
    * Close one tab: drop the buffer and move the selection.
    *
-   * No prompt, because nothing here can be dirty yet — the viewer is read-only. The discard
-   * handshake through `fs:confirmDiscard` arrives with editing, and this is the function it will
-   * gate.
+   * A dirty buffer asks first, through the native `fs:confirmDiscard` dialog rather than a React
+   * modal — the precedent `contract.ts` sets and which `inference/consent.ts` and
+   * `agent/approve.ts` both cite. Cancel leaves everything alone, which includes leaving the tab
+   * selected: a cancelled close that still navigated would be the worst of both.
    */
   const closeFile = useCallback(
-    (path: string) => {
+    async (path: string) => {
+      const buffer = filesRef.current.find((f) => f.path === path);
+      if (buffer !== undefined && isDirty(buffer)) {
+        const fs = hostRef.current?.fs;
+        const { choice } = (await fs?.confirmDiscard({ path })) ?? { choice: "cancel" as const };
+        if (choice === "cancel") return;
+        if (choice === "save" && !(await saveFile(path))) return;
+      }
+
       const next = closeTab(openPaths, activePath ?? null, path);
       setFiles((prev) => prev.filter((f) => f.path !== path));
+      recentlySavedRef.current.delete(path);
       setActivePath(next.active ?? undefined);
       // Back to the conversation when the last file closes, rather than an empty editor: the
       // strip would otherwise leave you on a tab whose pane says "no file open".
       if (next.active === null) setCentreView("chat");
     },
-    [openPaths, activePath]
+    [openPaths, activePath, saveFile]
   );
+
+  /** Save As, which writes once and only rebinds the buffer when the target is inside the project. */
+  const saveActiveAs = useCallback(async () => {
+    const fs = hostRef.current?.fs;
+    const buffer = filesRef.current.find((f) => f.path === activePath);
+    if (fs === undefined || buffer === undefined) return;
+
+    const written = buffer.contents;
+    const suggestedName = buffer.path.split("/").pop() ?? buffer.path;
+    try {
+      const result = await fs.saveAs({ contents: written, suggestedName });
+      if (!result.saved) return;
+      if (result.rebind) recentlySavedRef.current.set(result.path, written);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.path === buffer.path
+            ? afterSaveAs(f, written, { path: result.path, rebind: result.rebind })
+            : f
+        )
+      );
+      if (result.rebind) setActivePath(result.path);
+    } catch (err) {
+      setError(`Could not save a copy: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [activePath]);
 
   /**
    * Open a cross-reference result at the line it named.
@@ -836,10 +1019,22 @@ export default function BuildWorkspace() {
     [dockLayout, panels.left, panels.right, panels.bottom]
   );
 
-  /*
-    No flush before a terminal runs. It existed so a shell would not execute a three-second-old
-    autosaved copy of what you had just typed; nothing here holds unwritten text.
-  */
+  /**
+   * Write unsaved buffers before a shell sees Enter.
+   *
+   * `TerminalPanel` has taken an `onFlush` prop all along and nothing has ever passed one, for
+   * the stated reason that the workspace held no unwritten text. It does again, and the failure
+   * this prevents is specific: you edit a file, switch to the terminal, run it, and the command
+   * executes the version on disk — an old answer that looks like a current one, which is the
+   * hardest kind to notice.
+   *
+   * Fire-and-forget rather than awaited: the keystroke must not wait on a round trip, and a save
+   * that fails reports itself through the same banner as any other.
+   */
+  const flushBeforeTerminal = useCallback(() => {
+    void saveAll();
+  }, [saveAll]);
+
   // Explorer or Search in the left rail — one at a time, as every editor does it.
   const [leftView, setLeftView] = useState<"explorer" | "search" | "memory">("explorer");
 
@@ -874,11 +1069,46 @@ export default function BuildWorkspace() {
       terminalOpen: panels.bottom,
       hasProject: tree !== undefined,
       hasActive: activePath !== undefined,
+      saveActive: () => {
+        if (activePath !== undefined) void saveFile(activePath);
+      },
+      saveAll: () => void saveAll(),
+      saveActiveAs: () => void saveActiveAs(),
+      closeActiveEditor: () => {
+        if (activePath !== undefined) void closeFile(activePath);
+      },
+      /**
+       * Enablement, not a "is the focus in a text box" guard.
+       *
+       * `keybindings.ts` rules that out explicitly, and it is also what stops Ctrl+S firing while
+       * the user is typing a message: with Chat showing there is no active file tab, so the
+       * command is disabled and the key falls through unconsumed.
+       */
+      activeDirty: centreView === "file" && activePath !== undefined && dirtyPaths.has(activePath),
+      hasDirty: dirtyPaths.size > 0,
+      flushAll,
       // Structure only. Which panels are open is `panels`, and reset has no business touching it.
       resetLayout: () => setDockLayout(defaultWorkspaceLayout()),
       layoutIsDefault: isDefaultWorkspaceLayout(dockLayout),
     }),
-    [openProject, activePath, tree, setPanel, panels.bottom, setLeftView, setDockTab, terminals, dockLayout]
+    [
+      openProject,
+      activePath,
+      centreView,
+      dirtyPaths,
+      tree,
+      setPanel,
+      panels.bottom,
+      setLeftView,
+      setDockTab,
+      terminals,
+      dockLayout,
+      saveFile,
+      saveAll,
+      saveActiveAs,
+      closeFile,
+      flushAll,
+    ]
   );
 
   useEffect(() => {
@@ -999,6 +1229,7 @@ export default function BuildWorkspace() {
               <EditorTabs
                 paths={openPaths}
                 tab={centreTab}
+                dirtyPaths={dirtyPaths}
                 onSelect={(next) => {
                   if (next.kind === "chat") {
                     setCentreView("chat");
@@ -1007,7 +1238,7 @@ export default function BuildWorkspace() {
                   setActivePath(next.path);
                   setCentreView("file");
                 }}
-                onClose={closeFile}
+                onClose={(path) => void closeFile(path)}
               />
             </div>
 
@@ -1030,10 +1261,20 @@ export default function BuildWorkspace() {
                   openPaths={openPaths}
                   visible={centreTab.kind === "file"}
                   reveal={reveal}
+                  dirty={openFile !== undefined && dirtyPaths.has(openFile.path)}
                   changedOnDisk={
                     openFile !== undefined && externallyChanged.has(openFile.path)
                   }
                   watching={watch.watching}
+                  onChange={(next) => {
+                    if (openFile === undefined || next === undefined) return;
+                    setFiles((prev) =>
+                      prev.map((f) => (f.path === openFile.path ? { ...f, contents: next } : f))
+                    );
+                  }}
+                  onSave={() => void saveFile(openFile?.path ?? "")}
+                  onReload={() => void reloadFromDisk(openFile?.path ?? "")}
+                  onSaveAs={() => void saveActiveAs()}
                 />
               </div>
             </div>
@@ -1049,6 +1290,7 @@ export default function BuildWorkspace() {
               outputChannel={outputChannel}
               onOutputChannelChange={setOutputChannel}
               onClearOutput={() => setOutput((prev) => clearChannel(prev, outputChannel))}
+              onFlush={flushBeforeTerminal}
               onTerminalExit={(id, code, signal) =>
                 appendOutput(
                   "terminal",

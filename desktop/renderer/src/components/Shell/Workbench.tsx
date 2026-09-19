@@ -369,12 +369,25 @@ function WorkbenchFrame({ children }: { children: React.ReactNode }) {
     return [
       { id: "file.openFolder", run: build.openProject },
       { id: "file.closeFolder", run: build.closeProject, enabled: build.hasProject },
-      /*
-        No save family. The workspace views files rather than authoring them — changes arrive as
-        diffs the assistant proposes and the user reviews — so there is never an unsaved buffer
-        for Save, Save All or Save As to act on. They are gone from the command table rather
-        than greyed, because a permanently unavailable menu item is a worse answer than no item.
-      */
+
+      /**
+       * The save family, back with the editor.
+       *
+       * It was removed when the workspace stopped holding editable buffers, and the note here
+       * said a permanently unavailable menu item is worse than no item. True then. Now there is
+       * an editable buffer, so these act on something and grey out only when there is nothing to
+       * do — which is the honest state rather than a missing menu.
+       *
+       * ENABLEMENT IS ALSO THE GUARD ON THE KEYSTROKE. `installKeybindings` matches in the
+       * capture phase, so Ctrl+S would otherwise fire while the user is typing a message into the
+       * composer. `activeDirty` is false whenever the centre pane is showing Chat, so the key
+       * falls through unconsumed — which is the resolution `keybindings.ts` documents, and is why
+       * this is not an "is the focus in a text box" test, which that file rules out explicitly.
+       */
+      { id: "file.save", run: build.saveActive, enabled: build.activeDirty },
+      { id: "file.saveAll", run: build.saveAll, enabled: build.hasDirty },
+      { id: "file.saveAs", run: build.saveActiveAs, enabled: build.hasActive },
+      { id: "file.closeEditor", run: build.closeActiveEditor, enabled: build.hasActive },
 
       /**
        * The Terminal menu, which has carried two hardcoded `enabled: false` placeholders
@@ -429,15 +442,31 @@ function WorkbenchFrame({ children }: { children: React.ReactNode }) {
       const command = (payload as { command?: string } | undefined)?.command;
       if (command !== "window.confirmClose") return;
 
-      /*
-        Nothing to save, so nothing to weigh.
-
-        This used to attempt a save-all and then allow the close on *either* outcome — success
-        and failure both called `finish`, so a file that failed to write was closed over
-        silently. That whole path is gone rather than fixed: a read-only workspace has no
-        unsaved buffer to lose.
-      */
-      void window.host?.window?.allowClose?.();
+      /**
+       * Write everything, THEN allow the close.
+       *
+       * `windows.ts` is explicit that this handshake "ships with save, not after it": without
+       * it, adding save changes the failure mode to "usually persists, silently does not when
+       * you close the window", which is worse in kind because it is the one a user trusts.
+       *
+       * The previous version of this handler called `allowClose()` unconditionally, which was
+       * correct for a read-only workspace and is not any more. An earlier version before that
+       * attempted a save-all and allowed the close on *either* outcome, so a file that failed to
+       * write was closed over silently — `flushAll` is what replaces that: a refused save is
+       * rescued to a sibling file rather than dropped, because there is no time for a dialog and
+       * nobody in front of it.
+       *
+       * `allowClose` is still called on the failure path. Main closes the window after
+       * `CLOSE_GRACE_MS` regardless, so refusing to answer buys nothing but a three-second
+       * pause — and `flushAll` has already done everything that can be done by then.
+       */
+      void (async () => {
+        try {
+          await build?.flushAll();
+        } finally {
+          void window.host?.window?.allowClose?.();
+        }
+      })();
     });
     return off;
   }, [build]);

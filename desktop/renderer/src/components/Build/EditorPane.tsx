@@ -9,12 +9,11 @@ import { monacoLanguageFor } from "@shared/languages";
 /**
  * One file, shown.
  *
- * READ-ONLY FOR NOW, AND THAT IS A PHASE BOUNDARY RATHER THAN A DESIGN. Saving has a real
- * mechanism behind it — `fs:save` carries the app's only optimistic-concurrency check, and
- * `build/watcher.ts` is built around that guard — and wiring it up means command ids, a dirty
- * set, a discard prompt and the window-close handshake `windows.ts` says "ships with save, not
- * after it". Landing the viewer first keeps both diffs reviewable. Until then the editor says so
- * rather than silently swallowing keystrokes.
+ * EDITABLE, AND SAVED EXPLICITLY. Ctrl+S, a dot on the tab while the buffer differs from disk,
+ * and a native prompt when a dirty tab is closed. Not autosave: `fs:save` carries the app's only
+ * optimistic-concurrency check, and a background write every second would either fight that guard
+ * or have to weaken it. The header says "Unsaved" rather than leaving the state to the tab dot
+ * alone, because the dot is small and the consequence is not.
  *
  * ONE EDITOR INSTANCE, SWITCHED BY THE `path` PROP. `@monaco-editor/react` keeps a module-level
  * map of view states keyed by path and, when `path` changes, saves the outgoing cursor/scroll/
@@ -36,8 +35,13 @@ export default function EditorPane({
   openPaths,
   visible,
   reveal,
+  dirty,
   changedOnDisk,
   watching,
+  onChange,
+  onSave,
+  onReload,
+  onSaveAs,
 }: {
   /** The file to show, or `undefined` when no file is open. */
   path: string | undefined;
@@ -48,8 +52,13 @@ export default function EditorPane({
   openPaths: readonly string[];
   visible: boolean;
   reveal?: { line: number; column: number; nonce: number } | undefined;
+  dirty: boolean;
   changedOnDisk: boolean;
   watching: boolean;
+  onChange: (next: string | undefined) => void;
+  onSave: () => void;
+  onReload: () => void;
+  onSaveAs: () => void;
 }) {
   const monaco = useMonaco();
 
@@ -101,19 +110,44 @@ export default function EditorPane({
       <div className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-line px-3">
         <Breadcrumbs path={path} />
         <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-ink-3">
-          Read-only
+          {dirty ? "Unsaved" : "Saved"}
         </span>
       </div>
 
       {changedOnDisk && (
         /*
-          The banner says what happened and, when the watcher is off, why it might not have.
-          `watch.watching` is already in the workspace's state for exactly this: "nothing changed"
-          must not be indistinguishable from "I stopped being able to tell".
+          The banner says what happened, offers the three things that can be done about it, and —
+          when the watcher is off — why it might not have said anything at all. `watch.watching`
+          is already in the workspace's state for exactly this: "nothing changed" must not be
+          indistinguishable from "I stopped being able to tell".
+
+          OVERWRITE IS NOT A BUTTON HERE, deliberately. Saving again after a reload is one click
+          away and reads as a decision; a button labelled Overwrite beside a warning is the one
+          people press to make the warning go away. The workspace has no force flag either, which
+          is what keeps `fs:save`'s baseline check meaning something.
         */
-        <div className="shrink-0 border-b border-line bg-ide-raised px-3 py-1.5 text-[12px] text-ink-2">
-          This file changed on disk since it was opened.
-          {!watching && " The file watcher is not running, so further changes will not be noticed."}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-ide-raised px-3 py-1.5 text-[12px] text-ink-2">
+          <span>
+            This file changed on disk since it was opened.
+            {!watching &&
+              " The file watcher is not running, so further changes will not be noticed."}
+          </span>
+          <span className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onReload}
+              className="rounded text-ink underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+            >
+              Reload from disk
+            </button>
+            <button
+              type="button"
+              onClick={onSaveAs}
+              className="rounded text-ink underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+            >
+              Save a copy…
+            </button>
+          </span>
         </div>
       )}
 
@@ -122,9 +156,18 @@ export default function EditorPane({
           path={path}
           value={contents}
           language={language ?? monacoLanguageFor(path) ?? "plaintext"}
-          readOnly
           visible={visible}
           reveal={reveal}
+          onChange={onChange}
+          /*
+            Monaco's own Ctrl+S, so the key works when the caret is inside the editor.
+
+            `installKeybindings` listens in the capture phase and would win anyway, but only while
+            the command is enabled — and enablement is what stops Ctrl+S firing from the chat
+            composer. Binding it here as well means the editor never swallows the key silently,
+            which is the failure mode that teaches people the app does not save.
+          */
+          onSaveKey={onSave}
         />
       </div>
     </div>

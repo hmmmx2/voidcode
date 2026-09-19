@@ -108,6 +108,24 @@ describe("the command table", () => {
     for (const reserved of ["CmdOrCtrl+Z", "CmdOrCtrl+C", "CmdOrCtrl+V", "CmdOrCtrl+X", "CmdOrCtrl+A"]) {
       expect(taken).not.toContain(reserved);
     }
+
+    /**
+     * `CmdOrCtrl+W` is the one that looks most available and is the most expensive to take.
+     *
+     * It belongs to the `platformClose` role in `MENU_STRUCTURE.file`, and on macOS that role is
+     * registered in a real application menu, so the key is handled natively and fires before the
+     * page ever sees it. Binding it to Close Editor would close the *window* — losing every other
+     * open tab — while appearing to work on Windows, where there is no application menu and the
+     * renderer's dispatcher gets the key.
+     *
+     * So `file.closeEditor` has no accelerator at all; the cross on the tab and middle-click are
+     * the affordances. Asserted rather than commented, because "this shortcut is free" is exactly
+     * what the next person will assume.
+     */
+    expect(
+      taken,
+      "CmdOrCtrl+W is owned by the platformClose role and closes the window on macOS"
+    ).not.toContain("CmdOrCtrl+W");
   });
 
   it("gives every accelerator a modifier", () => {

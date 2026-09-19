@@ -57,6 +57,16 @@ interface MonacoWrapperProps {
    * arrive.
    */
   reveal?: { line: number; column: number; nonce: number };
+  /**
+   * What Ctrl+S should do while the caret is inside the editor.
+   *
+   * Registered as a Monaco command rather than left to the global handler. The global one wins
+   * on ordering — `installKeybindings` listens in the capture phase — but only while its command
+   * is *enabled*, and enablement is what keeps Ctrl+S from firing out of the chat composer. This
+   * closes the remaining gap: without it, a keystroke that reached the editor would be swallowed
+   * by Monaco's default Save action, which does nothing and teaches people the app does not save.
+   */
+  onSaveKey?: () => void;
 }
 
 export default function MonacoWrapper({
@@ -67,6 +77,7 @@ export default function MonacoWrapper({
   readOnly = false,
   visible = true,
   reveal,
+  onSaveKey,
 }: MonacoWrapperProps) {
   // Point the loader at the bundled copy before the editor mounts. Without this it
   // fetches monaco from jsDelivr and hangs forever with no network.
@@ -74,6 +85,17 @@ export default function MonacoWrapper({
 
   const publishEditor = usePublishEditor();
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
+  /**
+   * The current save handler, read at keypress time.
+   *
+   * Monaco's `addCommand` registers once and keeps whatever closure it was given, so binding
+   * `onSaveKey` directly would save whichever file was open when the editor mounted, forever.
+   * A ref is the whole fix and the bug it prevents is silent.
+   */
+  const saveRef = useRef<(() => void) | undefined>(onSaveKey);
+  useEffect(() => {
+    saveRef.current = onSaveKey;
+  }, [onSaveKey]);
 
   useEffect(() => {
     if (visible) editorRef.current?.layout();
@@ -104,9 +126,12 @@ export default function MonacoWrapper({
         beforeMount={defineVoidTheme}
         value={value}
         onChange={onChange}
-        onMount={(instance) => {
+        onMount={(instance, monaco) => {
           editorRef.current = instance;
           publishEditor(instance);
+          instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+            saveRef.current?.();
+          });
           // Cleared on dispose rather than on unmount: React can unmount this component while
           // Monaco is still tearing the editor down, and a handle to a disposed editor throws on
           // the next `getAction`.
