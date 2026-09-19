@@ -38,7 +38,7 @@ contract table and `tests/content-census.test.ts` are where counts belong.) Phas
 
 **Unchanged, and deliberately.** Electron 43, not Tauri. Moving to Tauri rewrites the main
 process from Node to Rust and costs `node-pty` (the terminals), the `MessagePort` transfer that
-carries `chat:open` / `agent:open` / `pty:spawn` / `lsp:connect`, the `contextBridge` preload
+carries `chat:open` / `agent:open` / `pty:spawn`, the `contextBridge` preload
 that *is* the privilege boundary, and every main-process test. The trade is a smaller binary.
 Not worth it.
 
@@ -174,8 +174,12 @@ and process access. Our own plan already calls MCP's config-driven subprocess la
 larger capability than `run_command`, which this codebase treats as the most dangerous thing it
 does"*. An extension host is strictly larger. It needs a consent model that does not exist, a
 sandboxing story, and it breaks the closed-world invariants `agent-tools.test.ts` asserts.
-`src/main/index.ts:1399` asserts `lspAbsent === true` as a deliberate claim; that claim survives
-this plan.
+The smoke asserts `lspAbsent === true` as a deliberate claim, and that claim survives this plan.
+(This listed a fourth `MessagePort` channel, `lsp:connect`, above. There are three
+— `src/preload/index.ts` is the list — and no `lsp:` channel is declared anywhere, which is
+what the assertion is asserting. A comment in `lib/monaco-local.ts` sent readers to that same
+unbuilt subsystem for Build Mode's diagnostics; it now names `lint:run`, which is what actually
+reports them.)
 
 ---
 

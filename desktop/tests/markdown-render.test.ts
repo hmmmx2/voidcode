@@ -16,6 +16,8 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "@/components/markdown/Markdown";
+import { paintTokens, type Token } from "@/components/markdown/CodeBlock";
+import { colourForToken, styleForToken } from "@/lib/monaco-theme";
 
 const render = (source: string): string =>
   renderToStaticMarkup(createElement(Markdown, { source }));
@@ -118,5 +120,76 @@ describe("ordinary rendering", () => {
     const html = render("| flag | meaning |\n| --- | --- |\n| -v | verbose |");
     expect(html).toContain("<table");
     expect(html).toContain("verbose");
+  });
+});
+
+describe("the other half: what a fence looks like once monaco HAS loaded", () => {
+  /**
+   * THE ASSERTION ABOVE PASSES HARDEST WHEN SOMETHING IS WRONG, which is why this exists.
+   *
+   * "renders a fenced block as text when monaco has not loaded" is a real and necessary
+   * property — but plain text is also exactly what a silently broken Monaco produces, and that
+   * is not hypothetical: the loader was pointed at a CDN the CSP blocks on every route without
+   * a mounted editor, so every code block in the Build assistant's transcript rendered as plain
+   * text and this file was green throughout. See `tests/monaco-loader.test.ts`.
+   *
+   * ASSERTED AGAINST THE MAPPING, NOT A RENDER, because the painting happens in a
+   * `useEffect` and `renderToStaticMarkup` does not run effects — there is no DOM in this
+   * suite, and adding one to cover this would be a larger change than the property is worth.
+   * `paintTokens` is exported from `CodeBlock` for exactly this, and it is where both of the
+   * available off-by-ones live.
+   */
+  const python = (): Token[][] => [
+    // `def softmax(x):` — offsets as Monaco reports them: a scope starts at each offset and
+    // runs until the next one.
+    [
+      { offset: 0, type: "keyword.python" },
+      { offset: 3, type: "" },
+      { offset: 4, type: "identifier.python" },
+      { offset: 11, type: "delimiter.parenthesis.python" },
+    ],
+    [{ offset: 0, type: "comment.python" }],
+  ];
+
+  it("slices each token to the start of the next one, and the last to end of line", () => {
+    const lines = paintTokens("def softmax(x):\n# shift-invariant", python());
+
+    expect(lines[0]?.map((s) => s.text)).toEqual(["def", " ", "softmax", "(x):"]);
+    /**
+     * The last token is the one with an off-by-one available: its end is the line's length, not
+     * its own offset. Getting that wrong drops the tail of every line, which reads as a
+     * truncated file rather than as a highlighting bug.
+     */
+    expect(lines[0]?.at(-1)?.text).toBe("(x):");
+    expect(lines[1]?.map((s) => s.text)).toEqual(["# shift-invariant"]);
+  });
+
+  it("colours and styles them from the editor's own theme table", () => {
+    const lines = paintTokens("def softmax(x):\n# shift-invariant", python());
+
+    // Not hard-coded hexes: the point is that chat and the editor read one table, so a theme
+    // change moves both. A literal here would pass while they diverged.
+    expect(lines[0]?.[0]).toMatchObject({
+      colour: colourForToken("keyword.python"),
+      ...styleForToken("keyword.python"),
+    });
+    expect(lines[1]?.[0]).toMatchObject({
+      colour: colourForToken("comment.python"),
+      ...styleForToken("comment.python"),
+    });
+    // And the colours actually differ, or the table is not being consulted at all.
+    expect(lines[0]?.[0]?.colour).not.toBe(lines[1]?.[0]?.colour);
+  });
+
+  it("emits a line monaco tokenized as nothing, rather than dropping it", () => {
+    // A blank line, and a line past the end of what the tokenizer returned. Both must survive:
+    // losing them silently renumbers every line below, and line numbers are how a diagnostic
+    // points at code.
+    const lines = paintTokens("a\n\nb", [[{ offset: 0, type: "identifier" }]]);
+
+    expect(lines).toHaveLength(3);
+    expect(lines[1]?.[0]?.text).toBe("");
+    expect(lines[2]?.[0]?.text).toBe("b");
+    expect(lines[2]?.[0]?.colour).toBe(colourForToken(""));
   });
 });

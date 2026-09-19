@@ -46,6 +46,24 @@ export default defineConfig({
        */
       react: path.resolve(__dirname, "renderer/node_modules/react"),
       "react-dom": path.resolve(__dirname, "renderer/node_modules/react-dom"),
+      /**
+       * Same reason, one package further out.
+       *
+       * The note above says `@monaco-editor/react` "lives there, not at this root", and that is
+       * why a *component* can reach it: the `@` alias lands the importer inside `renderer/src`,
+       * and resolution walks up from there. A test file in `tests/` walks up to this root
+       * instead and finds nothing, so `monaco-loader.test.ts` — which needs the loader
+       * singleton itself, not a component that happens to use it — cannot resolve it without
+       * this line.
+       *
+       * The singleton matters: `loader` carries the module-level `isInitialized` flag that the
+       * defect it guards is built on, so the test and `lib/monaco-local.ts` must be holding the
+       * same copy.
+       */
+      "@monaco-editor/react": path.resolve(
+        __dirname,
+        "renderer/node_modules/@monaco-editor/react"
+      ),
     },
   },
   test: {

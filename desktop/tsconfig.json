@@ -25,9 +25,15 @@
     // `react-dom/server`. It has to be declared in BOTH places: `vitest.config.ts` for the
     // runner and here for `tsc`. Adding it to only one is silent — the tests pass and
     // `npm run typecheck` fails, which is exactly how it shipped the first time.
+    //
+    // `@monaco-editor/react` is the same lesson a second time, and the note above is why it is
+    // spelled out rather than added quietly: `monaco-loader.test.ts` needs the loader singleton
+    // itself, and the package lives in `renderer/node_modules` because the renderer keeps its
+    // own install. A test file here resolves against this root and finds nothing.
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@/*": ["./renderer/src/*"]
+      "@/*": ["./renderer/src/*"],
+      "@monaco-editor/react": ["./renderer/node_modules/@monaco-editor/react"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.config.ts"]

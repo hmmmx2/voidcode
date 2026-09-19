@@ -2987,6 +2987,54 @@ async function runBuildSmoke(): Promise<string[]> {
       await window.loadURL(`${APP_ORIGIN}/build`);
       await waitFor(window, `(document.querySelector("main")?.innerText.trim().length ?? 0) > 0`);
 
+      /**
+       * Nothing on this page fetches a script from the network.
+       *
+       * THE DEFECT THIS CATCHES. `@monaco-editor/loader` defaults `paths.vs` to a jsDelivr URL
+       * and `init()` injects `<script src="{paths.vs}/loader.js">`. `markdown/CodeBlock.tsx`
+       * calls `useMonaco()` — which runs `init()` — for every fenced code block, and the only
+       * thing that overrode that path used to be `MonacoWrapper`, which never mounts here. So
+       * on this route the first fence asked for Monaco from a CDN, the CSP blocked it with no
+       * error anyone saw, and every code block in the assistant's transcript rendered as plain
+       * text. Configured at the app root now (`components/Providers.tsx`).
+       *
+       * TWO ASSERTIONS, AND THE SECOND IS THE ONE THAT CANNOT PASS VACUOUSLY.
+       *
+       * Whether a *script* has been injected depends on whether a fence has rendered, and an
+       * empty transcript has none — so "no remote script" is real but weak on its own. What is
+       * unconditional is that `configureMonacoLoader()` sets `window.MonacoEnvironment` while
+       * the root component's module is evaluated. Before the fix, nothing on this route called
+       * it and that object did not exist here at all. So an `app://` worker URL on `/build`, with
+       * no editor mounted and nothing having asked for Monaco, is direct evidence that the
+       * configuration ran on this route — which is the whole of the defect.
+       *
+       * The injected-src path is `tests/monaco-loader.test.ts`, and becomes reachable here the
+       * moment this surface mounts an editor of its own.
+       */
+      const monacoOrigin = (await window.webContents.executeJavaScript(`
+        JSON.stringify({
+          scripts: Array.from(document.querySelectorAll("script[src]")).map((s) => s.src),
+          worker: window.MonacoEnvironment?.getWorkerUrl?.() ?? null,
+        })
+      `)) as string;
+      const origin = JSON.parse(monacoOrigin) as { scripts: string[]; worker: string | null };
+      const remote = origin.scripts.filter((src) => !src.startsWith("app://"));
+      if (remote.length > 0) {
+        failures.push(`build/ fetched a script from off-app: ${remote.join(", ")}`);
+      } else if (origin.worker === null) {
+        failures.push(
+          "build/ has no MonacoEnvironment, so the loader was never configured on this route " +
+            "and the first code fence will ask a CDN the CSP blocks"
+        );
+      } else if (!origin.worker.startsWith("app://")) {
+        failures.push(`build/ would load Monaco's worker from ${origin.worker}`);
+      } else {
+        console.log(
+          `[smoke] monaco: configured on /build with no editor mounted — worker ${origin.worker}` +
+            `, all ${origin.scripts.length} scripts from app://`
+        );
+      }
+
       window.webContents.send("shell:command", {
         command: "file.openRecent",
         path: projectRoot,

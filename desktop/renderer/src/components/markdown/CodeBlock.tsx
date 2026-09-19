@@ -61,11 +61,54 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   markdown: "markdown",
 };
 
-interface Span {
+export interface Span {
   text: string;
   colour: string;
   bold: boolean;
   italic: boolean;
+}
+
+/** One line's worth of Monaco tokens: a start offset and a scope name. */
+export interface Token {
+  offset: number;
+  type: string;
+}
+
+/**
+ * Turn Monaco's per-line token arrays into styled spans.
+ *
+ * EXPORTED FOR A TEST, AND THE REASON IS WORTH STATING. The painting used to be inline in the
+ * effect below, where nothing could reach it: effects do not run under `renderToStaticMarkup`,
+ * which is what `markdown-render.test.ts` uses and the only reason a component is renderable in
+ * this suite at all. So the *fallback* to plain text was covered and the *success* path — the
+ * one with all the arithmetic in it — was not, for as long as the fence-highlighting feature has
+ * existed. That is the wrong way round: a fence rendering as plain text is what a silently
+ * broken Monaco looks like, so the plain-text assertion passes hardest exactly when something
+ * is wrong.
+ *
+ * Two pieces of arithmetic live here and both have an off-by-one available. A token's end is
+ * the *next* token's offset, and the last token on a line runs to the end of the line — using
+ * the token's own offset as an end would drop every final token. A line Monaco returns no
+ * tokens for is emitted whole in the default colour rather than dropped.
+ */
+export function paintTokens(code: string, tokenized: readonly (readonly Token[])[]): Span[][] {
+  return code.split("\n").map((line, index) => {
+    const tokens = tokenized[index] ?? [];
+    if (tokens.length === 0) {
+      return [{ text: line, colour: colourForToken(""), bold: false, italic: false }];
+    }
+    return tokens.map((token, tokenIndex) => {
+      const start = token.offset;
+      const end = tokens[tokenIndex + 1]?.offset ?? line.length;
+      const style = styleForToken(token.type);
+      return {
+        text: line.slice(start, end),
+        colour: colourForToken(token.type),
+        bold: style.bold,
+        italic: style.italic,
+      };
+    });
+  });
 }
 
 export default function CodeBlock({
@@ -94,26 +137,7 @@ export default function CodeBlock({
 
     let cancelled = false;
     try {
-      const tokenized = monaco.editor.tokenize(code, language);
-      const sourceLines = code.split("\n");
-
-      const painted: Span[][] = sourceLines.map((line, index) => {
-        const tokens = tokenized[index] ?? [];
-        if (tokens.length === 0) {
-          return [{ text: line, colour: colourForToken(""), bold: false, italic: false }];
-        }
-        return tokens.map((token, tokenIndex) => {
-          const start = token.offset;
-          const end = tokens[tokenIndex + 1]?.offset ?? line.length;
-          const style = styleForToken(token.type);
-          return {
-            text: line.slice(start, end),
-            colour: colourForToken(token.type),
-            bold: style.bold,
-            italic: style.italic,
-          };
-        });
-      });
+      const painted = paintTokens(code, monaco.editor.tokenize(code, language));
 
       if (!cancelled) setLines(painted);
     } catch {
