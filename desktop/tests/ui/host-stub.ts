@@ -43,7 +43,6 @@ export interface StubUser {
   name: string;
   hasPassword: boolean;
   emailVerified: boolean;
-  providers: string[];
   createdAt: string;
 }
 
@@ -54,7 +53,6 @@ export function stubUser(over: Partial<StubUser> = {}): StubUser {
     name: "A Learner",
     hasPassword: true,
     emailVerified: false,
-    providers: [],
     createdAt: "2026-01-01T00:00:00Z",
     ...over,
   };
@@ -67,10 +65,6 @@ export interface AccountStub {
   requestPasswordCode: ReturnType<typeof vi.fn>;
   resetPassword: ReturnType<typeof vi.fn>;
   changePassword: ReturnType<typeof vi.fn>;
-  providers: ReturnType<typeof vi.fn>;
-  signInOAuth: ReturnType<typeof vi.fn>;
-  cancelOAuth: ReturnType<typeof vi.fn>;
-  reopenOAuth: ReturnType<typeof vi.fn>;
   session: ReturnType<typeof vi.fn>;
   refresh: ReturnType<typeof vi.fn>;
   signOut: ReturnType<typeof vi.fn>;
@@ -82,8 +76,8 @@ export interface AccountStub {
  *
  * DEFAULTS THAT REFUSE RATHER THAN SUCCEED. Every method rejects the request by default, so a test
  * that forgets to arrange the call it depends on fails loudly instead of passing on a stub that
- * happened to say yes. The one exception is `providers`, which answers "none configured" — the
- * state this build actually ships in.
+ * happened to say yes. There used to be one exception, `providers`, answering "none configured";
+ * that method no longer exists on the host.
  */
 export function installHost(): AccountStub {
   installDialogShim();
@@ -97,16 +91,6 @@ export function installHost(): AccountStub {
     requestPasswordCode: refuse("Something went wrong."),
     resetPassword: refuse("That code isn't valid or has expired."),
     changePassword: refuse("Something went wrong."),
-    providers: vi.fn().mockResolvedValue({
-      providers: [
-        { id: "google", label: "Google", configured: false },
-        { id: "microsoft", label: "Microsoft", configured: false },
-      ],
-      timeoutSeconds: 300,
-    }),
-    signInOAuth: vi.fn().mockResolvedValue({ ok: false, code: "not_configured", message: "" }),
-    cancelOAuth: vi.fn().mockResolvedValue({ cancelled: true }),
-    reopenOAuth: vi.fn().mockResolvedValue({ reopened: false }),
     session: vi.fn().mockResolvedValue({ signedIn: false }),
     refresh: vi.fn().mockResolvedValue({ signedIn: false }),
     signOut: vi.fn().mockResolvedValue({ ok: true }),
@@ -124,5 +108,5 @@ export function installHost(): AccountStub {
 
 /** A successful sign-in, as `outcomes.ts` shapes it. */
 export function signedIn(over: Partial<StubUser> = {}, created = false) {
-  return { ok: true as const, user: stubUser(over), created, passwordCleared: false };
+  return { ok: true as const, user: stubUser(over), created };
 }

@@ -55,8 +55,7 @@ from .. import config, identity, ratelimit
 from ..database import get_db
 from ..models.auth_token import PURPOSE_PASSWORD_RESET_CODE
 from ..models.user import User
-from ..models.user_identity import UserIdentity
-from ..services import account_linking, email_service, oidc, token_service
+from ..services import email_service, token_service
 from ..services.notification_service import create_welcome_notification
 from ..services.password_service import (
     PasswordPolicyError,
@@ -254,20 +253,17 @@ class DesktopSessionResponse(BaseModel):
     token: str
     expires_at: datetime
     user: UserSummary
-    #: True when this sign-in created the account (registration, or a first Google/Microsoft sign-in).
+    #: True when this sign-in created the account. Registration is now the only thing that does.
     created: bool = False
-    #: True when linking a provider removed a password that was set on this address without the
-    #: address ever being proven — see `services/account_linking.py`. The app explains it.
-    password_cleared: bool = False
 
 
 async def _session_response(
-    db: AsyncSession, user: User, *, created: bool = False, password_cleared: bool = False
+    db: AsyncSession, user: User, *, created: bool = False
 ) -> DesktopSessionResponse:
     """Issue a desktop session for `user`, COMMIT, and describe it.
 
-    One place, because every desktop sign-in path — password, registration, reset code, Google,
-    Microsoft — must hand back the same shape and commit before answering. A path that returned a
+    One place, because every desktop sign-in path — password, registration, reset code — must hand
+    back the same shape and commit before answering. A path that returned a
     token and relied on `get_db` to commit afterwards would give the client a credential for a row a
     failed commit then threw away.
     """
@@ -285,7 +281,6 @@ async def _session_response(
             is_active=user.is_active,
         ),
         created=created,
-        password_cleared=password_cleared,
     )
 
 
@@ -515,129 +510,6 @@ async def confirm_password_reset_code(
     return await _session_response(db, user)
 
 
-# ── Google and Microsoft ─────────────────────────────────────────────────────
-
-
-class OAuthSignInRequest(BaseModel):
-    client_id: str = Field(min_length=1, max_length=255)
-    code: str = Field(min_length=1, max_length=4096)
-    # RFC 7636: 43-128 characters from the unreserved set.
-    code_verifier: str = Field(pattern=r"^[A-Za-z0-9\-._~]{43,128}$")
-    # Only a loopback listener, the only redirect a desktop client can receive. Anything else is a
-    # code intercepted from some other flow being relayed here.
-    redirect_uri: str = Field(
-        pattern=r"^http://(127\.0\.0\.1|localhost):\d{2,5}/oauth/callback$"
-    )
-    nonce: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
-    terms_version: str | None = Field(default=None, pattern=_TERMS_VERSION)
-
-
-class LinkedResponse(BaseModel):
-    linked: bool
-    provider: str
-
-
-# No 401 for a provider token that fails verification. 401 means "the session you sent is not
-# valid", and the desktop app signs the device out on it — so in connect mode, where the request
-# carries a perfectly good session, a rejected Google token would have ended it. The caller's own
-# credential is judged separately, above, and that one does answer 401.
-_OIDC_STATUS = {
-    "provider_unavailable": status.HTTP_503_SERVICE_UNAVAILABLE,
-    "expired": status.HTTP_400_BAD_REQUEST,
-    "rejected": status.HTTP_400_BAD_REQUEST,
-    "upstream": status.HTTP_502_BAD_GATEWAY,
-    "invalid_token": status.HTTP_400_BAD_REQUEST,
-}
-_LINK_STATUS = {
-    "unverified_email": status.HTTP_422_UNPROCESSABLE_ENTITY,
-    "terms_required": status.HTTP_422_UNPROCESSABLE_ENTITY,
-    "conflict": status.HTTP_409_CONFLICT,
-    "inactive": status.HTTP_401_UNAUTHORIZED,
-}
-
-
-@router.post("/desktop/oauth/{provider}", response_model=DesktopSessionResponse | LinkedResponse)
-async def desktop_oauth(
-    provider: str,
-    payload: OAuthSignInRequest,
-    request: Request,
-    authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_db),
-):
-    """Sign in (or, with a Bearer session, connect) with Google or Microsoft.
-
-    See `services/oidc.py` for what is verified and `services/account_linking.py` for which account a
-    verified identity belongs to. This handler only maps their refusals to HTTP.
-
-    Errors carry `{code, message}`: `code` is stable for the app to branch on, `message` is written to
-    be shown as-is.
-    """
-    if provider not in oidc.PROVIDERS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown sign-in provider.")
-
-    # Before any outbound call to the provider: this endpoint makes one per request.
-    await ratelimit.check_ip(ratelimit.OAUTH, request)
-
-    # Link mode is decided by the credential, not by a flag in the body — a body flag could ask to
-    # link without proving who is asking.
-    link_user: User | None = None
-    if identity._bearer_from(authorization) is not None:
-        caller = await identity.resolve_caller(request, authorization)
-        link_user = await db.get(User, caller.user_id)
-        if link_user is None or not link_user.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in.")
-
-    try:
-        verified = await oidc.sign_in(
-            provider,
-            client_id=payload.client_id,
-            code=payload.code,
-            code_verifier=payload.code_verifier,
-            redirect_uri=payload.redirect_uri,
-            nonce=payload.nonce,
-        )
-    except oidc.OidcError as exc:
-        raise HTTPException(
-            status_code=_OIDC_STATUS.get(exc.code, status.HTTP_400_BAD_REQUEST),
-            detail={"code": exc.code, "message": str(exc)},
-        ) from exc
-
-    if link_user is not None:
-        try:
-            await account_linking.link(db, link_user, verified)
-        except account_linking.AccountLinkError as exc:
-            raise HTTPException(
-                status_code=_LINK_STATUS[exc.code], detail={"code": exc.code, "message": exc.message}
-            ) from exc
-        await db.commit()
-        return LinkedResponse(linked=True, provider=provider)
-
-    async def registration_limit() -> None:
-        await ratelimit.check_ip(ratelimit.REGISTER, request)
-
-    for attempt in (1, 2):
-        try:
-            outcome = await account_linking.sign_in(
-                db, verified, terms_version=payload.terms_version, before_create=registration_limit
-            )
-            break
-        except account_linking.AccountLinkError as exc:
-            raise HTTPException(
-                status_code=_LINK_STATUS[exc.code], detail={"code": exc.code, "message": exc.message}
-            ) from exc
-        except IntegrityError:
-            # Two first sign-ins for the same provider account raced to insert the same identity
-            # row. The loser rolls back and resolves again, and the second pass finds the winner's
-            # row under rule 1. A third collision is not a race.
-            await db.rollback()
-            if attempt == 2:
-                raise
-
-    return await _session_response(
-        db, outcome.user, created=outcome.created, password_cleared=outcome.password_cleared
-    )
-
-
 # ── The account itself ───────────────────────────────────────────────────────
 
 
@@ -647,7 +519,6 @@ class AccountResponse(BaseModel):
     name: str
     has_password: bool
     email_verified: bool
-    providers: list[str]
     created_at: datetime | None
 
 
@@ -665,16 +536,12 @@ async def me(
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not signed in.")
-    providers = (await db.execute(
-        select(UserIdentity.provider).where(UserIdentity.user_id == user.id).order_by(UserIdentity.provider)
-    )).scalars().all()
     return AccountResponse(
         id=str(user.id),
         email=user.email,
         name=user.name,
         has_password=user.password_hash is not None,
         email_verified=user.email_verified_at is not None,
-        providers=list(providers),
         created_at=user.created_at,
     )
 

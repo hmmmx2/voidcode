@@ -51,11 +51,12 @@ kubectl -n voidcode create secret generic voidcode-api-secrets --from-env-file=a
 One secret, for the API. There is no `voidcode-web-secrets` any more: the web tier is static pages
 that sign nothing and hold no session.
 
-When Google and Microsoft sign-in lands, two more values join this: `OAUTH_GOOGLE_CLIENT_IDS` and
-`OAUTH_MICROSOFT_CLIENT_IDS` belong in the ConfigMap above — they are public identifiers that the
-desktop binary also ships — while `OAUTH_GOOGLE_CLIENT_SECRET` goes in the Secret, because the API
-redeems the authorization code rather than the app. `assert_production_config()` warns but starts
-with none of them set, since email and password sign-in is a complete product on its own.
+This paragraph used to say what to add "when Google and Microsoft sign-in lands". It landed, and
+then it was removed: an email address and a password is the only way to sign in to a VoidCode
+account, `services/oidc.py` is deleted, the `user_identities` table is dropped, and the four
+`OAUTH_*` settings are gone from `config.py` rather than left as knobs nothing reads. **There is
+nothing to add here for provider sign-in, and a deployment that sets `OAUTH_*` values changes
+nothing.**
 
 ## Decisions that are not obvious from the YAML
 

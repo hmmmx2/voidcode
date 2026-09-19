@@ -46,6 +46,13 @@ interface Section {
  * address. The address is now the *same* one the Privacy Policy uses — this page named a second
  * mailbox, which is a defect on its own — but whether either belongs here is a decision for a human.
  *
+ * ONE WAY IN. Google and Microsoft sign-in has been removed, so "Your sign-in" no longer offers a
+ * connected account as an alternative and no longer explains that such an account has no password
+ * until you set one. It names the password as the only way in, and points anyone holding an old
+ * provider-created account at "Forgot password?" -- which is, after this change, their only route
+ * back in. `TERMS_VERSION` moved with the Privacy Policy; see that document's header for why a lost
+ * data category and a dropped recipient make this a different document rather than an edit.
+ *
  * THE OPTIONAL ACCOUNT. Section 1 said "no account to create, no sign-in, no server of ours" while a
  * sign-in form for the hosted model already shipped. The document now says what is true for each
  * case: without an account every word above still holds; with one, section 6 describes the one part
@@ -206,13 +213,13 @@ const SECTIONS: Section[] = [
             touches your local work.
           </li>
           <li>
-            <strong className="text-ink-2">Your sign-in.</strong> An account can be signed in to with
-            an email address and password, or with a Google or Microsoft account you connect to it —
-            so whoever can sign in to that account can sign in to this one, and keeping it secure
-            keeps this one secure. Keep your password to yourself; if you think someone else has it,
-            change it from the Account page, which signs out every other device, or use
-            &ldquo;Sign out of all devices&rdquo;. An account created with Google or Microsoft has no
-            password at all until you set one, from the same page.
+            <strong className="text-ink-2">Your sign-in.</strong> An account is signed in to with an
+            email address and a password, and that is the only way in. Keep your password to
+            yourself; if you think someone else has it, change it from the Account page, which signs
+            out every other device, or use &ldquo;Sign out of all devices&rdquo;. If you have an
+            account from an earlier build of VoidCode that has no password, choose &ldquo;Forgot
+            password?&rdquo; — we email a six-digit code to your address, and that code is what lets
+            you set one.
           </li>
           <li>
             <strong className="text-ink-2">Credits.</strong> The VoidCode model is metered by the time
@@ -384,7 +391,7 @@ export default function TermsClient() {
             <span className="text-[11px] text-ink-3/60">Last updated</span>
             {/* Moves with the substance, as section 8 says — and is TERMS_VERSION in `src/shared/legal.ts`,
                 which registration records as the version accepted. honest-copy.test.ts pins the two. */}
-            <span className="text-[12px] text-ink-2 font-medium">19 September 2026</span>
+            <span className="text-[12px] text-ink-2 font-medium">20 September 2026</span>
           </div>
         </div>
 

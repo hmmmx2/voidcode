@@ -17,6 +17,8 @@ because that is exactly the environment it is protecting.
 import re
 from pathlib import Path
 
+import sys
+
 import pytest
 
 API = Path(__file__).resolve().parents[1]
@@ -25,10 +27,15 @@ API = Path(__file__).resolve().parents[1]
 REQUIREMENTS = ("requirements.txt", "requirements.gpu.txt", "requirements.sglang.txt")
 
 #: Distribution → the module the API imports it as.
+#:
+#: `"pyjwt": "jwt"` WAS HERE, and it came out with Google and Microsoft sign-in. It was declared in
+#: all three files for `services/oidc.py`, which verified ID tokens against the provider's JWKS;
+#: nothing imports `jwt` now. Both tests below would have caught it from either direction — one
+#: fails if a file stops declaring what the table names, the other if the table names something the
+#: source never imports — which is why the entry could not simply be left behind.
 ACCOUNT_DEPENDENCIES = {
     "argon2-cffi": "argon2",
     "email-validator": "email_validator",
-    "pyjwt": "jwt",
     "prometheus-client": "prometheus_client",
 }
 
@@ -91,10 +98,43 @@ def test_every_declared_account_dependency_is_really_used():
     assert not unused, f"declared as account dependencies but not used by apps/api/src: {unused}"
 
 
-def test_the_parser_reads_every_line_shape_the_files_use():
-    """The test above is only as good as `declared`. Pinned (`httpx==`), extras (`uvicorn[standard]`,
-    `PyJWT[crypto]`), mixed case and `_`/`-` spellings all occur in these files; each must normalise
-    to the name the table uses, or a present dependency reads as missing and a missing one might not."""
+def test_the_parser_reads_every_line_shape_the_files_use(tmp_path, monkeypatch):
+    """The test above is only as good as `declared`.
+
+    THE REAL FILES NO LONGER COVER EVERY SHAPE. `PyJWT[crypto]` was the one mixed-case entry in all
+    three, and removing it left only lower-case names — so an assertion over the real files would
+    still pass with the case-folding deleted, which is a guard that has quietly stopped guarding.
+
+    So the shapes are fed in directly. The real files are still asserted below, for the shapes they
+    do use: a pin, an extra, and a plain name."""
+    written = tmp_path / "requirements.sample.txt"
+    written.write_text(
+        "\n".join(
+            (
+                "# a comment line",
+                "--extra-index-url https://example.invalid/simple",
+                "",
+                "Mixed-Case==1.0",
+                "under_score>=2",
+                "dotted.name==3",
+                "extras[one,two]==4",
+                "plain",
+                "trailing==5  # with a comment",
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "API", tmp_path)
+    assert declared("requirements.sample.txt") == {
+        "mixed-case",
+        "under-score",
+        "dotted-name",
+        "extras",
+        "plain",
+        "trailing",
+    }
+
+    monkeypatch.undo()
     names = declared("requirements.gpu.txt")
-    assert {"httpx", "fastapi", "pyjwt", "uvicorn", "argon2-cffi", "email-validator"} <= names
+    assert {"httpx", "fastapi", "uvicorn", "argon2-cffi", "email-validator"} <= names
     assert not any("[" in n or "=" in n or n != n.lower() for n in names)

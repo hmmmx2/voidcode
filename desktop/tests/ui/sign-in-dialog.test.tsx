@@ -392,19 +392,16 @@ describe("the legal documents", () => {
   });
 });
 
-describe("provider sign-in", () => {
-  /**
-   * DELIBERATELY WRITTEN TO BE DELETED. Google and Microsoft are being removed, and this assertion
-   * is how that removal proves itself: when the buttons go, this test fails, and deleting it is the
-   * visible act of recording that the feature left. Until then it pins the state this build ships
-   * in — no client IDs configured, so nothing is offered.
-   */
-  it("offers nothing when the build has no client ids, and asks the API for nothing", async () => {
-    open("signIn");
-
-    await waitFor(() => expect(account.providers).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: /continue with google/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /continue with microsoft/i })).toBeNull();
-    expect(account.signInOAuth).not.toHaveBeenCalled();
-  });
-});
+/*
+ * `describe("provider sign-in")` STOOD HERE, and deleting it is the point.
+ *
+ * It asserted that a build with no client ids offered no Google or Microsoft button and called
+ * `signInOAuth` for nobody. It was written one commit before the removal and labelled "deliberately
+ * written to be deleted", so that taking the feature out would fail a named test rather than
+ * quietly shrinking a file. It did: `account.providers` is no longer a method on the host, the
+ * buttons have no component left, and the assertion could not be made today.
+ *
+ * This note is what a deletion leaves behind. The guard that a provider button cannot come back is
+ * `honest-copy.test.ts`, which now pins the legal documents to the absence of the code, in both
+ * directions.
+ */

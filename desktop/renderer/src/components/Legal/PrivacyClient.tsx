@@ -63,6 +63,24 @@ interface Section {
  *   - submissions run locally .............. `exec/sandbox.ts` (Pyodide, no network)
  *   - the API key's storage ................ `inference/vault.ts`, `store/secrets.ts`
  *
+ * ── AND WHY 6.4 NOW SAYS THE OPPOSITE OF WHAT IT SAID YESTERDAY ─────────────────────────────────
+ *
+ * Google and Microsoft sign-in has been removed from the application. Section 6.4 used to describe
+ * that exchange in five bullets; it now states that there is no such exchange, and 6.1 no longer
+ * lists the identity columns because the `user_identities` table is dropped. Sections 3, 7 and 11
+ * each lost a provider sentence, and 11 lost a named recipient with its two outbound links.
+ *
+ * TERMS_VERSION MOVED WITH IT, and that is the part that matters legally rather than cosmetically:
+ * someone who accepted the previous version accepted a document naming Google and Microsoft as
+ * parties that could receive data about them. A document that loses a data category, reverses a
+ * section and drops two named recipients is a different document. Rows that recorded the old version
+ * KEEP IT -- rewriting them would falsify a consent record.
+ *
+ * The second paragraph of 6.4 is the point of the rewrite rather than housekeeping. Accounts created
+ * through a provider have no password, and after this change "Forgot password?" is their only route
+ * back in. The API issues a reset code to exactly those accounts on purpose. Saying so in the Policy
+ * NAMES THE CASE instead of leaving the affected person to infer it.
+ *
  * WHAT WAS DELIBERATELY NOT CHANGED, because it is a legal or commercial decision rather than a
  * description of software: the legal entity and its contact details, the postal address, the
  * Privacy Officer email, the jurisdiction, and the statutory compliance claims in the badge row.
@@ -200,9 +218,7 @@ const SECTIONS: Section[] = [
             <strong className="text-ink-2">Your VoidCode account, if you create one.</strong> Creating
             an account, signing in, resetting a password, checking your credit balance and buying
             credits all send what that step needs to us — for example your email address and password
-            when you sign in. If you sign in with Google or Microsoft instead, the application opens
-            your browser at their sign-in page and receives the result; section 6.4 sets out that
-            exchange. While you are signed in, the application also checks with us that your sign-in
+            when you sign in. While you are signed in, the application also checks with us that your sign-in
             is still valid and fetches your balance and the list of VoidCode models. Section 6
             describes what we keep.
           </li>
@@ -349,12 +365,6 @@ const SECTIONS: Section[] = [
             all four of a paper. Not how long you spent, and not what you thought of it — the page
             says outright that this counts sections opened rather than sections understood
           </li>
-          <li>
-            If you connect a Google or Microsoft account: which provider it is, the identifier that
-            provider uses for your account, the email address it gave us and whether it confirmed
-            that address, when it was connected and when it was last used to sign in. For a
-            Microsoft work or school account, the identifier of the organisation it belongs to
-          </li>
         </ul>
 
         <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">6.2 What our servers record in passing</h3>
@@ -380,44 +390,21 @@ const SECTIONS: Section[] = [
           or marketing.
         </p>
 
-        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">
-          6.4 If you sign in with Google or Microsoft
-        </h3>
+        <h3 className="text-ink text-[13px] font-medium mt-4 mb-2">6.4 One way in, and why</h3>
         <p>
-          This is one of the ways to sign in, not a requirement, and an email address with a password
-          does the same job. If you use it, here is the whole exchange:
+          An email address and a password is the only way to sign in to a VoidCode account.{" "}
+          <strong className="text-ink-2">
+            VoidCode does not offer sign-in with Google or Microsoft.
+          </strong>{" "}
+          Nothing hands your account to another company to confirm, so no other company is told that
+          you use this application, and there is no consent screen to read.
         </p>
-        <ul>
-          <li>
-            <strong className="text-ink-2">You sign in to them, not to us.</strong> The application
-            opens your own browser at Google&apos;s or Microsoft&apos;s sign-in page — not a window
-            inside the application — so what you type goes to them. We never receive your password
-            for that account and cannot.
-          </li>
-          <li>
-            <strong className="text-ink-2">We ask for your name and email address, and nothing
-            else.</strong> No access to your mail, files, calendar, contacts or organisation
-            directory is requested, which is why the consent screen you see is a short one.
-          </li>
-          <li>
-            <strong className="text-ink-2">We do not ask to keep acting as you.</strong> The
-            application asks for a single sign-in and no standing permission, so nothing we hold
-            lets us reach your Google or Microsoft account afterwards.
-          </li>
-          <li>
-            <strong className="text-ink-2">They learn that you signed in to VoidCode</strong>, and
-            when, because they are the ones confirming it. What they then record is governed by
-            their own privacy policy, not this one.
-          </li>
-          <li>
-            <strong className="text-ink-2">We check that they confirmed your address.</strong> An
-            address a provider has not confirmed is not used to reach an existing account, because
-            an unconfirmed address is not proof that it is yours.
-          </li>
-        </ul>
         <p>
-          You can connect or use either provider from the Account page. What connecting stores is the
-          last item in section 6.1 — an identifier and an address, not a credential.
+          If you have forgotten your password — or you have an account from an earlier build of
+          VoidCode that never had one — choose &ldquo;Forgot password?&rdquo; and we email a
+          six-digit code to your address. Receiving that code is what proves the mailbox is yours,
+          which is exactly the proof setting a password needs. It is the only email an account
+          receives from us, and section 6.3 describes it.
         </p>
       </>
     ),
@@ -434,8 +421,8 @@ const SECTIONS: Section[] = [
         <p>
           With an account, a small number of companies handle part of it so the account can work, each
           named in section 11: a payment processor if you buy credits, an email delivery service for
-          the codes you request, Google or Microsoft if you choose to sign in with one of them, and
-          the providers whose servers our service and the VoidCode model run on.
+          the codes you request, and the providers whose servers our service and the VoidCode model
+          run on.
         </p>
         <ul>
           <li>
@@ -609,9 +596,9 @@ const SECTIONS: Section[] = [
       <>
         <p>
           The application has no third-party integrations that are active by default. There is no
-          analytics provider, no error-reporting service and no advertising network. An account can
-          be created with an email address and a password alone; Google and Microsoft are offered as
-          alternative ways to sign in, and section 6.4 describes exactly what that exchange involves.
+          analytics provider, no error-reporting service and no advertising network. An account is
+          created with an email address and a password, and section 6.4 describes why that is the only
+          way in.
         </p>
         <p>
           One party that can become involved is not a third party at all: it is us. Signing in and
@@ -652,30 +639,6 @@ const SECTIONS: Section[] = [
           <li>
             <strong className="text-ink-2">Resend</strong> — only when you ask for a password code. It
             delivers that email, so it receives your email address and the message.
-          </li>
-          <li>
-            <strong className="text-ink-2">Google or Microsoft</strong> — only if you choose to sign
-            in with one of them. They confirm who you are and tell us your name and email address;
-            they receive no information about what you do in the application. Google handles this
-            under the{" "}
-            <a
-              href="https://policies.google.com/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-ink hover:text-ink transition-colors"
-            >
-              Google privacy policy
-            </a>{" "}
-            and Microsoft under the{" "}
-            <a
-              href="https://privacy.microsoft.com/privacystatement"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-ink hover:text-ink transition-colors"
-            >
-              Microsoft privacy statement
-            </a>
-            .
           </li>
           <li>
             <strong className="text-ink-2">Server and GPU hosting providers</strong> — only for an
@@ -852,7 +815,7 @@ export default function PrivacyClient() {
             <span className="text-[11px] text-ink-3/60">Last updated</span>
             {/* Revised with the rewrite. Section 12 makes this the signal that the Policy changed,
                 so it has to move whenever the substance does. */}
-            <span className="text-[12px] text-ink-2 font-medium">19 September 2026</span>
+            <span className="text-[12px] text-ink-2 font-medium">20 September 2026</span>
           </div>
         </div>
 

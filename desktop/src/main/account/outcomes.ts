@@ -41,12 +41,6 @@ export type SignedIn = {
    * when what it actually means is "signed in to an account that already existed".
    */
   created: boolean;
-  /**
-   * True when attaching a provider removed a password that had been set on this address without the
-   * address ever being proven. The app has to explain it: someone's password stopped working, and
-   * the reason is that it was never theirs to set. See `apps/api/src/services/account_linking.py`.
-   */
-  passwordCleared: boolean;
 };
 
 export const OFFLINE: Failure = {
@@ -93,16 +87,20 @@ export function refusal(result: ApiResult, fallback: string): Failure {
 }
 
 /**
- * A session response (`{token, user, created?, password_cleared?}`) into a kept session.
+ * A session response (`{token, user, created?}`) into a kept session.
  *
  * The token goes to the OS credential store and is never returned; the caller learns who signed in.
+ *
+ * `password_cleared` USED TO BE READ HERE and is gone with the providers that produced it: it meant
+ * "attaching a provider removed a password set on this address without the address ever being
+ * proven", and nothing can attach a provider any more. An older API still sending the field is
+ * handled by not looking for it, which is what this already did for a field that was optional.
  */
 export async function keep(result: ApiResult): Promise<SignedIn | Failure> {
   const body = result.body as {
     token?: unknown;
     user?: { id?: unknown; email?: unknown; name?: unknown };
     created?: unknown;
-    password_cleared?: unknown;
   } | null;
   const token = body?.token;
   const user = body?.user;
@@ -116,6 +114,5 @@ export async function keep(result: ApiResult): Promise<SignedIn | Failure> {
     ok: true,
     user: { id: user.id, email: user.email, name },
     created: body?.created === true,
-    passwordCleared: body?.password_cleared === true,
   };
 }

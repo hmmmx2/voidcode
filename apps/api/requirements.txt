@@ -45,9 +45,10 @@ argon2-cffi>=23.1.0
 # EmailStr validation for the auth request models.
 email-validator>=2.1.0
 
-# Verifying Google and Microsoft ID tokens (RS256 against the provider's JWKS). `[crypto]` pulls in
-# `cryptography`, without which PyJWT cannot verify an RSA signature at all.
-PyJWT[crypto]>=2.8
+# PyJWT[crypto] WAS HERE, for verifying Google and Microsoft ID tokens against the provider's JWKS.
+# Provider sign-in is gone and `services/oidc.py` with it, so nothing imports `jwt`. Left declared,
+# it would be a dependency — and a `cryptography` build — carried by every API image for no reason,
+# and the next person reading this file would conclude the application still verifies ID tokens.
 
 # Prometheus scrape endpoint (spec 6.2). Installed in this environment already but
 # undeclared, which means a fresh container would have shipped without /metrics.

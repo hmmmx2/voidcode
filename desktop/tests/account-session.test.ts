@@ -58,7 +58,8 @@ const ME = {
   name: "Learner",
   has_password: true,
   email_verified: false,
-  providers: [],
+  // `providers` is NOT here, and its absence is the assertion: `/v1/auth/me` stopped returning it
+  // when the `user_identities` table was dropped, and `toUser` must not invent one.
   created_at: "2026-09-01T00:00:00Z",
 };
 
@@ -109,13 +110,14 @@ describe("signed out, nothing reaches the server", () => {
 
     const result = await password.signInPassword("learner@example.com", "a long enough password");
 
-    // `created` and `passwordCleared` come from the session response and are always present — see
-    // `account/outcomes.ts`. A password sign-in to an existing account is false for both.
+    // `created` comes from the session response and is always present — see `account/outcomes.ts`.
+    // A password sign-in to an existing account is false. `toEqual` is exact, so this also asserts
+    // that `passwordCleared` is NOT here: it meant "linking a provider removed your password", and
+    // nothing can link a provider now.
     expect(result).toEqual({
       ok: true,
       user: { id: ME.id, email: ME.email, name: ME.name },
       created: false,
-      passwordCleared: false,
     });
     expect(calls[0]?.url).toBe("http://127.0.0.1:59999/v1/auth/desktop/session");
     expect(calls[0]?.authorization).toBeUndefined();
@@ -187,7 +189,6 @@ describe("a session ends when the server says so, and only then", () => {
       name: ME.name,
       hasPassword: true,
       emailVerified: false,
-      providers: [],
     });
     expect(events).toEqual([{ reason: "updated", signedIn: true }]);
     await session.refresh();

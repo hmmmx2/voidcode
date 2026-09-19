@@ -532,43 +532,21 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
     }
 
     /**
-     * A BUILD WITH NO PROVIDER REGISTRATION CANNOT BE MADE TO OPEN A BROWSER.
+     * A PROVIDER SIGN-IN BLOCK STOOD HERE, and what it guarded is now guarded by there being no
+     * channel at all.
      *
-     * This is a fork's configuration, and the one this smoke runs in: no client ids, so both
-     * providers report unavailable and the renderer draws no buttons. The assertion is what happens
-     * when the channel is called anyway — `not_configured`, with nothing opened and nothing sent.
+     * It called `account.providers()`, `account.signInOAuth({provider:"google"})` and
+     * `account.cancelOAuth()` through the broker, asserting that a build with no client ids
+     * answered `not_configured` and opened nothing. Its reason for living here rather than in a
+     * unit test was that `account:signInOAuth` was the ONE path from a renderer to
+     * `shell.openExternal` in this application, and unit tests call the module directly.
      *
-     * Checked here rather than only in unit tests because `account:signInOAuth` is the single path
-     * from a renderer to `shell.openExternal` in this application, and the unit tests call the
-     * module directly. This calls it the way a renderer does, through the broker and its schema.
+     * All four `account:*OAuth` channels are removed from the contract, so the generated preload
+     * exposes no such method and the broker would refuse the name. `research:openPdf` is now the
+     * only renderer-reachable `shell.openExternal`, and it takes a slug rather than an address —
+     * see its note in `contract.ts`. `ipc-callers.test.ts` holds the declared set to the contract,
+     * which is what would notice a provider channel being declared again.
      */
-    const oauth = (await window.webContents.executeJavaScript(`
-      (async () => {
-        const listed = await window.host.account.providers();
-        const refused = await window.host.account.signInOAuth({ provider: "google", mode: "signIn" });
-        const cancelled = await window.host.account.cancelOAuth();
-        return {
-          providers: listed.providers.map((p) => p.id + ":" + String(p.configured)),
-          timeoutSeconds: listed.timeoutSeconds,
-          code: refused.ok === true ? "signed-in!" : refused.code,
-          cancelled: cancelled.ok === true,
-        };
-      })()
-    `)) as { providers: string[]; timeoutSeconds: number; code: string; cancelled: boolean };
-
-    if (oauth.providers.join(",") !== "google:false,microsoft:false") {
-      failures.push(`signed-out: expected no configured provider, got [${oauth.providers.join(", ")}]`);
-    }
-    if (oauth.code !== "not_configured") {
-      failures.push(`signed-out: signInOAuth answered ${oauth.code} in a build with no client id`);
-    }
-    if (oauth.timeoutSeconds !== 300) {
-      failures.push(`signed-out: the dialog would count down ${oauth.timeoutSeconds}s, not 300s`);
-    }
-    if (!oauth.cancelled) failures.push("signed-out: cancelOAuth did not answer");
-    if (hits.length !== 0) {
-      failures.push(`signed-out: the provider channels contacted the API: ${hits.join(", ")}`);
-    }
 
     // Positive control: an explicit sign-in is the first request, and it arrives.
     const signIn = (await window.webContents.executeJavaScript(

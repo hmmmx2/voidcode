@@ -640,69 +640,60 @@ describe("the legal documents agree with the account code", () => {
     expect(fs.existsSync(path.join(root, "..", "apps/api/tests/test_prompts_are_not_logged.py"))).toBe(true);
   });
 
-  it("describes Google and Microsoft sign-in exactly while the code offers it", () => {
+  it("says provider sign-in is not offered, and no code offers it", () => {
     /**
-     * THIS ASSERTION USED TO RUN THE OTHER WAY, and swapping it round was the whole job of the
-     * change that added the two providers.
+     * THIS ASSERTION HAS NOW RUN BOTH WAYS TWICE, and the history is the point rather than trivia.
      *
-     * It asserted that no file under `src/main/account` named either provider's host, and that the
-     * Policy said "does not offer sign-in with Microsoft or Google". Both were true, and the pair
-     * was the trip-wire: adding the hosts to `providers.ts` failed this test, which is what forced
-     * the Policy to be rewritten rather than left behind saying the opposite of what shipped.
+     * It began as this: no file under `src/main/account` names either provider's host, and the
+     * Policy says so. Adding Google and Microsoft failed it, which is what forced the Policy to be
+     * rewritten rather than left behind saying the opposite of what shipped. It was then inverted —
+     * the hosts MUST be there, the description MUST be there — so neither could be deleted alone.
      *
-     * It is still a two-way pin, just pointed the other way — the sentence cannot come back while
-     * the hosts are there, and the description cannot be deleted while the buttons exist.
+     * Removing the providers failed it in that direction, which is the pair working. It is back to
+     * its original form, and it is still a two-way pin: the sentence cannot be deleted while no
+     * code offers provider sign-in, and no code can offer it again while the sentence stands.
      */
     const accountDir = path.join(root, "src/main/account");
     const hosts = fs
       .readdirSync(accountDir)
       .map((name) => readSource(path.join(accountDir, name), "utf8"))
       .join(" ");
-    const offersGoogle = hosts.includes("accounts.google.com");
-    const offersMicrosoft = hosts.includes("login.microsoftonline.com");
 
-    expect(offersGoogle, "no file under src/main/account opens Google's authorize endpoint").toBe(true);
-    expect(offersMicrosoft, "no file under src/main/account opens Microsoft's authorize endpoint").toBe(true);
+    expect(hosts, "a file under src/main/account opens Google's authorize endpoint").not.toContain(
+      "accounts.google.com"
+    );
+    expect(hosts, "a file under src/main/account opens Microsoft's authorize endpoint").not.toContain(
+      "login.microsoftonline.com"
+    );
 
-    // The retired sentence, in either document. Banned here rather than in the phrase list above
-    // because it is conditional: it was true, and would be true again if the providers went.
-    for (const file of LEGAL_SOURCES) {
-      expect(legalText(file), `${file} still says provider sign-in is not offered`).not.toContain(
-        "does not offer sign-in"
+    /*
+     * The deleted modules, by name. `readdirSync` above only sees what is there, so it cannot
+     * notice a file coming back that has been renamed or that reaches its endpoint another way.
+     */
+    for (const gone of ["oauth.ts", "loopback.ts", "providers.ts"]) {
+      expect(fs.existsSync(path.join(accountDir, gone)), `src/main/account/${gone} is back`).toBe(
+        false
       );
     }
+    expect(
+      fs.existsSync(path.join(root, "..", "apps/api/src/models/user_identity.py")),
+      "the user_identities model is back"
+    ).toBe(false);
 
-    // What has to be there instead. Each of these is a claim about the code below it, not a slogan.
-    expect(privacy, "the Policy does not say provider sign-in is optional").toContain(
-      "one of the ways to sign in, not a requirement"
+    /*
+     * The sentence, spelled to survive the phrase ban above. "no sign-in" is banned as a substring,
+     * so "there is no sign-in with Google" would trip it and this wording does not.
+     */
+    expect(privacy, "the Policy does not say provider sign-in is gone").toContain(
+      "does not offer sign-in with Google or Microsoft"
     );
 
-    const providers = code(readSource(path.join(accountDir, "providers.ts"), "utf8"));
-    // The scopes asked for are the claim "your name and email address, and nothing else".
-    expect(providers, "the scope asked for is no longer openid email profile").toContain(
-      "openid email profile"
+    // And the migration path, named rather than left to be inferred: these accounts have no
+    // password, and this is the only route back in for them.
+    expect(privacy, "the Policy does not name the route back in for a password-less account").toContain(
+      "never had one"
     );
-    expect(privacy).toContain("name and email address, and nothing else");
-
-    // No refresh token is requested, which is what "no standing permission" means.
-    expect(providers, "a provider scope now asks for offline access").not.toContain("offline_access");
-    expect(providers).not.toContain("access_type=offline");
-    expect(privacy).toContain("no standing permission");
-
-    // The browser is the person's own, which is the sentence about never seeing their password.
-    const oauth = code(readSource(path.join(accountDir, "oauth.ts"), "utf8"));
-    expect(oauth, "the flow no longer opens the system browser").toContain("shell.openExternal");
-    expect(privacy).toContain("not a window inside the application");
-
-    // The audit row section 6.1 describes, pinned to the columns that exist.
-    const identity = code(
-      readSource(path.join(root, "..", "apps/api/src/models/user_identity.py"), "utf8")
-    );
-    for (const column of ["subject", "tenant_id", "email_at_link", "email_trusted_at_link", "last_used_at"]) {
-      expect(identity, `user_identities has no ${column} column`).toContain(column);
-    }
-    expect(privacy).toContain("whether it confirmed");
-    expect(privacy).toContain("when it was last used to sign in");
+    expect(privacy).toContain("six-digit code");
   });
 });
 

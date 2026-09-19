@@ -152,12 +152,51 @@ def test_the_desktop_endpoints_are_all_still_there() -> None:
         "/desktop/register",
         "/desktop/session",
         "/desktop/sessions",
-        "/desktop/oauth/{provider}",
         "/password-reset/request",
         "/password-reset/confirm",
         "/change-password",
         "/me",
     } <= _routes()
+
+
+def test_the_provider_fields_are_gone_from_the_wire() -> None:
+    """`password_cleared` and `providers` cannot come back, in either direction.
+
+    Both were meaningful only while an account could have a provider attached. `password_cleared`
+    meant "linking a provider removed a password set on this address without the address ever being
+    proven"; `providers` was a list built by selecting from `user_identities`, a table this build
+    drops. Left on the response models they would be permanently empty — a field that looks like a
+    control and reports nothing, which `test_the_proxy_only_settings_are_gone` below is the
+    precedent for refusing.
+
+    ASSERTED ON THE MODEL FIELDS, not by scanning the text. A source scan would be satisfied by this
+    test's own docstring naming them, and the whole point is what the API sends.
+    """
+    from src.routers import auth as auth_router
+
+    assert "password_cleared" not in auth_router.DesktopSessionResponse.model_fields
+    assert "providers" not in auth_router.AccountResponse.model_fields
+
+    # And the fields that carry weight are still there, so "remove the provider fields" cannot
+    # quietly remove the ones a signed-in desktop actually reads.
+    assert {"token", "expires_at", "user", "created"} <= set(
+        auth_router.DesktopSessionResponse.model_fields
+    )
+    assert {"id", "email", "name", "has_password", "email_verified", "created_at"} <= set(
+        auth_router.AccountResponse.model_fields
+    )
+
+
+def test_the_provider_endpoint_did_not_come_back() -> None:
+    """`/desktop/oauth/{provider}` was in the list above until Google and Microsoft sign-in went.
+
+    It is asserted ABSENT rather than simply dropped from that set, because a deletion leaves nothing
+    behind to notice a return. `services/oidc.py` and `services/account_linking.py` are gone and so
+    is the `user_identities` table the handler wrote to, so re-registering this route would not fail
+    at import — it would fail at request time, for a person trying to sign in, which is the worst
+    place to find out.
+    """
+    assert "/desktop/oauth/{provider}" not in _routes()
 
 
 def test_identity_has_no_signing_machinery_left() -> None:

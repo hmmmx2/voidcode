@@ -11,7 +11,7 @@
  *
  *   * The session token: encrypted by the OS credential store, via `inference/vault.ts`. Never
  *     returned to the renderer.
- *   * Who is signed in (email, name, linked providers): held in MEMORY ONLY. It is fetched from
+ *   * Who is signed in (email, name): held in MEMORY ONLY. It is fetched from
  *     `GET /v1/auth/me` and never written to SQLite. The local `profile` table has no email column,
  *     the Privacy Policy says so, and `honest-copy.test.ts` checks that no file in this directory
  *     imports from `store/` — an account email persisted locally would be a copy of server data
@@ -39,7 +39,6 @@ export interface AccountUser {
   name: string;
   hasPassword: boolean;
   emailVerified: boolean;
-  providers: string[];
 }
 
 export interface SessionState {
@@ -101,7 +100,6 @@ function toUser(body: unknown): AccountUser | null {
     name: typeof b.name === "string" ? b.name : "",
     hasPassword: b.has_password === true,
     emailVerified: b.email_verified === true,
-    providers: Array.isArray(b.providers) ? b.providers.filter((p): p is string => typeof p === "string") : [],
   };
 }
 
@@ -166,7 +164,6 @@ export async function storeSession(
     // Filled in by the refresh below; a sign-in response does not carry them.
     hasPassword: cachedUser?.id === user.id ? cachedUser.hasPassword : false,
     emailVerified: cachedUser?.id === user.id ? cachedUser.emailVerified : false,
-    providers: cachedUser?.id === user.id ? cachedUser.providers : [],
   };
   emit("signedIn");
   void refresh();

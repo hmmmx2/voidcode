@@ -1,16 +1,20 @@
 """Desktop accounts, driven through real HTTP against a real database.
 
-Registration into a session, password reset by emailed code, Google and Microsoft sign-in, and the
-account itself. These go through the router rather than calling services, because the two mistakes
-that matter most here only exist at that level:
+Registration into a session, password reset by emailed code, and the account itself. These go
+through the router rather than calling services, because the mistake that matters most here only
+exists at that level: a wrong-guess counter written by the service and then rolled back by `get_db`
+when the handler raises — correct in every unit test, and unlimited guessing in production.
 
-  * a wrong-guess counter written by the service and then rolled back by `get_db` when the handler
-    raises — correct in every unit test, and unlimited guessing in production;
-  * an identity decision that is right in `account_linking` and bypassed by how the router calls it.
+THIS FILE USED TO BE TWICE THIS SIZE. Google and Microsoft sign-in is gone, and with it
+`TestProviderSignIn`, `TestConnectingAProvider`, the `oidc_fakes` provider and every assertion about
+`user_identities` and linking. The second mistake this docstring used to name — "an identity
+decision that is right in `account_linking` and bypassed by how the router calls it" — cannot happen
+any more, because there is no identity decision to get wrong.
 
-Rate limiting is replaced with a no-op (it has its own suite), email sending is captured, and the
-Google/Microsoft endpoints are the fakes in `oidc_fakes.py`, so `services/oidc.py` still performs its
-real verification of every token these tests sign.
+Reset by code is what carries the weight now. It is the ONLY route back in for an account that has
+no password, which is exactly what a provider-created account is.
+
+Rate limiting is replaced with a no-op (it has its own suite) and email sending is captured.
 """
 
 from __future__ import annotations
@@ -28,25 +32,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from conftest import TEST_DATABASE_URL, requires_postgres
-from oidc_fakes import (
-    DROP,
-    GOOGLE_ID,
-    MICROSOFT_ID,
-    NONCE,
-    REDIRECT,
-    VERIFIER,
-    WORK_TENANT,
-    FakeProvider,
-    google_claims,
-    microsoft_claims,
-)
 from src import config
 from src.database import get_db
 from src.models.auth_token import PURPOSE_PASSWORD_RESET_CODE, AuthToken
 from src.models.user import User
-from src.models.user_identity import UserIdentity
 from src.routers import auth as auth_router
-from src.services import email_service, oidc, token_service
+from src.services import email_service, token_service
 from src.services.password_service import hash_password
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
@@ -85,14 +76,6 @@ def mailbox(monkeypatch):
 
     monkeypatch.setattr(email_service, "send", capture)
     return sent
-
-
-@pytest.fixture
-def provider(monkeypatch):
-    fake = FakeProvider()
-    fake.install(monkeypatch, oidc, config)
-    yield fake
-    oidc._reset_caches()
 
 
 @pytest_asyncio.fixture
@@ -146,13 +129,6 @@ async def sign_in(client, email: str, password: str = PASSWORD):
 
 async def me(client, token: str):
     return await client.get("/v1/auth/me", headers=bearer(token))
-
-
-def oauth_body(**overrides):
-    body = {"client_id": GOOGLE_ID, "code": "auth-code", "code_verifier": VERIFIER,
-            "redirect_uri": REDIRECT, "nonce": NONCE, "terms_version": TERMS}
-    body.update(overrides)
-    return {k: v for k, v in body.items() if v is not DROP}
 
 
 # ── Registration ─────────────────────────────────────────────────────────────
@@ -321,207 +297,6 @@ class TestResetByCode:
         if first != second:
             assert (await confirm(client, email, first)).status_code == 400
         assert (await confirm(client, email, second)).status_code == 200
-
-
-# ── Google and Microsoft ─────────────────────────────────────────────────────
-
-
-async def oauth(client, provider_name="google", headers=None, **body):
-    defaults = {"client_id": GOOGLE_ID if provider_name == "google" else MICROSOFT_ID}
-    return await client.post(f"/v1/auth/desktop/oauth/{provider_name}",
-                             json=oauth_body(**{**defaults, **body}), headers=headers or {})
-
-
-async def identities_for(sessionmaker_np, user_id):
-    async with sessionmaker_np() as db:
-        return (await db.execute(select(UserIdentity).where(UserIdentity.user_id == user_id))).scalars().all()
-
-
-class TestProviderSignIn:
-    async def test_an_unconfigured_provider_is_503_and_calls_nobody(self, client, monkeypatch, provider):
-        monkeypatch.setattr(config, "OAUTH_GOOGLE_CLIENT_IDS", [])
-        response = await oauth(client)
-        assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "provider_unavailable"
-        assert provider.token_requests == []
-
-    async def test_a_first_sign_in_creates_an_account(self, client, sessionmaker_np, provider):
-        email = f"learner-{uuid.uuid4().hex[:8]}@gmail.com"
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", email=email)
-
-        response = await oauth(client)
-
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert body["created"] is True
-        async with sessionmaker_np() as db:
-            user = (await db.execute(select(User).where(User.email == email))).scalar_one()
-        assert user.password_hash is None and user.email_verified_at is not None
-        assert user.terms_version == TERMS
-        assert [i.provider for i in await identities_for(sessionmaker_np, user.id)] == ["google"]
-
-    async def test_creating_an_account_requires_the_terms(self, client, sessionmaker_np, provider):
-        email = f"learner-{uuid.uuid4().hex[:8]}@gmail.com"
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", email=email)
-        response = await oauth(client, terms_version=DROP)
-        assert response.status_code == 422
-        assert response.json()["detail"]["code"] == "terms_required"
-        async with sessionmaker_np() as db:
-            assert (await db.execute(select(User).where(User.email == email))).scalar_one_or_none() is None
-
-    async def test_the_identity_decides_the_account_not_the_email(self, client, sessionmaker_np, provider):
-        """A person changes their Google address, or a token names someone else's: same subject, same
-        account, and the other account is never touched."""
-        owner = await make_user(sessionmaker_np, address("owner-"))
-        bystander_email = address("bystander-")
-        bystander = await make_user(sessionmaker_np, bystander_email)
-        subject = f"sub-{uuid.uuid4().hex}"
-        async with sessionmaker_np() as db:
-            db.add(UserIdentity(user_id=owner, provider="google", subject=subject,
-                                email_trusted_at_link=True, created_at=datetime.now(timezone.utc)))
-            await db.commit()
-
-        provider.next_claims = google_claims(sub=subject, email=bystander_email, hd="example.com")
-        token = (await oauth(client)).json()["token"]
-
-        assert (await me(client, token)).json()["id"] == str(owner)
-        assert await identities_for(sessionmaker_np, bystander) == []
-
-    async def test_an_untrusted_email_never_attaches_to_an_existing_account(
-        self, client, sessionmaker_np, provider
-    ):
-        """nOAuth: a Microsoft token from an attacker's tenant naming the victim's address."""
-        victim_email = address("victim-")
-        victim = await make_user(sessionmaker_np, victim_email)
-        provider.next_claims = microsoft_claims(
-            oid=str(uuid.uuid4()), email=victim_email, xms_edov=DROP)
-
-        response = await oauth(client, "microsoft")
-
-        assert response.status_code == 422
-        assert response.json()["detail"]["code"] == "unverified_email"
-        assert await identities_for(sessionmaker_np, victim) == []
-
-    async def test_the_refusal_does_not_reveal_whether_the_address_is_registered(
-        self, client, sessionmaker_np, provider
-    ):
-        registered = address("exists-")
-        await make_user(sessionmaker_np, registered)
-        provider.next_claims = microsoft_claims(oid=str(uuid.uuid4()), email=registered, xms_edov=DROP)
-        a = await oauth(client, "microsoft")
-        provider.next_claims = microsoft_claims(oid=str(uuid.uuid4()), email=address("absent-"), xms_edov=DROP)
-        b = await oauth(client, "microsoft")
-        assert (a.status_code, a.json()) == (b.status_code, b.json())
-
-    async def test_a_trusted_email_links_to_the_existing_account(self, client, sessionmaker_np, provider):
-        email = address("link-")
-        user_id = await make_user(sessionmaker_np, email)
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", email=email, hd="example.com")
-
-        body = (await oauth(client)).json()
-
-        assert body["created"] is False and body["password_cleared"] is False
-        assert body["user"]["id"] == str(user_id)
-        assert (await sign_in(client, email)).status_code == 200, "a verified account lost its password"
-
-    async def test_pre_hijacking_an_unverified_password_is_removed_when_the_owner_arrives(
-        self, client, sessionmaker_np, provider
-    ):
-        """An attacker registered the victim's address with a password before the victim ever signed
-        in. When the victim proves the address through Google, the attacker's password must stop
-        working and anything the attacker signed in with must end."""
-        email = address("hijack-")
-        await make_user(sessionmaker_np, email, verified=False)
-        attackers_session = (await sign_in(client, email)).json()["token"]
-
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", email=email, hd="example.com")
-        body = (await oauth(client)).json()
-
-        assert body["password_cleared"] is True
-        assert (await sign_in(client, email)).status_code == 401, "the attacker's password still works"
-        assert (await me(client, attackers_session)).status_code == 401, "the attacker is still signed in"
-        assert (await me(client, body["token"])).status_code == 200
-
-    async def test_a_deactivated_account_cannot_sign_in_through_a_provider(
-        self, client, sessionmaker_np, provider
-    ):
-        user_id = await make_user(sessionmaker_np, address("off-"), active=False)
-        subject = f"sub-{uuid.uuid4().hex}"
-        async with sessionmaker_np() as db:
-            db.add(UserIdentity(user_id=user_id, provider="google", subject=subject,
-                                email_trusted_at_link=True, created_at=datetime.now(timezone.utc)))
-            await db.commit()
-        provider.next_claims = google_claims(sub=subject)
-        response = await oauth(client)
-        assert response.status_code == 401
-
-    async def test_a_forged_token_is_refused_through_the_endpoint(self, client, sessionmaker_np, provider):
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", aud="someone-else", azp=DROP)
-        response = await oauth(client)
-        assert response.status_code == 400
-        assert response.json()["detail"]["code"] == "invalid_token"
-
-    async def test_a_forged_token_while_connecting_leaves_the_session_alone(self, client, sessionmaker_np, provider):
-        """400, not 401: the app signs a device out on a 401 from a request that carried its session,
-        and here the session is valid — only the provider's token is not."""
-        email = address("forged-link-")
-        await make_user(sessionmaker_np, email)
-        token = (await sign_in(client, email)).json()["token"]
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", aud="someone-else", azp=DROP)
-
-        response = await oauth(client, headers=bearer(token), terms_version=DROP)
-
-        assert response.status_code == 400
-        assert (await me(client, token)).status_code == 200
-
-    async def test_microsoft_signs_in_by_tenant_and_object_id(self, client, sessionmaker_np, provider):
-        oid = str(uuid.uuid4())
-        email = address("ms-")
-        provider.next_claims = microsoft_claims(oid=oid, email=email)
-        user_id = (await oauth(client, "microsoft")).json()["user"]["id"]
-        [identity] = await identities_for(sessionmaker_np, uuid.UUID(user_id))
-        assert identity.subject == f"{WORK_TENANT}:{oid}"
-
-
-class TestConnectingAProvider:
-    async def test_a_signed_in_person_connects_an_account_with_a_different_address(
-        self, client, sessionmaker_np, provider
-    ):
-        email = address("connect-")
-        user_id = await make_user(sessionmaker_np, email)
-        token = (await sign_in(client, email)).json()["token"]
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}", email="other@gmail.com")
-
-        response = await oauth(client, headers=bearer(token), terms_version=DROP)
-
-        assert response.json() == {"linked": True, "provider": "google"}
-        assert (await me(client, token)).json()["providers"] == ["google"]
-        assert len(await identities_for(sessionmaker_np, user_id)) == 1
-
-    async def test_a_provider_account_owned_by_someone_else_is_a_conflict(
-        self, client, sessionmaker_np, provider
-    ):
-        owner = await make_user(sessionmaker_np, address("first-"))
-        subject = f"sub-{uuid.uuid4().hex}"
-        async with sessionmaker_np() as db:
-            db.add(UserIdentity(user_id=owner, provider="google", subject=subject,
-                                email_trusted_at_link=True, created_at=datetime.now(timezone.utc)))
-            await db.commit()
-        email = address("second-")
-        second = await make_user(sessionmaker_np, email)
-        token = (await sign_in(client, email)).json()["token"]
-
-        provider.next_claims = google_claims(sub=subject)
-        response = await oauth(client, headers=bearer(token))
-
-        assert response.status_code == 409
-        assert await identities_for(sessionmaker_np, second) == []
-
-    async def test_a_bad_session_does_not_fall_back_to_signing_in(self, client, provider):
-        provider.next_claims = google_claims(sub=f"sub-{uuid.uuid4().hex}")
-        response = await oauth(client, headers=bearer("not-a-real-session"))
-        assert response.status_code == 401
-        assert provider.token_requests == [], "redeemed a code for a request that failed authentication"
 
 
 # ── The account ──────────────────────────────────────────────────────────────

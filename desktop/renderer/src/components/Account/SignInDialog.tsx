@@ -23,13 +23,6 @@ import { Mark } from "@/components/brand/Mark";
 import { FormError } from "@/components/Account/FormError";
 import { StrengthMeter } from "@/components/Account/StrengthMeter";
 import { Checkbox } from "@/components/Account/Checkbox";
-import {
-  ProviderButtons,
-  ProviderDivider,
-  ProviderError,
-  ProviderWaiting,
-  useProviderSignIn,
-} from "@/components/Account/ProviderSignIn";
 import TermsClient from "@/components/Legal/TermsClient";
 import PrivacyClient from "@/components/Legal/PrivacyClient";
 import { validateEmail, validateName, validatePassword } from "@/lib/account/validation";
@@ -160,7 +153,6 @@ function SignInForm({
   onSignedIn: (email: string) => void;
   onOpenLegal: (document: "terms" | "privacy") => void;
 }) {
-  const flow = useProviderSignIn({ onSignedIn });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -189,10 +181,6 @@ function SignInForm({
     }
   }
 
-  // The form is not merely disabled while the browser has the person: a form you cannot use, beside
-  // a sentence telling you to look elsewhere, is a worse answer than getting out of the way.
-  if (flow.waiting !== null) return <ProviderWaiting flow={flow} titleId={titleId} />;
-
   return (
     <form onSubmit={(e) => void submit(e)} noValidate>
       <Header
@@ -201,9 +189,6 @@ function SignInForm({
         subtitle="Optional. The editor, grader and local models work without an account."
       />
       {error !== null && <FormError>{error}</FormError>}
-      <ProviderError flow={flow} onUseEmail={() => onViewChange("register")} />
-      <ProviderButtons flow={flow} mode="signIn" disabled={busy} />
-      <ProviderDivider flow={flow} />
       <div className="flex flex-col gap-4">
         <Field
           label="Email"
@@ -228,37 +213,10 @@ function SignInForm({
         </Pill>
         <TextButton onClick={() => onViewChange("forgot")}>Forgot password?</TextButton>
       </div>
-      <TermsLine flow={flow} onOpenLegal={onOpenLegal} />
       <p className="mt-6 text-xs text-ink-3">
         New here? <TextButton onClick={() => onViewChange("register")}>Create an account</TextButton>
       </p>
     </form>
-  );
-}
-
-/**
- * The consent sentence, shown only where a sign-in can create an account.
- *
- * Signing in with Google or Microsoft for the first time DOES create one, and main sends this
- * build's terms version with it — so the document has to be named where that can happen, not only
- * behind the registration form's checkbox. With no provider configured, this view can only sign in
- * to an account that already exists, and the sentence would be claiming consent was being taken
- * when it was not.
- */
-function TermsLine({
-  flow,
-  onOpenLegal,
-}: {
-  flow: ReturnType<typeof useProviderSignIn>;
-  onOpenLegal: (document: "terms" | "privacy") => void;
-}) {
-  if ((flow.offered ?? []).length === 0) return null;
-  return (
-    <p className="mt-5 text-xs leading-relaxed text-ink-3">
-      Creating an account with Google or Microsoft accepts the{" "}
-      <InlineLegalLink onClick={() => onOpenLegal("terms")}>Terms of Use</InlineLegalLink> and{" "}
-      <InlineLegalLink onClick={() => onOpenLegal("privacy")}>Privacy Policy</InlineLegalLink>.
-    </p>
   );
 }
 
@@ -275,7 +233,6 @@ function RegisterForm({
   onSignedIn: (email: string) => void;
   onOpenLegal: (document: "terms" | "privacy") => void;
 }) {
-  const flow = useProviderSignIn({ onSignedIn });
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -316,8 +273,6 @@ function RegisterForm({
     }
   }
 
-  if (flow.waiting !== null) return <ProviderWaiting flow={flow} titleId={titleId} />;
-
   return (
     <form onSubmit={(e) => void submit(e)} noValidate>
       <Header
@@ -326,12 +281,6 @@ function RegisterForm({
         subtitle="For the VoidCode model and credits. Everything else works without one."
       />
       {error !== null && <FormError>{error}</FormError>}
-      <ProviderError flow={flow} />
-      {/* A provider account carries its own verified address, so it needs neither a password nor
-          the checkbox below — pressing one of these accepts the documents the sentence names. */}
-      <ProviderButtons flow={flow} mode="signIn" disabled={busy} />
-      <TermsLine flow={flow} onOpenLegal={onOpenLegal} />
-      <ProviderDivider flow={flow} />
       <div className="flex flex-col gap-4">
         <Field
           label="Name"

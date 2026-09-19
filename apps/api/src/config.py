@@ -267,33 +267,18 @@ SPINDOWN_CHECK_SECONDS = float(os.getenv("SPINDOWN_CHECK_SECONDS", "120"))
 # token is revocable per device, which is the control that matters more than a short lifetime.
 DESKTOP_SESSION_TTL_DAYS = int(os.getenv("DESKTOP_SESSION_TTL_DAYS", "90"))
 
-# ── Google and Microsoft sign-in (desktop) ──────────────────────
+# ── Google and Microsoft sign-in: REMOVED, and the settings with it ──────────
 #
-# The desktop app runs the browser half of the OAuth flow and hands this API the authorization code;
-# this API redeems it and verifies the ID token. See `services/oidc.py` for why the code is relayed
-# rather than the app sending an ID token itself.
+# `OAUTH_GOOGLE_CLIENT_IDS`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_MICROSOFT_CLIENT_IDS` and
+# `OAUTH_MICROSOFT_ALLOWED_TENANTS` stood here. `services/oidc.py` was their only reader outside
+# this file, and it is deleted.
 #
-# CLIENT IDS ARE PUBLIC; THE GOOGLE CLIENT SECRET IS NOT SHIPPED ANYWHERE BUT HERE. Google's "Desktop
-# app" client type still requires a client_secret at its token endpoint, and relaying the code is
-# what keeps it out of the installer. Microsoft's public-client registration has no secret at all.
-#
-# A comma-separated LIST of client ids, because a key rotation or a second build flavour means two
-# live registrations for a while, and an ID token issued to either must verify. Empty disables the
-# provider: its endpoint answers 503 and the desktop hides the button. Nothing else is affected.
-OAUTH_GOOGLE_CLIENT_IDS = [
-    v.strip() for v in os.getenv("OAUTH_GOOGLE_CLIENT_IDS", "").split(",") if v.strip()
-]
-OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET", "")
-OAUTH_MICROSOFT_CLIENT_IDS = [
-    v.strip() for v in os.getenv("OAUTH_MICROSOFT_CLIENT_IDS", "").split(",") if v.strip()
-]
-# Optional allowlist of Microsoft tenant ids. Empty accepts any tenant, including personal accounts,
-# which is what a public learning app wants; a school deployment would pin its own tenant here.
-OAUTH_MICROSOFT_ALLOWED_TENANTS = [
-    v.strip().lower()
-    for v in os.getenv("OAUTH_MICROSOFT_ALLOWED_TENANTS", "").split(",")
-    if v.strip()
-]
+# THEY ARE NOT KEPT "IN CASE". By the end they were read only by this module's own production check,
+# which warned when they were unset — a knob whose sole effect is to describe itself. This file
+# already carries that lesson for `ENABLE_PASSWORD_AUTH`, and
+# `tests/test_web_auth_is_gone.py::test_the_proxy_only_settings_are_gone` is the guard: a setting
+# nothing reads is worse than no setting, because it looks like a control. Setting any of these in an
+# environment now does nothing at all, which is the honest outcome of the feature being gone.
 
 # ── Password reset by emailed code ───────────────────────────────
 #
@@ -526,17 +511,6 @@ def assert_production_config() -> None:
         problems.append(
             "AUTH_CODE_SECRET is the shipped default or shorter than 32 characters, so a leaked "
             "auth_tokens table reverses every outstanding password-reset code in a million guesses."
-        )
-    if OAUTH_GOOGLE_CLIENT_IDS and not OAUTH_GOOGLE_CLIENT_SECRET:
-        problems.append(
-            "OAUTH_GOOGLE_CLIENT_IDS is set but OAUTH_GOOGLE_CLIENT_SECRET is empty; Google's token "
-            "endpoint refuses a desktop client's code without it, so every Google sign-in would fail."
-        )
-    if not OAUTH_GOOGLE_CLIENT_IDS and not OAUTH_MICROSOFT_CLIENT_IDS:
-        # A warning, not a refusal: email and password sign-in is a complete product on its own.
-        logging.getLogger(__name__).warning(
-            "No Google or Microsoft client ids are configured; only email and password sign-in "
-            "will be offered."
         )
 
     if problems:

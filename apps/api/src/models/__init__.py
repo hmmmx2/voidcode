@@ -25,7 +25,6 @@ from .problem import CodeTemplate, Problem, TestCase
 from .problem_concept import ProblemConcept
 from .submission import Submission, TestCaseResult
 from .user import User, UserPreferences
-from .user_identity import UserIdentity
 
 __all__ = [
     "AuthToken",
@@ -55,6 +54,5 @@ __all__ = [
     "TestCase",
     "TestCaseResult",
     "User",
-    "UserIdentity",
     "UserPreferences",
 ]

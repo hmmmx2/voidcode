@@ -113,29 +113,6 @@ interface VoidCodeHost {
     signOut(): Promise<{ ok: true }>;
     signOutEverywhere(): Promise<{ ok: true } | { ok: false; message: string }>;
 
-    /**
-     * Google and Microsoft, and whether this build can use them.
-     *
-     * Answered from build configuration with no network request, so it is safe to call on mount.
-     * `timeoutSeconds` is how long main will wait on the browser, so a countdown shown here agrees
-     * with the one being enforced there.
-     */
-    providers(): Promise<{ providers: HostProviderStatus[]; timeoutSeconds: number }>;
-    /**
-     * Open the system browser and wait for the person to finish signing in there.
-     *
-     * Two enums and no address: the renderer cannot influence where the browser is sent. Resolves
-     * when the flow ends, which may be minutes later — or immediately with `not_configured` when
-     * this build has no client id for that provider, in which case no browser is opened.
-     */
-    signInOAuth(input: {
-      provider: HostProviderId;
-      mode: "signIn" | "link";
-    }): Promise<HostSignedIn | HostProviderLinked | HostAccountFailure>;
-    /** Stop waiting. The pending `signInOAuth` resolves with `code: "cancelled"`. */
-    cancelOAuth(): Promise<{ ok: true }>;
-    /** Reopen the browser at the sign-in already in progress, for a tab closed by accident. */
-    reopenOAuth(): Promise<{ ok: true } | HostAccountFailure>;
   };
 
   /**
@@ -1181,7 +1158,6 @@ interface HostAccountUser {
   name: string;
   hasPassword: boolean;
   emailVerified: boolean;
-  providers: string[];
 }
 
 interface HostAccountState {
@@ -1202,13 +1178,8 @@ interface HostAccountChange {
 interface HostSignedIn {
   ok: true;
   user: { id: string; email: string; name: string };
-  /** True when this sign-in created the account — registration, or a first provider sign-in. */
+  /** True when this sign-in created the account. Registration is now the only thing that does. */
   created: boolean;
-  /**
-   * True when attaching a provider removed a password that had been set on this address without the
-   * address ever being proven. Say so: someone's password has just stopped working.
-   */
-  passwordCleared: boolean;
 }
 
 /**
@@ -1226,23 +1197,6 @@ interface HostResearchFailure {
   code: string;
   /** Written to be shown as it is. */
   message: string;
-}
-
-type HostProviderId = "google" | "microsoft";
-
-interface HostProviderStatus {
-  id: HostProviderId;
-  /** As the provider writes it — "Google", "Microsoft". What the button says. */
-  label: string;
-  /** False when this build has no client id for it, in which case draw no button. */
-  configured: boolean;
-}
-
-/** A provider attached to the account already signed in. No new session was issued. */
-interface HostProviderLinked {
-  ok: true;
-  linked: true;
-  provider: HostProviderId;
 }
 
 interface HostAccountFailure {
