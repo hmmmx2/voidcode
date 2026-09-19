@@ -112,9 +112,13 @@ class KnowledgeDocument(Base):
         remote_side=[id], foreign_keys=[superseded_by_id]
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    #: Nullable in the database, because b8e3d1f07a26 created them that way. The ORM default fills
+    #: both on every insert, but the schema does not enforce it, so the type does not claim it.
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     @property

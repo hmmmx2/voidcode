@@ -65,6 +65,10 @@ class ProblemConcept(Base):
     #: A `data/concepts.yaml` concept id. Not a foreign key — see the module docstring.
     concept_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    #: Nullable in the database, because a1c7f2e9d4b3 created it that way. The ORM default fills it
+    #: on every insert, but the schema does not enforce it, so the type does not claim it.
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=datetime.utcnow
+    )
 
     problem: Mapped[Problem] = relationship(back_populates="concepts")  # noqa: F821

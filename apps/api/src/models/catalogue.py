@@ -289,8 +289,13 @@ class InterviewQuestion(Base):
         UUID(as_uuid=True),
         ForeignKey("problems.id", ondelete="SET NULL"),
         nullable=True,
-        unique=True,
-        index=True,
+    )
+
+    # A named unique CONSTRAINT, as e2b9c4d17f05 created it — not `unique=True,
+    # index=True`, which declares a unique index autogenerate would swap it for.
+    # The constraint's own index already serves lookups by `problem_id`.
+    __table_args__ = (
+        UniqueConstraint("problem_id", name="uq_interview_questions_problem_id"),
     )
 
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)
