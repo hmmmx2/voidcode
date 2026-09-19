@@ -85,11 +85,36 @@ def _postgres_reachable(url: str, timeout: float = 1.5) -> bool:
 
 POSTGRES_AVAILABLE = _postgres_reachable(TEST_DATABASE_URL)
 
+#: `REQUIRE_POSTGRES=1` turns a skip into a failure. Set it wherever a database IS supposed to be.
+#:
+#: WHY, CONCRETELY. Every test in `test_desktop_accounts_postgres.py` and
+#: `test_migrations_match_models_postgres.py` carries `requires_postgres`, so the entire end-to-end
+#: coverage of registration, reset-by-code and migration drift can vanish — and the run stays GREEN,
+#: because thirty skips and thirty passes both exit 0. That is not a hypothetical: while the work
+#: that added this was in progress, a run from the wrong working directory skipped all thirty
+#: account tests and read as success, and the flaky Windows-to-container path on this machine
+#: silently skipped the migration guard between two runs where it passed.
+#:
+#: A skip is the right answer on a laptop with no Docker running. It is the wrong answer in CI, where
+#: the database is a declared service: there, "not reachable" is a broken job, not an absent
+#: dependency. One environment variable is the whole difference, and it has to be OPT-IN rather than
+#: inferred from something like `CI`, because a fork's CI may genuinely have no Postgres.
+REQUIRE_POSTGRES = os.getenv("REQUIRE_POSTGRES", "").strip().lower() in {"1", "true", "yes", "on"}
+
+if REQUIRE_POSTGRES and not POSTGRES_AVAILABLE:
+    # Collection-time, not per-test: this is a misconfigured run, and reporting it once at the top is
+    # clearer than the same message repeated against every database test in the suite.
+    raise RuntimeError(
+        f"REQUIRE_POSTGRES is set but no Postgres answers at {TEST_DATABASE_URL}. "
+        "Every database test would have skipped and the run would have passed. "
+        "Start it with `docker compose up -d postgres`, or unset REQUIRE_POSTGRES to allow skips."
+    )
+
 requires_postgres = pytest.mark.skipif(
     not POSTGRES_AVAILABLE,
     reason=(
         f"no Postgres at {TEST_DATABASE_URL} — start it with "
-        "`docker compose up -d postgres`"
+        "`docker compose up -d postgres`, or set REQUIRE_POSTGRES=1 to make this a failure"
     ),
 )
 

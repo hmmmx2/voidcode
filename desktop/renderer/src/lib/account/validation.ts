@@ -1,5 +1,7 @@
 // Ported from the website's `lib/validation/auth.ts` when sign-in moved into the desktop app. The website is
 // being removed, so this is now the only copy.
+import { EMAIL_MAX_LENGTH } from "@shared/legal";
+
 /**
  * Client-side validation for the auth forms.
  *
@@ -58,7 +60,7 @@ export function validateEmail(email: string): string | null {
   const trimmed = email.trim();
   if (!trimmed) return "Enter your email address.";
   if (!EMAIL_SHAPE.test(trimmed)) return "That doesn't look like an email address.";
-  if (trimmed.length > 255) return "That email address is too long.";
+  if (trimmed.length > EMAIL_MAX_LENGTH) return "That email address is too long.";
   return null;
 }
 

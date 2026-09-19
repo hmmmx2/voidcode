@@ -208,7 +208,9 @@ async def test_issuing_a_token_revokes_the_previous_one() -> None:
     old = _token(user, raw="old-token")
     session = FakeSession(users=[user], tokens=[old])
 
-    await token_service.issue_email_verification(session, user)
+    # `issue` with the purpose, not the deleted `issue_email_verification` wrapper: what this
+    # test is about is `revoke_existing`, not which kind of link is being issued.
+    await token_service.issue(session, user, PURPOSE_EMAIL_VERIFY)
     assert old.used_at is not None
 
 

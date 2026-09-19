@@ -58,6 +58,11 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
       DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
+      # A skip is the right answer on a laptop with no Docker. It is the wrong answer HERE, where
+      # Postgres is a declared service: "not reachable" is a broken job, not an absent dependency.
+      # `conftest.py` raises at collection when this is set and nothing answers, so the run fails
+      # once at the top with the address it tried instead of reporting green over thirty skips.
+      REQUIRE_POSTGRES: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -87,18 +92,14 @@ jobs:
       - name: Run API tests
         run: pytest apps/api/tests -v
 
-      - name: Assert the Postgres-backed tests actually ran
-        # Without this, losing the database turns every integration test into a
-        # skip and the job still reports green — the failure mode where CI looks
-        # healthiest at the moment it has stopped checking anything.
-        run: |
-          if pytest apps/api/tests -q -m requires_postgres --collect-only >/dev/null 2>&1; then
-            SKIPPED=$(pytest apps/api/tests -q 2>&1 | grep -oE '[0-9]+ skipped' || true)
-            if [ -n "$SKIPPED" ]; then
-              echo "::error::Postgres-backed tests were skipped ($SKIPPED). The database service is not reachable."
-              exit 1
-            fi
-          fi
+      # A step named "Assert the Postgres-backed tests actually ran" stood here and is replaced by
+      # `REQUIRE_POSTGRES` above, because it was wrong in both directions.
+      #
+      # It ran the WHOLE SUITE A SECOND TIME and grepped the summary for "N skipped" — so it
+      # doubled the job's runtime, and it failed on ANY skip from any cause, not just a missing
+      # database. Several suites skip legitimately (a live tutor, a GPU), so the guard's own
+      # correctness depended on no other test ever being skipped, which is not a property anyone
+      # can maintain. `REQUIRE_POSTGRES` asks the precise question instead, once, before collection.
 
   ml-tree:
     name: ML tree tests

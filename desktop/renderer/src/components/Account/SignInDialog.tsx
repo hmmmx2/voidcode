@@ -41,7 +41,7 @@ export default function SignInDialog({
   view: SignInView | null;
   onViewChange: (view: SignInView) => void;
   onClose: () => void;
-  onSignedIn: (email: string) => void;
+  onSignedIn: (email: string, created: boolean) => void;
 }) {
   const titleId = useId();
   const [legal, setLegal] = useState<"terms" | "privacy" | null>(null);
@@ -150,7 +150,7 @@ function SignInForm({
 }: {
   titleId: string;
   onViewChange: (view: SignInView) => void;
-  onSignedIn: (email: string) => void;
+  onSignedIn: (email: string, created: boolean) => void;
   onOpenLegal: (document: "terms" | "privacy") => void;
 }) {
   const [email, setEmail] = useState("");
@@ -174,7 +174,7 @@ function SignInForm({
         setError(result.message);
         return;
       }
-      onSignedIn(result.user.email);
+      onSignedIn(result.user.email, result.created);
     } finally {
       setPassword("");
       setBusy(false);
@@ -230,7 +230,7 @@ function RegisterForm({
 }: {
   titleId: string;
   onViewChange: (view: SignInView) => void;
-  onSignedIn: (email: string) => void;
+  onSignedIn: (email: string, created: boolean) => void;
   onOpenLegal: (document: "terms" | "privacy") => void;
 }) {
   const [name, setName] = useState("");
@@ -266,7 +266,7 @@ function RegisterForm({
         else setError(result.message);
         return;
       }
-      onSignedIn(result.user.email);
+      onSignedIn(result.user.email, result.created);
     } finally {
       setPassword("");
       setBusy(false);
@@ -360,7 +360,7 @@ function ForgotForm({
 }: {
   titleId: string;
   onViewChange: (view: SignInView) => void;
-  onSignedIn: (email: string) => void;
+  onSignedIn: (email: string, created: boolean) => void;
 }) {
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -419,7 +419,7 @@ function ForgotForm({
         else setError(result.message);
         return;
       }
-      onSignedIn(result.user.email);
+      onSignedIn(result.user.email, result.created);
     } finally {
       setPassword("");
       setBusy(false);

@@ -1508,3 +1508,100 @@ desktop 2287 passed across 139 files, both typechecks clean, `npm run smoke` PAS
 0 from `apps/api`, root `pytest tests` exit 0, and the migration drift guard green three consecutive
 times (it skips silently when the host-to-container Postgres path stalls, which is gap 4 in the plan
 and Phase 3's job).
+
+## The five things that made "login works" less true than it looked
+
+Removing provider sign-in was the visible change. These are the gaps it uncovered, each of which
+could have been reported as working.
+
+### A skip is not a pass
+
+Every test in `test_desktop_accounts_postgres.py` and `test_migrations_match_models_postgres.py`
+carries `requires_postgres`, so the whole end-to-end coverage of registration, reset-by-code and
+migration drift can disappear and the run still exits 0. Thirty skips and thirty passes look the
+same from the outside.
+
+That is not hypothetical. While this work was in progress, a run from the wrong working directory
+skipped all thirty account tests and read as success, and the flaky Windows-to-container path on
+this machine silently skipped the migration guard between two runs where it passed.
+
+`REQUIRE_POSTGRES=1` turns the skip into a collection-time failure naming the address it tried. It
+is OPT-IN rather than inferred from `CI`, because a fork's CI may genuinely have no database. It
+replaces a step in `ci.yml` that was wrong in both directions: it ran the whole suite a SECOND time
+and grepped for "N skipped", so it doubled the job and failed on any skip from any cause -- its own
+correctness depended on no other test in the repository ever being skipped.
+
+`verify-accounts` in `desktop.yml` is the new job, one OS with a Postgres service, and it fails if
+the harness prints SKIP. A script that skips cleanly is right on a laptop and wrong in a job that
+installs every dependency it needs: a green run that tested nothing is worse than a red one, because
+nobody looks at it.
+
+### An email that was never sent, linking to a page that does not exist
+
+`email_verification_email` had no caller -- no route, no service, no task -- and the link it built
+pointed at `/verify-email`, which is not a route under `apps/web/src/app`. Had anything ever sent it,
+the person would have followed it to a 404 and still had an unverified address.
+`issue_email_verification` went with it; its only caller was a test that wanted `issue`'s
+revoke-the-previous-one behaviour and reached for the nearest wrapper.
+
+**`email_verified_at` STAYS, because it is true.** Redeeming a password-reset code sets it, and that
+is real proof of the mailbox. What went is the "Verified / Not verified" badge on the account page:
+the field is true information the APPLICATION CANNOT ACT ON -- there is no "resend verification
+email" and now no sender -- so the badge could sit on "Not verified" forever with nothing to press,
+reading as a warning about the account rather than a fact about a flow that is not offered.
+
+### "Signed in as" is the wrong sentence for a new account
+
+All three forms received `created` from the API -- registration sets it, password sign-in and
+reset-by-code do not -- and the dialog dropped it. Someone who had just filled in a name, an address,
+a password and a consent checkbox was told they had signed in to something that already existed.
+
+**The producer and the consumer needed separate tests, and proving that took a mutant.** The dialog's
+own file asserts `onSignedIn(email, created)` on all three paths; deleting the branch in
+`AccountProvider` left every one of those assertions green while every new account got the wrong
+sentence. `tests/ui/account-provider.test.tsx` renders the real `ToastProvider` around the real
+provider and reads the text out of the DOM. It asserts the WHOLE sentence: "Signed in as x" is a
+substring of "Account created. Signed in as x", so a `toContain` on the shorter one would pass
+against either.
+
+### A command labelled "Account" that opened the local profile
+
+`go.account` pushed `/profile`. They are unrelated pages -- `/profile` is the local profile (display
+name, photo, time zone, all in `voidcode.db`, never sent anywhere) and `/account` is the VoidCode
+account (sign-in, password, credits, sessions). So neither the command palette nor the menu bar could
+reach the account page at all; the avatar menu and typing the URL were the only routes, and the
+person looking for "where do I change my password" was shown their photo.
+
+Three tests already covered this command and all three passed: they check that a palette ENTRY exists
+and how it is labelled, which says nothing about where pressing it goes. The new one pins the
+destination, pins `file.preferences` still going to `/profile` -- preferences ARE local -- and checks
+the route exists on disk, because under `output: export` a push to a path with no page is a blank
+shell rather than a 404 anyone notices.
+
+### One email cap, not three
+
+255 in the renderer's `validateEmail`, 320 in the IPC contract, 254 at the API. Each defensible
+alone; together, two ways to be refused by something other than the thing that decides. A
+255-character address passed the form, passed the channel's schema, reached the API, and came back as
+a validation error with no `field` attached -- which the dialog shows as a banner rather than under
+the Email field.
+
+254 is the one that is not a choice: RFC 5321 caps an SMTP forward-path at 256 octets including the
+angle brackets, and that is exactly where `EmailStr` draws the line. MEASURED, not assumed -- and the
+first attempt at measuring it was wrong, reporting a 250-character address as refused because the
+probe built a 238-character local part and tripped the 64-character local-part limit instead.
+
+`EMAIL_MAX_LENGTH` lives in `src/shared/legal.ts` and both call sites read it.
+`apps/api/tests/test_email_length_cap.py` reads the same constant and asserts all four request models
+accept 254 and refuse 255. Either half alone would let the two drift: the TypeScript side cannot run
+Python, and a Python-only boundary test says nothing about what the app sends.
+
+### A note on how this was verified
+
+The desktop suite, both typechecks and the smoke are green. The API suite is green for every test
+that does not need Postgres. The Postgres-backed tests pass on a clean run -- one of six consecutive
+runs of the accounts suite was fully green -- but this machine's Windows-to-container path stalls
+with `WinError 121`, and the other five runs each failed one or two DIFFERENT tests, six distinct
+victims in total, with 32 "semaphore timeout" errors across a full-suite run. A real defect fails the
+same test every time. That is recorded rather than smoothed over, and it is the same condition
+`REQUIRE_POSTGRES` exists to make loud instead of silent.

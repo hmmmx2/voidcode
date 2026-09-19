@@ -42,7 +42,7 @@ let account: AccountStub;
 function open(
   view: SignInView,
   handlers: {
-    onSignedIn?: (email: string) => void;
+    onSignedIn?: (email: string, created: boolean) => void;
     onViewChange?: (view: SignInView) => void;
     onClose?: () => void;
   } = {}
@@ -87,7 +87,9 @@ describe("signing in", () => {
       email: "learner@example.com",
       password: "a-long-enough-password",
     });
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("learner@example.com"));
+    // The second argument is `created`, and FALSE is the assertion: `AccountProvider` picks the
+    // toast from it, and a password sign-in to an existing account must not say "Account created".
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("learner@example.com", false));
   });
 
   it("clears the password whether the sign-in succeeded or failed", async () => {
@@ -195,7 +197,11 @@ describe("creating an account", () => {
     const sent = account.register.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(sent.acceptTerms).toBe(true);
     expect(Object.keys(sent)).not.toContain("termsVersion");
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("new@example.com"));
+    // TRUE here, and this is the whole point of carrying it: registration was reporting
+    // `created` all along and the dialog dropped it, so someone who had just filled in a name,
+    // an address, a password and a consent checkbox was told they had "Signed in" to an
+    // account that already existed.
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("new@example.com", true));
   });
 
   it("puts a server field error under the field it names", async () => {
@@ -305,7 +311,8 @@ describe("forgotten password — the only way back in for an account with no pas
         newPassword: "a-long-enough-password",
       })
     );
-    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("nopassword@example.com"));
+    // False: setting a first password on an account that exists is not creating one.
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith("nopassword@example.com", false));
   });
 
   it("disables 'Send a new code' and counts it back down", async () => {

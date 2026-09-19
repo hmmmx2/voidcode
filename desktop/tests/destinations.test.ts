@@ -13,7 +13,7 @@
  *    before trusting the fallback.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   DESTINATIONS,
   destinationForPath,
@@ -177,6 +177,33 @@ describe("account survives the palette's two producers", () => {
     // Scoped to the palette item rather than to the string "Account", which also appears in
     // the menu label and the status-bar guard — either would pass against a missing entry.
     expect(workbench).toMatch(/id: "go:account",\s*label: "Account"/);
+  });
+
+  it("sends it to /account, not to the local profile", () => {
+    /*
+     * IT WENT TO `/profile` FOR THE LIFE OF THE COMMAND, and the three tests above all passed:
+     * they check that a palette ENTRY exists and how it is labelled, which says nothing about
+     * where pressing it goes.
+     *
+     * The two pages are unrelated. `/profile` is the local profile — display name, photo, time
+     * zone, all in `voidcode.db`, never sent anywhere. `/account` is the VoidCode account: sign-in,
+     * password, credits, sessions. A command labelled "Account" that opens the local profile leaves
+     * the account page reachable only from the avatar menu, so the palette and the menu bar could
+     * not get to "change my password" at all.
+     */
+    expect(workbench).toMatch(/id: "go\.account",\s*run: \(\) => router\.push\("\/account"\)/);
+
+    // The other direction, so a careless find-and-replace cannot send preferences to the account
+    // page: preferences ARE local, and that one is right as it stands.
+    expect(workbench).toMatch(/id: "file\.preferences",\s*run: \(\) => router\.push\("\/profile"\)/);
+  });
+
+  it("points at a route that exists", () => {
+    // `output: export` builds a static route per directory, so a push to a path with no page is a
+    // blank shell rather than a 404 anyone notices in development.
+    expect(
+      existsSync(new URL("../renderer/src/app/(profile)/account/page.tsx", import.meta.url))
+    ).toBe(true);
   });
 
   it("names the model manager explicitly too", () => {

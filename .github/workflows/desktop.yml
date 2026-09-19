@@ -176,6 +176,96 @@ jobs:
         if: runner.os != 'Linux'
         run: npm run smoke
 
+  verify-accounts:
+    # Registration, sign-in and reset-by-code against the REAL API and a real Postgres, driven
+    # through the real app. `verify` above cannot ask this: it is npm-only on three operating
+    # systems with no Python and no database.
+    #
+    # ONE OS, DELIBERATELY. Nothing in the account flow is platform-specific except `safeStorage`'s
+    # durability, and the script already asserts `durable` only off Linux — on headless Linux there
+    # is no keyring, so the session is kept for the launch only while `isEncryptionAvailable()`
+    # stays true and signing in still works. Running this three times would buy a second copy of
+    # the same assertions and one platform-specific one that has to be skipped anyway.
+    name: accounts end to end
+    runs-on: ubuntu-22.04
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: alwin
+          POSTGRES_PASSWORD: alwin_dev
+          POSTGRES_DB: alwin_tutor
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U alwin -d alwin_tutor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # 127.0.0.1, not localhost. On a dual-stack host `localhost` can resolve to a listener that
+      # completes the handshake and never serves, and the driver then blocks with no refusal to fall
+      # back from — the reason `conftest.py` spells out its own address at length.
+      VOIDCODE_E2E_DATABASE_URL: postgresql://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
+      DATABASE_URL_SYNC: postgresql://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install the API's dependencies
+        # Not `requirements.txt`: it pins torch, ~2.5 GB, and `USE_SGLANG=true` means no model is
+        # loaded in this process. The same reasoning and the same list as `ci.yml`'s API job.
+        run: |
+          python -m pip install --upgrade pip
+          pip install             "fastapi>=0.109.0" "uvicorn[standard]" "pydantic>=2.5.0"             "sqlalchemy[asyncio]>=2.0.0" asyncpg alembic psycopg2-binary             redis httpx python-dotenv             argon2-cffi email-validator prometheus-client
+
+      - name: Run migrations
+        working-directory: apps/api
+        run: alembic upgrade head
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/renderer/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: desktop/renderer
+
+      - name: Accounts end to end
+        # xvfb because this launches a real Electron window. `tee` because the script exits 0 on a
+        # SKIP and the step below has to read what it said.
+        run: xvfb-run --auto-servernum npm run smoke:account 2>&1 | tee smoke-account.log
+        working-directory: desktop
+
+      - name: A skip is a failure here
+        # THE POINT OF THIS JOB. The script skips cleanly and exits 0 when its dependencies are
+        # absent, which is right on a developer's machine and wrong in a job that declares them:
+        # a green run that tested nothing is worse than a red one, because nobody looks at it.
+        # Every dependency is installed above, so "skipped" means this job is broken.
+        run: |
+          if grep -q "\[account\] SKIP" smoke-account.log; then
+            echo "::error::smoke:account skipped in a job that provides every dependency it needs."
+            grep "\[account\]" smoke-account.log
+            exit 1
+          fi
+          if ! grep -q "\[account\] PASS" smoke-account.log; then
+            echo "::error::smoke:account did not report PASS."
+            tail -40 smoke-account.log
+            exit 1
+          fi
+          grep "\[account\]" smoke-account.log
+        working-directory: desktop
+
   package:
     name: installer (${{ matrix.os }})
     needs: [licences, verify]

@@ -128,9 +128,21 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
           view={dialog}
           onViewChange={setDialog}
           onClose={() => setDialog(null)}
-          onSignedIn={(email) => {
+          onSignedIn={(email, created) => {
             setDialog(null);
-            notify(`Signed in as ${email}`);
+            /*
+             * "Signed in as" IS THE WRONG SENTENCE FOR A NEW ACCOUNT, and `created` is how the
+             * difference was already known and then thrown away. All three forms received it from
+             * the API — registration sets it, and reset-by-code and password sign-in do not — and
+             * the dialog dropped it on the floor, so someone who had just filled in a name, an
+             * address, a password and a consent checkbox was told they had signed in to something
+             * that already existed.
+             *
+             * `created` is true for exactly one path: registration. `outcomes.ts` makes it a
+             * required field rather than optional for this reason — "absent" and "false" would
+             * otherwise mean the same thing and an older build would look like an existing account.
+             */
+            notify(created ? `Account created. Signed in as ${email}` : `Signed in as ${email}`);
           }}
         />
       )}

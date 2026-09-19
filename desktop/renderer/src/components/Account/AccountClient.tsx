@@ -105,12 +105,18 @@ export default function AccountClient() {
             <dt className="text-ink-3">Name</dt>
             <dd className="text-ink">{user.name || "—"}</dd>
             <dt className="text-ink-3">Email</dt>
-            <dd className="flex flex-wrap items-center gap-2 text-ink">
-              <span className="break-all">{user.email}</span>
-              <Badge tone={user.emailVerified ? "strong" : "quiet"}>
-                {user.emailVerified ? "Verified" : "Not verified"}
-              </Badge>
-            </dd>
+            {/*
+                A "Verified" / "Not verified" badge stood here and is deliberately gone.
+                `emailVerified` is TRUE information — redeeming a password-reset code sets it,
+                because receiving the code proves control of the mailbox — but this application has
+                no way to act on it. There is no "resend verification email": the only sender was
+                deleted along with the link it built, which pointed at a page that does not exist.
+                So the badge could show "Not verified" indefinitely with nothing to press, which
+                reads as a warning about the account rather than as a fact about a flow that is not
+                offered. The field stays on the wire, where `smoke:account` asserts a reset code
+                sets it.
+            */}
+            <dd className="break-all text-ink">{user.email}</dd>
           </dl>
         )}
         <p className="mt-5 text-xs leading-relaxed text-ink-3">

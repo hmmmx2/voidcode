@@ -249,7 +249,19 @@ function WorkbenchFrame({ children }: { children: React.ReactNode }) {
       { id: "go.problems", run: () => router.push("/problems") },
       { id: "go.interviews", run: () => router.push("/interviews") },
       { id: "go.projects", run: () => router.push("/projects") },
-      { id: "go.account", run: () => router.push("/profile") },
+      /*
+       * `/account`, NOT `/profile`, and they are different pages.
+       *
+       * `/profile` is the LOCAL profile — a display name, a photo, a time zone, all in
+       * `voidcode.db` and never sent anywhere. `/account` is the VoidCode account: sign-in,
+       * password, credits, sessions. The command is labelled "Account" and went to the local one,
+       * which meant the only routes to the account page were the avatar menu and typing the URL:
+       * neither the command palette nor the menu bar could reach it, and the person looking for
+       * "where do I change my password" was shown their photo instead.
+       *
+       * `file.preferences` below still goes to `/profile`, correctly — preferences are local.
+       */
+      { id: "go.account", run: () => router.push("/account") },
       { id: "go.models", run: () => router.push("/models") },
       { id: "go.back", run: () => router.back() },
       { id: "go.forward", run: () => router.forward() },

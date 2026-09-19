@@ -80,17 +80,17 @@ def password_reset_code_email(to: str, code: str) -> Email:
     )
 
 
-def email_verification_email(to: str, token: str) -> Email:
-    link = f"{config.APP_BASE_URL}/verify-email?token={token}"
-    return Email(
-        to=to,
-        subject="Confirm your VoidCode email address",
-        body=(
-            "Confirm this address to finish setting up your account.\n\n"
-            f"{link}\n\n"
-            f"The link works once and expires in {config.VERIFY_TOKEN_TTL_HOURS} hours.\n"
-        ),
-    )
+# `email_verification_email` STOOD HERE, and it was dead twice over.
+#
+# Nothing called it -- no route, no service, no task -- so no account has ever received it. And the
+# link it built, `{APP_BASE_URL}/verify-email?token=...`, pointed at a page that DOES NOT EXIST:
+# there is no `verify-email` route under `apps/web/src/app`. Had anything ever sent it, the person
+# would have followed a link to a 404 and been left with an address the application still called
+# unverified.
+#
+# `email_verified_at` is still set, and truthfully: redeeming a password-reset code sets it, because
+# receiving the code proves control of the mailbox. That is the only way an address becomes verified
+# here, and it is a real one. What is gone is a second mechanism that never ran.
 
 
 async def send(email: Email) -> bool:

@@ -13,6 +13,9 @@
 import { z } from "zod";
 import { SELECTABLE_MODES } from "../agent/modes.js";
 import { WINDOW_MODES, type WindowMode } from "../modes.js";
+// One number for the longest address anything accepts — see the constant's own note for why
+// it is 254 and why it used to be three different values.
+import { EMAIL_MAX_LENGTH } from "../../shared/legal.js";
 import { MENU_IDS } from "../menu-ids.js";
 import { COMMAND_IDS } from "../../shared/commands.js";
 
@@ -110,7 +113,7 @@ export const CHANNELS = {
   "account:refresh": { input: z.undefined(), modes: BOTH },
   "account:signInPassword": {
     input: z.object({
-      email: z.string().min(3).max(320),
+      email: z.string().min(3).max(EMAIL_MAX_LENGTH),
       password: z.string().min(1).max(4096),
     }),
     modes: BOTH,
@@ -125,7 +128,7 @@ export const CHANNELS = {
   "account:register": {
     input: z.object({
       name: z.string().min(1).max(200),
-      email: z.string().min(3).max(320),
+      email: z.string().min(3).max(EMAIL_MAX_LENGTH),
       password: z.string().min(1).max(4096),
       acceptTerms: z.literal(true),
     }),
@@ -133,13 +136,13 @@ export const CHANNELS = {
   },
   /** Email a six-digit reset code. The answer is the same whether or not the address has an account. */
   "account:requestPasswordCode": {
-    input: z.object({ email: z.string().min(3).max(320) }),
+    input: z.object({ email: z.string().min(3).max(EMAIL_MAX_LENGTH) }),
     modes: BOTH,
   },
   /** Set a new password with the emailed code; signs this device in and every other device out. */
   "account:resetPassword": {
     input: z.object({
-      email: z.string().min(3).max(320),
+      email: z.string().min(3).max(EMAIL_MAX_LENGTH),
       code: z.string().regex(/^\d{6}$/),
       newPassword: z.string().min(1).max(4096),
     }),

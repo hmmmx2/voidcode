@@ -143,8 +143,13 @@ async def revoke_all(session: AsyncSession, user_id, purpose: str) -> int:
     return result.rowcount or 0
 
 
-async def issue_email_verification(session: AsyncSession, user: User) -> str:
-    return await issue(session, user, PURPOSE_EMAIL_VERIFY)
+# `issue_email_verification` STOOD HERE. Its only caller was a test that wanted `issue`'s
+# revoke-the-previous-one behaviour and reached for the nearest wrapper; the email it existed to
+# accompany was never sent by anything. That test now calls `issue` with the purpose directly, which
+# is what it was actually testing.
+#
+# `PURPOSE_EMAIL_VERIFY` itself stays: it is a value in `auth_token.py`, and the suites use it as a
+# representative non-session purpose.
 
 
 async def issue_desktop_session(session: AsyncSession, user: User) -> str:

@@ -760,7 +760,9 @@ describe("the workflow installs what its steps read", () => {
     const installs = jobs.map(([name, job]) => [name, rendererInstall(job)] as const);
     const withInstall = installs.filter(([, step]) => step !== undefined).map(([name]) => name);
 
-    expect(withInstall.sort()).toEqual(["licences", "package", "verify"]);
+    // `verify-accounts` joined this list when the end-to-end account job was added. It installs
+    // both trees because it builds the renderer and launches the real app.
+    expect(withInstall.sort()).toEqual(["licences", "package", "verify", "verify-accounts"]);
   });
 
   it("keys the npm cache on both lockfiles wherever both trees are installed", () => {
