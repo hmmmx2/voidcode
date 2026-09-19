@@ -37,15 +37,33 @@ export default defineConfig({
       /**
        * One React, not two.
        *
-       * There are two installs — `renderer/node_modules/react` at 19.2.3 and this root's at
-       * 19.2.8 — and `@monaco-editor/react` resolves the renderer's while `react-dom/server`
-       * resolves the root's. Two copies means two hook dispatchers, and the second component to
-       * call `useState` gets `null`. Pinning both to the renderer's copy is what makes a
-       * component renderable here at all; it is a test-runner concern only, since the real
-       * renderer bundle has exactly one React by construction.
+       * There are two installs — `renderer/node_modules/react` and this root's — and a component
+       * rendered here reaches both: the component imports `react` while the renderer that draws it
+       * comes from whichever copy the *rendering library* resolved. Two copies means two hook
+       * dispatchers, and every render dies on `Cannot read properties of null (reading 'useState')`,
+       * which reads exactly like a broken component and is not.
+       *
+       * THE RENDERER'S COPY IS THE ANSWER, and everything that renders has to be reachable from
+       * it. `@monaco-editor/react` and `@testing-library/react` both live in `renderer/node_modules`
+       * and both reach `react`/`react-dom/client` through CJS `require`, which no alias intercepts
+       * — so their natural resolution has to be the right one, and these lines make every *other*
+       * importer agree with it. Pointing them at this root instead was tried and fails the other
+       * way round: Testing Library then renders with one copy while `@monaco-editor/react` hooks
+       * into the other.
+       *
+       * A test-runner concern only: the real renderer bundle has exactly one React by construction.
        */
       react: path.resolve(__dirname, "renderer/node_modules/react"),
       "react-dom": path.resolve(__dirname, "renderer/node_modules/react-dom"),
+      /** Same reason as `@monaco-editor/react` below — see that note. */
+      "@testing-library/react": path.resolve(
+        __dirname,
+        "renderer/node_modules/@testing-library/react"
+      ),
+      "@testing-library/user-event": path.resolve(
+        __dirname,
+        "renderer/node_modules/@testing-library/user-event"
+      ),
       /**
        * Same reason, one package further out.
        *
@@ -68,11 +86,29 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    /**
+     * `.tsx` too, for the component tests under `tests/ui/`.
+     *
+     * Those files opt into a DOM with a per-file `// @vitest-environment jsdom` docblock rather
+     * than flipping `environment` here. That setting is load-bearing for the other 140 files: they
+     * read sources off disk, drive real `node:sqlite` through a stub, and use real `Buffer`s in the
+     * Electron stub's `safeStorage`. A global jsdom would be a large change for one directory.
+     */
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     server: {
       deps: {
         // Resolve renderer-only packages (@monaco-editor/react) from the renderer install.
         fallbackCJS: true,
+        /**
+         * Testing Library has to go through Vite, or the React aliases above do not reach it.
+         *
+         * Externalised, it is loaded by Node directly and picks up `desktop/node_modules/react-dom`
+         * (19.2.8) while the component under test gets the aliased `renderer/node_modules/react`
+         * (19.2.3). Two copies means two hook dispatchers, and the render fails with
+         * `Cannot read properties of null (reading 'useId')` — which reads like a bug in the
+         * component and is not. Inlining puts it on the same copy as everything else.
+         */
+        inline: [/@testing-library\//],
       },
     },
   },

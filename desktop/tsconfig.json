@@ -36,5 +36,10 @@
       "@monaco-editor/react": ["./renderer/node_modules/@monaco-editor/react"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "*.config.ts"],
+  // `tests/ui/` has its own program — see `tsconfig.ui-tests.json`, which `npm run typecheck` runs
+  // straight after this one. It is excluded here rather than left to both because a component
+  // compiled under this root's options fails on rules the renderer does not set, and a file owned
+  // by two programs gets its errors from whichever is stricter rather than from the one it ships in.
+  "exclude": ["tests/ui"]
 }

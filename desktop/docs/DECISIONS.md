@@ -1288,3 +1288,68 @@ text. `loader.init()` is one-shot, so the fix is placement rather than presence:
 during module evaluation of the root client component, strictly before any component effect can
 ask. `markdown-render.test.ts`'s plain-text fallback assertion passed throughout, which is what
 made it invisible.
+
+## The sign-in dialog gets tested before it gets cut down
+
+Google and Microsoft sign-in are being removed. That edit lands inside `SignInDialog.tsx` -- three
+forms, a two-step forgot flow and a sixty-second cooldown in 557 lines -- and **nothing tested any
+of it**. This commit adds the tests first, with the providers still present, so the removal commit
+shows exactly which assertions die rather than deleting code nobody was watching.
+
+The flow that matters is `ForgotForm`. Once provider sign-in is gone it is the only route back in
+for an account that has no password, which is not hypothetical: the API issues a reset code to
+exactly those accounts on purpose, because receiving the code proves control of the mailbox and
+that is the proof setting a first password needs. A bug there is not a regression, it is a person
+locked out.
+
+### Why a DOM, and what the DOM is not
+
+`markdown-render.test.ts` renders a component with `react-dom/server` and that remains right for
+what it checks -- the first frame. Everything at risk here needs a state update: the step advancing,
+the cooldown counting down, a server field error landing under its field, a pasted `"123 456"`
+normalising, the password cleared in the `finally`. So `tests/ui/` opts into jsdom with a per-file
+docblock; `environment: "node"` stays global, because 139 other files read sources off disk, drive
+real `node:sqlite` and use real `Buffer`s.
+
+**jsdom 26.1 does not implement `showModal`** -- verified, not assumed -- and `Modal` calls it from
+an effect. `tests/ui/host-stub.ts` shims it in three lines and says plainly that it reproduces the
+`open` property and the `close` event and nothing else: not the top layer, not the backdrop, not
+focus trapping, not Escape. A pass here is a statement about the component's logic and not about the
+dialog element.
+
+The host stub's methods **refuse by default**. A test that forgets to arrange the call it depends on
+fails loudly instead of passing against a stub that happened to say yes.
+
+### Two things that cost an afternoon each, recorded so they do not again
+
+**One React, not two.** The component resolves `react` from `renderer/node_modules` while Testing
+Library reaches `react-dom/client` through a CJS `require` that no alias intercepts. Two copies means
+two hook dispatchers and every render dies on `Cannot read properties of null (reading 'useId')`,
+which reads exactly like a broken component. Testing Library is installed in `renderer/` and aliased
+there -- the same shape `@monaco-editor/react` already had -- so its natural resolution is the right
+one and the aliases make every other importer agree.
+
+**Fake timers and `userEvent` do not mix here.** `userEvent` awaits its own internal timers between
+events, so under `vi.useFakeTimers()` the first `await user.type(...)` hangs until the test times
+out -- presenting as "the cooldown never counts down". The cooldown test uses `fireEvent`. It also
+advances **one second per `act` boundary**, because the countdown is a self-rescheduling effect:
+each tick's `setTimeout` is created by the effect that the previous tick's render ran, and React
+only flushes a queued render at an `act` boundary, so one 61-second advance fires exactly one
+timeout and stops.
+
+### `tests/ui/` is typechecked under the renderer's rules
+
+A component test compiles the component, and the root program compiles it against the wrong
+contract: no `renderer/src/types/host.d.ts`, so `VoidCodeHost` and `window.host` are "cannot find
+name", and `exactOptionalPropertyTypes` plus `noUncheckedIndexedAccess`, which the renderer does not
+set. Twenty errors, none of them a defect -- the renderer's own `tsc --noEmit` is clean on the same
+files. `tsconfig.ui-tests.json` extends the renderer's config so the check asks the question the
+shipped bundle asks; `npm run typecheck` runs both, and the root program excludes `tests/ui`.
+
+### What it is worth
+
+Fifteen tests, and each of the seven guards the removal will lean on was written and then mutated:
+delete `setStep("code")`, `RESEND_COOLDOWN_S = 0`, drop `.replace(/\D/g,"")`, relax `/^\d{6}$/` to
+`/\d/`, remove `setPassword("")` from the `finally`, send a server field error to the banner instead
+of the field, make the consent check unconditional. All seven fail. The provider test in this file
+is written **to be deleted** by the removal commit, and says so.
