@@ -3,8 +3,9 @@
 WHAT IS MEASURED, AND WHY THESE
 ----------------------------------
 Request count and latency are the default answer and they are the least useful thing here. A
-histogram of every HTTP path tells you the API is up, which `/health` already does. These four exist
-because each one answers a question that has come up in this codebase and could not be answered:
+histogram of every HTTP path tells you the API is up, which `/health` already does. The series
+below exist because each one answers a question that has come up in this codebase and could not
+be answered. The count is deliberately not stated: it said "these four" while the list held five.
 
   * **`voidcode_unverified_identity_requests_total` and `voidcode_internal_auth_enforced` are
     GONE.** They measured the rollout of signed identity headers for the website's server-side
@@ -26,6 +27,14 @@ because each one answers a question that has come up in this codebase and could 
 
   * **`voidcode_sandbox_verdicts_total`** — labelled by Judge0 status. A rise in Time Limit Exceeded
     is either a harder problem set or a slower judge, and telling those apart needs the series.
+
+  * **`voidcode_inference_backend_state`** — labelled `ready`, `waking` or `down`.
+    `/health` has always known this: it probes the delegated backend and reports `backendState`
+    beside `model_loaded`. But `/health` is polled by the kubelet and scraped by nothing, so
+    the answer reached a readiness decision and nowhere else — nobody could alert on "the
+    backend has been unreachable for five minutes", which is the outage this project has
+    already had once. The gap was never the endpoint; it was that the endpoint was the only
+    reader.
 
 WHY NOT A MIDDLEWARE OVER EVERY ROUTE
 ----------------------------------------
@@ -123,6 +132,32 @@ if _AVAILABLE:
         ["reason"],
         registry=REGISTRY,
     )
+    #: Whether the delegated inference backend answered its last probe.
+    #:
+    #: A STATE LABEL RATHER THAN A 1/0 GAUGE, because `down` and `waking` call for opposite
+    #: reactions and are indistinguishable from outside: one is a page, the other is a wait while a
+    #: pod that was deliberately stopped comes back. Exactly one of the three is 1 at any time,
+    #: which is the standard way to represent an enum here and is what makes
+    #: `voidcode_inference_backend_state{state="down"} == 1 for 5m` a usable alert.
+    #:
+    #: ONLY EMITTED ON THE DELEGATED PATH. `backend_registry` is configured when inference is
+    #: delegated over HTTP; on the in-process HuggingFace and vLLM paths it is never configured and
+    #: this series is absent rather than reporting a false `down`. Absent is the honest answer
+    #: there — backend readiness on those paths is "is a model object loaded", a different question
+    #: that `/health` answers as `model_loaded`.
+    #:
+    #: AS FRESH AS THE LAST PROBE, which is not a scrape. Nothing here polls the backend on a timer:
+    #: the value is set inside `backend_registry.probe()`, whose callers are `/health` and
+    #: `_is_model_ready()`. In the cluster that means the readiness probe's cadence — ten seconds
+    #: per pod — and a process nobody is probing reports its last known state until somebody asks.
+    inference_backend_state = Gauge(
+        "voidcode_inference_backend_state",
+        "1 for the delegated inference backend's current state, 0 for the others. Absent when "
+        "inference runs in-process.",
+        ["state"],
+        registry=REGISTRY,
+    )
+
     solutions_withheld = Counter(
         "voidcode_solutions_withheld_total",
         "Replies where a complete solution to the learner's own exercise was removed on the way "
@@ -137,6 +172,7 @@ else:  # pragma: no cover
     recommendations_ranked_by = sandbox_verdicts = None
     gpu_reservations_swept = gpu_queue_depth = gpu_slots_in_use = None
     gpu_queue_wait_seconds = gpu_queue_abandoned = solutions_withheld = None
+    inference_backend_state = None
 
 
 def _bump(metric, labels: dict | None = None) -> None:
@@ -200,6 +236,25 @@ def set_queue_gauges(depth: int, slots_in_use: int) -> None:
             gauge.set(value)
         except Exception as exc:
             logger.debug("gauge update failed: %s", exc)
+
+
+def set_backend_state(state: str, known_states: tuple[str, ...]) -> None:
+    """Record the backend's state, zeroing the others so exactly one series is 1.
+
+    `known_states` is passed in rather than listed here: the states belong to
+    `backend_registry`, and a copy of them in this module is a copy that goes stale the day a
+    fourth is added — leaving a permanently-1 series for a state the registry no longer reports.
+
+    Silent on failure, like every other setter here. A metrics write must not be able to fail the
+    probe that produced the value.
+    """
+    if not _AVAILABLE or inference_backend_state is None:
+        return
+    try:
+        for candidate in known_states:
+            inference_backend_state.labels(state=candidate).set(1 if candidate == state else 0)
+    except Exception as exc:
+        logger.debug("backend state gauge update failed: %s", exc)
 
 
 def render() -> tuple[bytes, str]:

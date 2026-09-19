@@ -239,6 +239,30 @@ describe("the superseded-specs document", () => {
     expect(offenders, "counts belong in content-census.test.ts, not in prose").toEqual([]);
   });
 
+  it("states no counts of the things it inventories either, spelled out or not", () => {
+    /**
+     * THE GUARD ABOVE ONLY LOOKED FOR DIGITS, AND THE COUNT THAT WENT STALE WAS A WORD.
+     *
+     * The Grafana row read "a three-panel operational dashboard", and a fourth panel was added for
+     * the inference backend's state. Identical failure to "38 interview questions", one spelling
+     * away from the guard written to catch it — so this one reads number words, and covers the
+     * artefacts this document inventories rather than only the content catalogue.
+     *
+     * The rows say where to look instead. A count in prose is a second source of truth whose only
+     * update mechanism is somebody remembering.
+     */
+    const numbers = "\\d+|one|two|three|four|five|six|seven|eight|nine|ten";
+    const nouns = "panels?|dashboards?|deployments?|services?|manifests?|endpoints?";
+    const offenders = [
+      ...doc.matchAll(new RegExp(`\\b(${numbers})[-\\s](?:\\w+[-\\s])?(${nouns})\\b`, "gi")),
+    ].map((m) => m[0]);
+
+    expect(
+      offenders,
+      "a count in prose goes stale silently; point at the file or the test that owns it"
+    ).toEqual([]);
+  });
+
   it("is reachable from the README", () => {
     // A document nobody is pointed at gets re-derived by audit, which is the cost it exists to
     // remove. The README's "where to read next" table is the entry point.

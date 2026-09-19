@@ -72,8 +72,8 @@ these were bare words in prose. It checks the words now. What is actually there:
 
 | Spec deliverable | Where it is |
 |---|---|
-| **Kubernetes** | `deploy/base/` — a Namespace, two Deployments, two Services, an Ingress, an HPA and two NetworkPolicies, assembled by `deploy/base/kustomization.yaml`. Held to `apps/api/tests/test_deploy_manifests.py`, and **never applied**: `deploy/README.md` records that no cluster was reachable when they were written, so `--dry-run=client` validated nothing |
-| **Grafana** | `deploy/monitoring/grafana-voidcode.json`, a three-panel operational dashboard. A file, not a running Grafana |
+| **Kubernetes** | `deploy/base/` — a Namespace, Deployments, Services, an Ingress, an HPA and NetworkPolicies, enumerated by `deploy/base/kustomization.yaml`, which is the list rather than a restatement of it. Held to `apps/api/tests/test_deploy_manifests.py`, and **never applied**: `deploy/README.md` records that no cluster was reachable when they were written, so `--dry-run=client` validated nothing |
+| **Grafana** | `deploy/monitoring/grafana-voidcode.json`, an operational dashboard held to `apps/api/tests/test_monitoring_dashboard.py` — which checks that every panel queries a series the API actually declares, because a panel on a metric that does not exist renders a flat zero and reads as good news. A file, not a running Grafana. **How many panels it has is deliberately not stated here.** This row carried that number, a panel was added for the inference backend's state, and the number stayed — the exact failure this document exists to prevent, in the document itself. `superseded-specs.test.ts` reads number words now, not only digits |
 | **Prometheus** | Half. The API exposes `/metrics` and `deploy/base/api-deployment.yaml` carries the `prometheus.io/scrape` annotations, admitted from the monitoring namespace by `network-policy.yaml`. **No Prometheus is deployed here** — the instrumentation exists and the scraper does not |
 | **Helm, KEDA** | Still absent, and by choice: kustomize rather than Helm, and a core `HorizontalPodAutoscaler` rather than KEDA |
 

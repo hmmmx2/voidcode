@@ -145,13 +145,34 @@ Three ways out, and they are not equivalent:
    should then answer, and it is the option that most needs saying out loud rather than arriving by
    default.
 
-**`/health` cannot see a dead backend.** Its `status` is computed from Postgres, Redis and Judge0
-only; the backend appears as a label (`inference_backend: SGLang @ <url>`) that is never probed. So
-under option 1 a pod whose sglang server is gone reports `healthy` and fails every inference
-request — which is the failure this project has already had once, recorded in
-`desktop/docs/DECISIONS.md` as *"a soft catch-all made a permanent outage look like a busy
-backend"*. Whichever option is chosen, the startup warmup's result belongs in `/health` before this
-is exposed to anybody.
+**`/health` can see a dead backend, and this paragraph used to say it could not.** That was wrong
+and is corrected here rather than quietly deleted, because a false claim about a health endpoint is
+the kind of thing the next person plans around. What `/health` actually reports:
+
+- `model_loaded` comes from `_is_model_ready()`, which **asks the backend** — a cached `GET /models`
+  through `backend_registry.probe()`, not a check that a Python client object was constructed. Its
+  docstring records the defect it was written to fix: *"Point the config at a dead address and
+  `/health` reported `model_loaded: true`, to a readiness probe, to a load balancer, and to whoever
+  was trying to work out why every request was failing."*
+- `backendState` is `ready`, `waking` or `down`, which separates a deliberate restart from an
+  outage — identical from outside, opposite reactions. It is `null` when `USE_SGLANG` is
+  unset, because on the in-process paths there is no backend to be unreachable: readiness there
+  is "is a model object loaded", which `model_loaded` already answers. The new metric series is
+  absent on those paths for the same reason.
+- `base_model` is asked of the backend rather than read from config, because this endpoint once
+  reported a 7B while a 30B answered every request.
+
+What is true is narrower: the top-level `status` is computed from Postgres, Redis and Judge0 only,
+so a pod with a dead backend reports `status: "healthy"` with `model_loaded: false` two lines below
+it. That is deliberate and should stay — a `httpGet` probe reads the status code and never the body,
+so folding the backend into `status` would not change the probe's verdict, while folding it into the
+*code* would let a backend blip remove every API pod from the Service and take auth, credits and the
+paper library down with it.
+
+The gap that was real: **none of it reached Prometheus.** `/health` is polled by the kubelet and
+scraped by nothing, so an operator could not alert on "the backend has been unreachable for five
+minutes". `voidcode_inference_backend_state{state=...}` now carries it, set from inside `probe()`
+where the state is decided, and the Grafana dashboard has a panel for it.
 
 ## loadtest.py
 

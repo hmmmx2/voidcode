@@ -59,6 +59,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from .. import metrics
+
 logger = logging.getLogger(__name__)
 
 #: How long a probe result is trusted. See the module docstring on why this is not zero.
@@ -71,6 +73,13 @@ PROBE_TIMEOUT_SECONDS = 2.0
 READY = "ready"
 WAKING = "waking"
 DOWN = "down"
+
+#: Every state a probe can report, in the order a reader should think about them.
+#:
+#: Exported because `metrics.set_backend_state` needs the full set to zero the ones that are not
+#: current, and a second copy of it over there would go stale the day a fourth state is added --
+#: leaving a permanently-1 series for a state this module no longer reports.
+STATES = (READY, WAKING, DOWN)
 
 
 @dataclass
@@ -153,6 +162,13 @@ async def probe(now: float | None = None) -> str:
         _state.models = {}
 
     _state.probed_at = now
+
+    # REPORTED HERE BECAUSE THIS IS WHERE THE STATE IS DECIDED, and because `/health` is polled by
+    # the kubelet and scraped by nobody -- so until this line existed there was no way to alert on
+    # a backend that had been unreachable for five minutes. Deliberately after the early returns
+    # above: an unconfigured registry (the in-process paths) emits no series at all rather than a
+    # false `down`.
+    metrics.set_backend_state(_state.status, STATES)
     return _state.status
 
 

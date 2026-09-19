@@ -134,6 +134,88 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 6,
+      "title": "Inference backend state",
+      "type": "timeseries",
+      "description": "Exactly one of ready/waking/down is 1. ALERT ON voidcode_inference_backend_state{state=\"down\"} == 1 for 5m -- down is a page, waking is a deliberate restart still coming back, and from outside those two look identical, which is why this is a state label and not a 0/1 gauge. ABSENT means inference is running in-process rather than delegated over HTTP: no backend to be unreachable, and /health answers that path's readiness as model_loaded instead. SET BY THE PROBE, NOT BY A TIMER -- the value is as fresh as the last caller of /health or the readiness check, so a pod nobody is probing reports its last known state.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "max(voidcode_inference_backend_state) by (state)",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "lineInterpolation": "stepAfter"
+          },
+          "min": 0,
+          "max": 1,
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ready"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "waking"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "down"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

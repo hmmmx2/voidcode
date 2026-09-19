@@ -433,3 +433,157 @@ class TestChoosingTheModelAlias:
         assert name == "rl"
         assert level == "warning"
         assert "could not be checked" in message
+
+
+class TestTheStateReachesPrometheus:
+    """The probe's answer has to leave the process, and until recently it did not.
+
+    `/health` has reported `backendState` all along. But `/health` is polled by the kubelet and
+    scraped by nothing, so the answer decided a readiness bit and went nowhere else -- there was no
+    way to ask "has the backend been down for five minutes", which is the shape of the outage this
+    project has already had once (`desktop/docs/DECISIONS.md`: "a soft catch-all made a permanent
+    outage look like a busy backend").
+
+    ASSERTED AGAINST THE RENDERED SCRAPE BODY, not against the gauge object. `metrics.set_backend_
+    state` swallows its own exceptions on purpose -- instrumentation must not fail the probe that
+    produced the value -- so a test that only called it would pass with the write silently dropped.
+    The text of `/metrics` is what a scraper gets and is therefore the only honest assertion.
+    """
+
+    @staticmethod
+    def _series() -> dict[str, float]:
+        """{state: value} for this metric, read out of the scrape body."""
+        from src import metrics
+
+        assert metrics.inference_backend_state is not None, (
+            "prometheus_client is missing from this environment, so every assertion in this class "
+            "would pass vacuously on an empty scrape body. It is declared in all three "
+            "requirements files; install it rather than skipping."
+        )
+        body, _ = metrics.render()
+        found: dict[str, float] = {}
+        for line in body.decode().splitlines():
+            if line.startswith("voidcode_inference_backend_state{"):
+                state = line.split('state="', 1)[1].split('"', 1)[0]
+                found[state] = float(line.rsplit(" ", 1)[1])
+        return found
+
+    async def test_a_dead_backend_is_one_series_at_one(self, monkeypatch):
+        rec = _Recorder(boom=True)
+        _install(monkeypatch, rec)
+        registry.configure("http://gone:30000/v1", lambda url: object())
+
+        assert await registry.probe() == registry.DOWN
+        assert self._series() == {"ready": 0.0, "waking": 0.0, "down": 1.0}
+
+    async def test_a_live_backend_is_one_series_at_one(self, monkeypatch):
+        _install(monkeypatch, _Recorder(status_code=200))
+        registry.configure("http://backend:30000/v1", lambda url: object())
+
+        assert await registry.probe() == registry.READY
+        assert self._series() == {"ready": 1.0, "waking": 0.0, "down": 0.0}
+
+    async def test_waking_is_distinguishable_from_down_in_the_metric_too(self, monkeypatch):
+        """The distinction is the entire reason this is a state label rather than a 0/1 gauge.
+
+        `down` is a page and `waking` is a wait. A boolean `backend_up` gauge would collapse them,
+        and the alert built on it would either page on every deliberate restart or not page at all.
+        """
+        rec = _Recorder(boom=True)
+        _install(monkeypatch, rec)
+        registry.configure("http://restarting:30000/v1", lambda url: object())
+        registry.expect_restart(True)
+
+        assert await registry.probe() == registry.WAKING
+        assert self._series() == {"ready": 0.0, "waking": 1.0, "down": 0.0}
+
+    async def test_the_previous_state_is_zeroed_rather_than_left_standing(self, monkeypatch):
+        """A gauge series persists once created, so the old state must be written down to 0.
+
+        Setting only the current label would leave `down 1` next to `ready 1` forever, and
+        `state="down" == 1 for 5m` would fire for the rest of the process's life on a backend that
+        recovered in a second.
+        """
+        rec = _Recorder(boom=True)
+        _install(monkeypatch, rec)
+        registry.configure("http://flapping:30000/v1", lambda url: object())
+        assert await registry.probe(now=100.0) == registry.DOWN
+        assert self._series()["down"] == 1.0
+
+        rec.boom = False
+        assert await registry.probe(now=200.0) == registry.READY
+        assert self._series() == {"ready": 1.0, "waking": 0.0, "down": 0.0}
+
+    async def test_every_state_probe_can_assign_is_one_STATES_can_zero(self):
+        """`STATES` is the list that zeroes the others, so a state missing from it is one that sticks.
+
+        Add a fourth status to `probe()` and forget to add it here, and the metric would keep
+        reporting the third state as current while `/health` reported the fourth -- a disagreement
+        between two readers of the same variable, which is the failure this whole module exists for.
+
+        Read off the AST rather than by calling: the interesting case is the state nobody wrote a
+        test for yet, which is exactly the one no call can reach.
+        """
+        import ast
+        import inspect
+
+        tree = ast.parse(inspect.getsource(registry))
+        probe = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "probe"
+        )
+        assigned: set[str] = set()
+        for node in ast.walk(probe):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [
+                t for t in node.targets
+                if isinstance(t, ast.Attribute) and t.attr == "status"
+            ]
+            if not targets:
+                continue
+            names = {
+                child.id for child in ast.walk(node.value) if isinstance(child, ast.Name)
+            }
+            # Minus the bases of attribute accesses: `WAKING if _state.expected_back else DOWN`
+            # reads `_state`, which is the dataclass instance and not a candidate state.
+            bases = {
+                child.value.id
+                for child in ast.walk(node.value)
+                if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name)
+            }
+            assigned |= names - bases
+
+        assert assigned, "probe() no longer assigns _state.status; this test guards nothing"
+        for name in sorted(assigned):
+            value = getattr(registry, name, None)
+            assert value in registry.STATES, (
+                f"probe() can set _state.status to {name}={value!r}, which is not in STATES. The "
+                "metric would never zero it, so a stale series would read as current forever."
+            )
+        assert len(set(registry.STATES)) == len(registry.STATES), "STATES has a duplicate"
+
+    async def test_an_unconfigured_registry_emits_nothing(self, monkeypatch):
+        """ABSENT, not `down`.
+
+        The in-process HuggingFace and vLLM paths never configure this registry, and on those paths
+        there is no backend to be unreachable -- readiness is "is a model object loaded", which
+        `/health` answers as `model_loaded`. A `down 1` series there would be a false page on a
+        deployment that is working, and the alert would have to be qualified with a label nobody
+        would remember to add.
+        """
+        from src import metrics
+
+        # Prove the emptiness is the registry's silence and not a metric that cannot write: a
+        # separate state is set first, then cleared, so an always-empty reader would fail here.
+        metrics.set_backend_state(registry.READY, registry.STATES)
+        assert self._series() == {"ready": 1.0, "waking": 0.0, "down": 0.0}
+        for state in registry.STATES:
+            metrics.inference_backend_state.remove(state)
+        assert self._series() == {}
+
+        assert await registry.probe() == registry.DOWN, "an unconfigured registry is not ready"
+        assert self._series() == {}, (
+            "an unconfigured registry emitted a series. On the in-process paths that is a false "
+            "'down' for a backend that does not exist."
+        )
