@@ -1,0 +1,206 @@
+slug: batch-normalization
+source_kind: paper
+order_index: 4
+title: 'Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift'
+authors: Ioffe, Szegedy
+year: 2015
+venue: ICML
+arxiv_id: '1502.03167'
+pdf_url: https://arxiv.org/pdf/1502.03167
+difficulty: medium
+categories:
+- DL
+concepts:
+- normalization_layers
+inferred_concepts: true
+review_needed: true
+description: TODO
+abstract: >-
+  Deep networks were hard to train because every layer's input distribution shifted as the layers
+  below it learned. This paper normalises each layer's pre-activations using the statistics of the
+  current mini-batch, then gives the layer two learnable parameters to undo that normalisation if it
+  wants to. Training became far less sensitive to initialisation and learning rate — and brought
+  with it the one detail that catches everybody, which is that the layer computes something
+  different at inference than it does during training.
+related_problem_slugs:
+- batchnorm-inference
+- layer-norm
+key_equations:
+- label: Normalise, then let the layer choose its own scale
+  latex: \hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}, \qquad y_i = \gamma \hat{x}_i
+    + \beta
+  note: The two halves are easy to mistake for one step. The first is fixed arithmetic over the batch;
+    the second is a learnable affine, and it is what lets the network recover the identity function
+    if normalising was the wrong thing to do.
+- label: What inference uses instead
+  latex: y = \gamma \cdot \frac{x - \mathrm{E}[x]}{\sqrt{\mathrm{Var}[x] + \epsilon}} + \beta
+  note: The batch statistics are replaced by running estimates collected during training. Every
+    example is now transformed independently of the others, which is the property inference needs
+    and training deliberately does not have.
+- label: Why epsilon is inside the square root
+  latex: \sqrt{\sigma_B^2 + \epsilon} \neq \sqrt{\sigma_B^2} + \epsilon
+  note: A constant channel has zero variance, so without the epsilon the division is by zero. Adding
+    it outside the root is a common transcription error and changes the result for every channel,
+    not just the degenerate one.
+sections:
+  architecture: |
+    ## Normalisation as a layer, not as preprocessing
+
+    Normalising inputs was already standard practice before this paper. The contribution is doing
+    it *between* layers, as part of the model, so the normalisation participates in training rather
+    than happening once before it.
+
+    It sits on the pre-activations — after the linear or convolutional layer, before the
+    non-linearity. That placement is the paper's; the alternative arrangement appears in practice
+    and is not settled by its argument.
+
+    ## Statistics are per channel, pooled over everything else
+
+    For a convolutional layer the mean and variance are computed per channel, pooled over the batch
+    and over every spatial position. A channel with `H x W` positions and a batch of `N` contributes
+    `N * H * W` values to one mean and one variance.
+
+    That pooling is why the layer has one `gamma` and one `beta` per channel rather than one per
+    activation: the parameters describe a feature map, not a pixel.
+
+    ## The two learnable parameters are not optional
+
+    Normalising to zero mean and unit variance destroys information the layer below may have been
+    using. A sigmoid is close to linear near zero, so forcing its input into that region removes the
+    non-linearity you put it there for.
+
+    `gamma` and `beta` let the network scale and shift back, up to and including exactly undoing the
+    normalisation. The layer is therefore strictly more expressive than the identity, not a
+    constraint imposed on the network — which is the part people skip when they describe batch norm
+    as "making activations unit Gaussian".
+
+    ## Internal covariate shift, and the argument since
+
+    The paper motivates all of this as reducing *internal covariate shift*: each layer's input
+    distribution moves as the layers below it learn, so each layer is chasing a target that keeps
+    changing.
+
+    That explanation has been questioned by later work, which found the benefit better explained by
+    a smoother loss surface than by distribution stability. The mechanism in this paper is
+    unaffected by that argument — what is in dispute is why it helps, not that it does.
+  implementation: |
+    ## One branch, and it is the whole thing
+
+    During training: compute the batch mean and variance over every axis except the channel axis,
+    normalise, scale by `gamma`, shift by `beta`. Then update a running estimate of the mean and
+    variance — usually an exponential moving average with a momentum term — which is *not* used in
+    this forward pass.
+
+    At inference: use the running estimates instead of the batch's own. That single branch is the
+    source of most batch-norm bugs.
+
+    ## What a forgotten `eval()` looks like
+
+    A model left in training mode at evaluation time normalises each test batch by its own
+    statistics, so the same input gets a different prediction depending on what it was batched
+    with — and a batch of size one has zero variance, so the output collapses.
+
+    The symptom is accuracy that looks fine in the training loop and falls apart on a single
+    example. In PyTorch the fix is `model.eval()`, and the reason it is so easy to miss is that
+    nothing errors: the model runs, and is quietly wrong.
+
+    ## Two consequences of the algebra
+
+    The bias of the preceding layer is redundant. Subtracting the batch mean removes any constant,
+    so `beta` already provides the shift and the bias term is a parameter that cannot affect the
+    output. Libraries expose this as `bias=False` on the layer before the norm.
+
+    The running statistics are buffers, not parameters. They are part of the model's state and must
+    be saved with it, but no gradient flows to them — which is why they appear in a checkpoint and
+    not in an optimiser's parameter list.
+  systems: |
+    ## The batch size becomes a property of the model
+
+    Batch normalisation couples the examples in a batch, and every practical difficulty with it
+    comes from that. Small batches give noisy statistics, and the noise is not averaged away,
+    because it is applied to the activations rather than to the gradient.
+
+    Below roughly a handful of examples per device the layer degrades noticeably. That is why
+    detection and segmentation models — where memory forces batch sizes of two or four per GPU —
+    reach for group normalisation or layer normalisation instead.
+
+    ## Data parallelism makes it sharper
+
+    Each device computes statistics over its own shard, so a global batch of 256 across 8 devices is
+    really eight normalisations over 32 examples.
+
+    Synchronised batch norm exchanges the per-device sums to recover the true batch statistics, at
+    the cost of an all-reduce in the forward pass and another in the backward pass. It is a latency
+    cost paid on every layer, which is why it is a switch rather than a default.
+
+    ## At inference the layer disappears
+
+    Because inference-mode batch norm is an affine transform with fixed coefficients, it can be
+    folded into the weights and bias of the preceding convolution or linear layer — one multiply
+    per output channel, computed once when the model is exported.
+
+    Inference then runs with no normalisation layer at all, which removes a kernel launch and a full
+    pass over the activations per layer. Every serious deployment path does this, and it is the
+    reason the inference-mode formula is worth understanding as algebra rather than as code.
+
+    ## What it costs in training memory
+
+    The normalised activations have to be kept for the backward pass, so the layer adds an
+    activation-sized tensor per instance on top of whatever the layer below already stored.
+  mathematics: |
+    ## The forward pass
+
+    Four steps over a mini-batch of size `m`. The mean and the variance first:
+
+    ```math
+    \mu_B = \frac{1}{m}\sum_{i=1}^{m} x_i, \qquad \sigma_B^2 = \frac{1}{m}\sum_{i=1}^{m}(x_i - \mu_B)^2
+    ```
+
+    The variance is the *biased* estimator — divided by `m`, not `m - 1` — because it is the variance
+    of the batch actually in hand rather than an estimate of a population.
+
+    Then the normalisation and the affine:
+
+    ```math
+    \hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}, \qquad y_i = \gamma\hat{x}_i + \beta
+    ```
+
+    ## The backward pass couples the batch
+
+    Because the mean and the variance are functions of every element, the gradient with respect to
+    one input has three routes: directly through its own normalised value, and indirectly through
+    both statistics, which every other element also touches.
+
+    ```math
+    \frac{\partial L}{\partial x_i} = \frac{1}{m\sqrt{\sigma_B^2 + \epsilon}}\left( m\frac{\partial L}{\partial \hat{x}_i} - \sum_{j=1}^{m}\frac{\partial L}{\partial \hat{x}_j} - \hat{x}_i\sum_{j=1}^{m}\frac{\partial L}{\partial \hat{x}_j}\hat{x}_j \right)
+    ```
+
+    Both sums run over the whole batch. So the gradient for one example is a function of its
+    batch-mates — the formal version of the coupling that makes small batches and multi-device
+    training awkward.
+
+    ## Invariance to the scale of the weights below
+
+    Multiplying the incoming weights by any positive constant leaves the output unchanged, because
+    the constant cancels between the numerator and the standard deviation:
+
+    ```math
+    \mathrm{BN}(a\mathbf{W}x) = \mathrm{BN}(\mathbf{W}x) \quad \text{for } a > 0
+    ```
+
+    This is why the paper observes reduced sensitivity to initialisation, and why weight decay
+    behaves differently in front of a normalisation layer than behind it — the penalty shrinks a
+    quantity the forward pass does not depend on.
+
+    ## What the epsilon bounds
+
+    The gradient is scaled by one over the standard deviation, so a layer whose pre-activations have
+    collapsed to a narrow range receives *amplified* gradients rather than vanishing ones. The
+    epsilon is what bounds that amplification:
+
+    ```math
+    \frac{1}{\sqrt{\sigma_B^2 + \epsilon}} \leq \frac{1}{\sqrt{\epsilon}}
+    ```
+
+    Which is the other reason it sits inside the square root rather than being a cosmetic guard
+    against division by zero.

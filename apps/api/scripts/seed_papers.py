@@ -14,6 +14,7 @@ loading bug. Cheaper to fail the seed.
 """
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 
@@ -24,12 +25,28 @@ from src.database import AsyncSessionLocal
 from src.models.catalogue import Paper
 from src.models.problem import Problem
 
-# One-file-per-item content under content/problems/. for_seeder() strips loader metadata
-# and copies nested containers; see features/content.py.
+# One-file-per-item content under content/problems/; see features/content.py.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from features.content import for_seeder
 
-PAPERS = for_seeder("paper")
+#: The columns `Paper(**fields)` will accept, DERIVED rather than listed.
+#:
+#: This call was `for_seeder("paper")` with no `allowed`, and the comment above it claimed the
+#: loader stripped its own metadata. It does not: `for_seeder` strips nothing when `allowed` is
+#: None, which is the right default for callers that want the whole row (`verify_problems`) and
+#: wrong here. So every paper reached `Paper(slug=..., **fields)` carrying `concepts`,
+#: `description`, `inferred_concepts`, `review_needed` and `source_kind`, and the seed died on
+#: `TypeError: 'concepts' is an invalid keyword argument for Paper` before writing a row.
+#:
+#: That is why the library was empty: three papers had been authored and validated, `--check`
+#: passed on all of them, and the one step that puts them in the database had never completed.
+#: `--check` cannot see it, because validation reads the dicts and never constructs a model.
+#:
+#: Derived from the table, like `seed_problems`, for the reason its comment gives: a hardcoded
+#: strip-list went stale the first time a migration added a field to the YAML.
+_PAPER_KEYS = {column.name for column in Paper.__table__.columns}
+
+PAPERS = for_seeder("paper", allowed=_PAPER_KEYS)
 
 # Fixed, because the UI renders exactly four tabs.
 REQUIRED_SECTIONS = ("architecture", "implementation", "systems", "mathematics")
@@ -89,6 +106,27 @@ async def validate(session) -> list[str]:
 
         if not paper.get("pdf_url", "").startswith("https://"):
             errors.append(f"{slug}: pdf_url must be https")
+
+        # AN UNQUOTED ARXIV ID IS A FLOAT, and the column is a string. `arxiv_id: 1502.03167` in
+        # YAML parses as 1502.03167 the number, which validated cleanly and then failed at the
+        # INSERT with `expected str, got float` and forty lines of SQL. Three of the five existing
+        # papers quote it and two did not, which is exactly the kind of inconsistency a schema
+        # cannot see and a reviewer will not either.
+        #
+        # Checked as a shape as well as a type: an id that lost its leading zero to a numeric round
+        # trip (`0704.0001` -> `704.0001`) is a string by then and still points at nothing.
+        arxiv_id = paper.get("arxiv_id")
+        if arxiv_id is not None:
+            if not isinstance(arxiv_id, str):
+                errors.append(
+                    f"{slug}: arxiv_id is {type(arxiv_id).__name__} {arxiv_id!r} — quote it in the "
+                    "YAML, or it reaches a VARCHAR column as a number"
+                )
+            elif not re.fullmatch(r"\d{4}\.\d{4,5}(v\d+)?", arxiv_id):
+                errors.append(
+                    f"{slug}: arxiv_id {arxiv_id!r} is not an arXiv identifier (YYMM.NNNNN); the "
+                    "PDF link is built from it"
+                )
 
     return errors
 

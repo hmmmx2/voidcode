@@ -1,0 +1,199 @@
+slug: neural-text-degeneration
+source_kind: paper
+order_index: 5
+title: The Curious Case of Neural Text Degeneration
+authors: Holtzman, Buys, Du, Forbes, Choi
+year: 2020
+venue: ICLR
+arxiv_id: '1904.09751'
+pdf_url: https://arxiv.org/pdf/1904.09751
+difficulty: easy
+categories:
+- LLM
+concepts:
+- sampling_decoding
+inferred_concepts: true
+review_needed: true
+description: TODO
+abstract: >-
+  Asking a language model for its most likely continuation produces text that repeats itself and
+  says nothing. This paper's observation is that human writing is not the highest-probability
+  sequence either — real text keeps surprising you, and a decoder that maximises probability is
+  optimising for the wrong thing. Its answer is nucleus sampling: keep the smallest set of tokens
+  whose probabilities sum past a threshold, and sample from those. That is where top-p came from,
+  and it is the default in almost every inference server shipping today.
+related_problem_slugs:
+- top-p-sampling
+key_equations:
+- label: The nucleus
+  latex: V^{(p)} = \min \left\{ V' \subseteq V \;:\; \sum_{x \in V'} P(x \mid c) \geq p \right\}
+  note: The smallest set of tokens whose probability mass reaches p. Smallest is the whole idea —
+    the set is defined by how much mass you want, so its SIZE changes from one step to the next.
+- label: Renormalise, then sample
+  latex: P'(x \mid c) = \begin{cases} P(x \mid c) / p' & x \in V^{(p)} \\ 0 & \text{otherwise}
+    \end{cases}
+  note: "p' is the actual mass of the nucleus, which is at least p and usually more, because the
+    token that crosses the threshold is included whole. Dividing by p rather than p' is a real bug:
+    the distribution no longer sums to one."
+- label: What temperature does, and does not
+  latex: P_T(x \mid c) = \frac{\exp(z_x / T)}{\sum_{y} \exp(z_y / T)}
+  note: Temperature reshapes the whole distribution before truncation; the nucleus then decides
+    where to cut. They compose, and stacking both means two dials fighting over the same effect —
+    which is why tuning them together is harder than tuning either alone.
+sections:
+  architecture: |
+    ## A decoding paper, not a modelling paper
+
+    Nothing here changes a network's weights or architecture. It changes what you do with the
+    distribution the network already produces, which is why the result outlived the model it was
+    measured on and is still the default in inference servers today.
+
+    ## Why maximisation fails
+
+    An autoregressive model gives you the probability of each next token given the context, and a
+    decoder turns that sequence of distributions into text. The obvious decoders maximise
+    probability: greedy search takes the highest-probability token each step, and beam search keeps
+    several partial sequences to find a high-probability *sequence* rather than a high-probability
+    next token.
+
+    Both are principled, both are what you would write first, and both produce text that gets
+    stuck — repeating a phrase, then repeating the repetition, at length.
+
+    ## Human text is not the most probable text
+
+    The central observation is empirical and easy to state: real writing does not look like a
+    high-probability sequence under the model. Measured token by token it sits all over the
+    probability range, and a fluent human sentence often contains a word the model considered
+    unlikely.
+
+    Maximisation-based decoding systematically avoids exactly those words, so it produces text that
+    is *more probable than human text* and worse. The failure is not that the model predicts badly;
+    it is that the most probable continuation was never the goal.
+
+    ## Why not just sample
+
+    Sampling from the full distribution has the opposite failure, because the tail is enormous. A
+    vocabulary of 50,000 tokens can hold a great deal of mass spread across tokens that are
+    individually absurd, and picking one derails the text with no way back.
+
+    So the decoder should sample from a *truncated* distribution — and the contribution of the paper
+    is how to choose the truncation.
+  implementation: |
+    ## Five lines
+
+    Sort the probabilities descending. Take the cumulative sum. Find the first index where the
+    cumulative sum reaches `p`. Keep tokens up to and including that index, zero the rest, divide by
+    the surviving mass, and sample.
+
+    ## Up to and *including*
+
+    The token that crosses the threshold is kept, and that is what guarantees the nucleus is never
+    empty: with `p = 0.1` and a flat distribution an exclusive cut keeps nothing at all, and
+    sampling is undefined.
+
+    Including it also means the surviving mass is at least `p` and usually more, which is why the
+    renormalisation divides by the actual sum rather than by `p`. Dividing by `p` gives a
+    distribution that does not sum to one, and the error is small enough to look like noise.
+
+    ## Three more places it goes wrong
+
+    **Order against temperature.** Temperature rescales the logits and so changes which tokens are
+    in the nucleus; applying it after truncation gives a different distribution from applying it
+    before. Servers apply temperature, then top-k, then top-p — a convention rather than a law,
+    which is why two libraries with the same settings can produce different text.
+
+    **Probabilities, not logits.** The comparison is against a probability mass, so the softmax has
+    to happen before the cumulative sum. Sorting logits and cumulatively summing them is a
+    plausible-looking mistake that produces a nucleus with no meaning.
+
+    **Not in log space.** Working in log space is tempting for stability and wrong for a cumulative
+    sum: probabilities add, log-probabilities do not.
+
+    ## The sibling to know
+
+    Top-k keeps the `k` most probable tokens regardless of how much mass that is. Same code,
+    different stopping rule — and the mathematics tab is about why the rule matters.
+  systems: |
+    ## A sort in the serving hot path
+
+    Top-p costs a sort per step, per sequence in the batch. Over a 50,000-token vocabulary that is
+    not free, and for a batch of 64 sequences it is 64 sorts between one forward pass and the next.
+
+    Implementations avoid a full sort where they can: a partial sort, or a top-k prefilter with a
+    generous `k` before the nucleus is computed, since a token outside the top few thousand cannot
+    plausibly be inside a `p = 0.95` nucleus. That is a real optimisation resting on a real
+    assumption, and the assumption fails for a near-uniform distribution.
+
+    ## A variable-width mask is awkward to batch
+
+    With top-k every sequence keeps exactly `k` candidates, so the work is a fixed shape. With top-p
+    one sequence may keep three tokens and another nine hundred.
+
+    Kernels handle that by computing the mask at full vocabulary width rather than compacting, so
+    the cost is uniform across the batch and the *benefit* of a small nucleus is quality rather than
+    speed.
+
+    ## Why it is configuration and not a model property
+
+    Sampling parameters are per-request in any serious server, because they are a product decision
+    rather than a deployment one: a code-completion request and a brainstorming request want
+    different nuclei against the same weights.
+
+    That means the decoding stage cannot be fused into the model graph, and it is why this paper's
+    result shows up as a field in an API rather than as a property of a checkpoint.
+
+    ## Reproducibility
+
+    The output is sampled, so it is not reproducible without pinning the seed. A bug report that
+    says "the model said X" is not actionable unless the seed, the temperature and the nucleus came
+    with it.
+  mathematics: |
+    ## The nucleus is defined by a property, not a size
+
+    ```math
+    V^{(p)} = \min \left\{ V' \subseteq V \;:\; \sum_{x \in V'} P(x \mid c) \geq p \right\}
+    ```
+
+    The smallest subset whose probabilities reach `p`. Because the tokens are sorted descending,
+    that smallest subset is always a prefix of the sorted order — which is what makes a cumulative
+    sum a correct implementation of a set-minimality condition.
+
+    ## Renormalising over the mass you actually kept
+
+    ```math
+    P'(x \mid c) = \frac{P(x \mid c)}{\sum_{y \in V^{(p)}} P(y \mid c)} \quad \text{for } x \in V^{(p)}
+    ```
+
+    The denominator is at least `p` and generally larger, because the token that crossed the
+    threshold is included whole.
+
+    ## Why a fixed k is wrong in both directions
+
+    The shape of the distribution varies enormously between steps. After "the capital of France is"
+    the model is nearly certain and almost all the mass sits on one token; after "she opened the
+    door and saw" it is nearly uniform over thousands of plausible continuations.
+
+    A fixed `k` admits tokens the model has all but ruled out in the first case, and truncates a
+    genuinely broad distribution to an arbitrary width in the second. Entropy is the quantity that
+    makes this precise:
+
+    ```math
+    H(P) = -\sum_{x \in V} P(x \mid c) \log P(x \mid c)
+    ```
+
+    Low entropy concentrates the mass, so a small nucleus captures it; high entropy spreads it, and
+    the nucleus grows to compensate. The nucleus size at each step is therefore a readout of the
+    model's own uncertainty, which is the sense in which the paper calls it *dynamic*.
+
+    ## The two degenerate ends
+
+    ```math
+    \lim_{p \to 1} V^{(p)} = V, \qquad \lim_{p \to 0^{+}} V^{(p)} = \{\arg\max_x P(x \mid c)\}
+    ```
+
+    At one end this is pure sampling, tail included. At the other the nucleus is the single most
+    probable token — because that token is always included — so top-p with a very small `p` is
+    greedy decoding.
+
+    Everything useful is between, and the dial is not linear: most of the change in behaviour
+    happens in the last few percent, where the tail is being cut.
