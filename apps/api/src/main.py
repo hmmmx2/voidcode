@@ -165,12 +165,45 @@ def load_model(adapter_path: str):
     logger.info("Fine-tuned modes: TEACHING, DEBUG, FOLLOWUP")
     logger.info("Prompt-engineered mode: EXPLAIN")
 
+    # ── Prerequisites, named before anything is dereferenced ──────────────────
+    #
+    # THIS FUNCTION DEREFERENCED `torch` WITHOUT CHECKING IT EXISTED. The import at the top of
+    # this file is deliberately optional -- the comment there says so, because the SGLang path
+    # runs in a CPU-only container -- so `torch` is `None` in any image built from a requirements
+    # file without it. The first line of this function to touch it then raised
+    # `AttributeError: 'NoneType' object has no attribute 'cuda'`, which names neither the missing
+    # dependency nor the flag that avoids needing it.
+    #
+    # It is reachable, and it was hit: standing this API up in the test image to read the paper
+    # library back exited with that AttributeError at startup. `BitsAndBytesConfig` a few lines
+    # below would have been a `NameError` for the same reason, one dependency later.
+    #
+    # Checked together rather than one at a time so a container missing both is told once.
+    missing = [
+        name for name, present in (
+            ("torch", _TORCH_AVAILABLE),
+            ("transformers", _TRANSFORMERS_AVAILABLE),
+        ) if not present
+    ]
+    if missing:
+        raise RuntimeError(
+            f"The in-process HuggingFace path needs {' and '.join(missing)}, which this image does "
+            "not have. That path is the DEFAULT -- it runs when neither USE_SGLANG nor USE_VLLM is "
+            "set -- so an image built without the inference stack has to choose one explicitly. "
+            "Set USE_SGLANG=true with SGLANG_BASE_URL to delegate inference to a separate server, "
+            "or install the GPU requirements (apps/api/requirements.gpu.txt)."
+        )
+
     # Verify adapter exists
     if not os.path.exists(adapter_path):
         raise FileNotFoundError(f"LoRA adapter not found at: {adapter_path}")
 
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. GPU required.")
+        raise RuntimeError(
+            "CUDA is not available and the in-process HuggingFace path requires a GPU. This path "
+            "is the default, so a CPU-only deployment reaches it without asking: set "
+            "USE_SGLANG=true with SGLANG_BASE_URL, or schedule this process somewhere with a GPU."
+        )
 
     gpu_name = torch.cuda.get_device_name(0)
     gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9

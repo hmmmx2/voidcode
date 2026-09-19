@@ -108,6 +108,51 @@ nothing resolves.
 **Judge0 is not in this namespace.** The namespace enforces `restricted` Pod Security, and Judge0
 needs `privileged: true` for isolate. It belongs in its own namespace with its own, looser policy.
 
+## The one thing these manifests cannot start, and why flipping a flag will not fix it
+
+**`voidcode-api:latest` cannot serve inference on this Deployment, and the reason is the image
+rather than the configuration.** Recorded here rather than fixed, because the fix is a decision
+about where inference runs and that is not a manifest edit.
+
+Three requirement files, three mutually exclusive inference paths, and the API picks between them
+with two flags that both default to false:
+
+| Image | requirements | torch | openai | The only path it can run |
+|---|---|---|---|---|
+| **`voidcode-api:latest`** — what `containers.yml` builds and what `api-deployment.yaml` deploys | `requirements.txt` | yes | **no** | in-process HuggingFace, which needs a GPU in the same process |
+| `Dockerfile.sglang` — built by nothing | `requirements.sglang.txt` | **no** | yes | SGLang, over HTTP to a separate server. CPU-only by design |
+| `Dockerfile.gpu` — built by nothing | `requirements.gpu.txt` | yes | — | vLLM in-process |
+
+The Deployment requests `cpu: "2", memory: 2Gi` and **no GPU**, and the ConfigMap sets neither
+`USE_SGLANG` nor `USE_VLLM`. So the container takes the default in-process path and exits during
+startup with `CUDA is not available and the in-process HuggingFace path requires a GPU`, which is
+now a message that names the choice rather than the `AttributeError` it used to raise on an image
+without torch.
+
+**Setting `USE_SGLANG=true` here would replace that with `ModuleNotFoundError: No module named
+'openai'`** — verified, not reasoned about — because `requirements.txt` does not carry the SGLang
+client. The flag and the image have to agree, and today only one combination of them exists in CI.
+
+Three ways out, and they are not equivalent:
+
+1. **Build and deploy the SGLang image**, set `USE_SGLANG=true` and `SGLANG_BASE_URL`, and run an
+   sglang server. Nothing in `deploy/` provides that server, in the same way nothing here provides
+   Judge0 or Postgres — it would be another out-of-band dependency, and the API pod stays small.
+2. **Give this Deployment a GPU** and keep the default path. The image already has torch, so this
+   is a node-pool and `nvidia.com/gpu` question rather than a code one.
+3. **Deploy the API without inference at all** — everything else it serves (auth, credits, the paper
+   library, problems) needs no model. That needs a decision about what a request to the tutor
+   should then answer, and it is the option that most needs saying out loud rather than arriving by
+   default.
+
+**`/health` cannot see a dead backend.** Its `status` is computed from Postgres, Redis and Judge0
+only; the backend appears as a label (`inference_backend: SGLang @ <url>`) that is never probed. So
+under option 1 a pod whose sglang server is gone reports `healthy` and fails every inference
+request — which is the failure this project has already had once, recorded in
+`desktop/docs/DECISIONS.md` as *"a soft catch-all made a permanent outage look like a busy
+backend"*. Whichever option is chosen, the startup warmup's result belongs in `/health` before this
+is exposed to anybody.
+
 ## loadtest.py
 
 Read paths only, no writes. `python deploy/loadtest.py --url http://127.0.0.1:8000`.
