@@ -15,8 +15,14 @@
  * inline JSX. Starting there saves doing it twice.
  *
  * The extension table is deliberately a superset of `LANGUAGE_BY_EXTENSION` in
- * `BuildWorkspace.tsx` — that one exists to pick a Monaco language and only lists what Monaco
- * can highlight. A tree has to say something about `.png` and `.lock` too.
+ * `@shared/languages` — that one exists to pick a Monaco language and only lists what Monaco can
+ * highlight. A tree has to say something about `.png` and `.lock` too.
+ *
+ * (This sentence pointed at `BuildWorkspace.tsx` for a long time, and no such symbol was there:
+ * it went with the Build editor and the comment was the only trace left of it. The reasoning was
+ * right and only the address was wrong, which is the worse of the two — a dangling reference
+ * sends the next reader looking for code that does not exist. The table now lives in
+ * `src/shared/` so the main process can read it too.)
  */
 
 type IconKind = "code" | "markup" | "style" | "data" | "doc" | "config" | "image" | "shell" | "lock" | "file";

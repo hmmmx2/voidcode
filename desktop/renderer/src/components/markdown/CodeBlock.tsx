@@ -24,7 +24,18 @@ import { colourForToken, styleForToken } from "@/lib/monaco-theme";
  *   - Tokenizing throws. It is a parser being handed a fragment of a half-streamed file.
  */
 
-/** Monaco's ids for the fence languages a coding assistant actually emits. */
+/**
+ * Monaco's ids for the fence languages a coding assistant actually emits.
+ *
+ * SEPARATE FROM `@shared/languages`' `LANGUAGE_BY_EXTENSION`, AND DELIBERATELY. This is keyed by
+ * what a model writes after three backticks — `bash`, `shell`, `markdown`, `typescript` — none of
+ * which is a file suffix anybody types. Merging the two would mean one table accepting `markdown`
+ * as an extension to answer a question about fences.
+ *
+ * `tests/languages.test.ts` asserts the two agree wherever the keyspaces overlap, which is the
+ * part that can actually go wrong: a fence tagged `py` and a file named `.py` rendering in
+ * different colours is a bug nobody would think to look for.
+ */
 const LANGUAGE_ALIASES: Record<string, string> = {
   ts: "typescript",
   tsx: "typescript",
