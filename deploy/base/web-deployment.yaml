@@ -42,19 +42,29 @@ spec:
             # Next.js writes its image-optimisation cache under .next/cache at runtime,
             # so a read-only rootfs needs this or the first optimised image 500s.
             - { name: cache, mountPath: /app/apps/web/.next/cache }
+          # ALL THREE PROBED `/login`, WHICH NO LONGER EXISTS.
+          #
+          # The reasoning was sound when it was written: "a real route, not `/` — `/` redirects
+          # for a signed-in visitor and the middleware runs on it; `/login` renders
+          # unconditionally". Both halves of that are gone with the website's logged-in UI. There
+          # is no session, no middleware and no redirect; `/` is a prerendered page like every
+          # other one here, and `/login` is a 404.
+          #
+          # What that cost, had it been applied: the startup probe never succeeds, so after
+          # 24 x 5s the container is killed and restarted, forever. The site would never have
+          # served a request — CrashLoopBackOff on a deployment whose manifests all validate.
+          # `test_deploy_manifests.py` now checks every probe path against the routes the
+          # application actually builds.
           startupProbe:
-            httpGet: { path: /login, port: http }
+            httpGet: { path: /, port: http }
             periodSeconds: 5
             failureThreshold: 24
           readinessProbe:
-            # A real route, not `/`. `/` redirects for a signed-in visitor and the
-            # middleware runs on it; `/login` renders unconditionally, so a failure
-            # here means the server is genuinely not serving.
-            httpGet: { path: /login, port: http }
+            httpGet: { path: /, port: http }
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
-            httpGet: { path: /login, port: http }
+            httpGet: { path: /, port: http }
             periodSeconds: 30
             failureThreshold: 5
           resources:

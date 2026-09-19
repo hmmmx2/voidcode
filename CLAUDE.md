@@ -123,8 +123,7 @@ apps/
     quantize_awq.py   W4A16 quantize merged model for vLLM (one-time, offline)
 
 desktop/              Electron app — THE PRODUCT (main + sandboxed Next renderer)
-apps/web/             Next.js 16 marketing site: landing page, legal, Stripe return pages
-packages/shared/      Shared TypeScript types (imported by nothing; a deletion candidate)
+apps/web/             Next.js 16 website: overview, pricing, download, legal, Stripe returns
 ```
 
 **Training Stack**: PyTorch + Transformers + PEFT + TRL + BitsAndBytes (4-bit NF4 quantization)

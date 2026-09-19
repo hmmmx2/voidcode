@@ -896,11 +896,27 @@ its absence.
 
 ---
 
-## Known-stale document
+## Known-stale documents
 
 `docs/ide-parity-plan.md` plans IDE parity with VS Code. That direction was abandoned — the
 standalone editor was removed from Build and the app is chat-first. The file is kept only because
 its subsystem studies are still accurate reading; nothing in it should be treated as intended work.
+
+Two more, and these are worse because of how they introduce themselves.
+`docs/specs/ARCHITECTURE.md` opens with *"complete technical reference for the entire project …
+written so any developer or AI assistant can fully understand the system"*, and its first diagram is
+`Browser → Next.js 16 (:3000) → FastAPI` — the architecture before the desktop application existed.
+`docs/specs/PROJECT_DOCUMENTATION.md` calls itself a *"full implementation record"* and is dated
+2026-03-12; its section 9 documents `packages/shared`, a package deleted for being imported by
+nothing.
+
+Neither has been rewritten, and neither should be read as current. Both now carry a banner saying
+so and pointing here. What is current: `README.md` and `CLAUDE.md` for the shape of the tree,
+`docs/desktop-app-spec.md` for what the application was specified to be, this file and
+`docs/DECISIONS.md` for why things are the way they are, and `docs/SUPERSEDED-SPECS.md` for what
+became of the two VoidCode specs. They are kept because their subsystem detail — the inference
+stack, the training pipeline, the database schema — is still the best description of those parts
+that exists.
 
 
 ## Serving the RL policy: point at a bigger card rather than shrink the model

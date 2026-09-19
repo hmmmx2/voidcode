@@ -66,7 +66,7 @@ both halves resolve their root as `Path(__file__).resolve().parents[1]` — `fea
 taxonomy join, and the RL catalogue lookup. **Do not "tidy" these into subfolders.**
 
 ```
-apps/{web,api}     landing site and API        packages/shared   shared TS types (unused)
+apps/{web,api}     website and API
 features/          content, taxonomy, IRT,     ranking/          LambdaMART, fairness,
                    mastery, retrieval                            course builder
 content/           200 problem YAML            llm/              SFT pipeline + adapters

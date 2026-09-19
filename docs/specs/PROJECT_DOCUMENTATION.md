@@ -1,5 +1,12 @@
 # VoidCode AI v5.3 — Complete Project Documentation
 
+> **NOT CURRENT — see `desktop/docs/DECISIONS.md` § "Known-stale documents".** This predates the
+> desktop application: the product is an Electron app now, the website is a handful of static pages
+> that hold no session, and identity is a bearer token rather than a signed header. The subsystem
+> detail below is still the best description of those parts that exists, which is why the file is
+> kept — but the architecture it draws is not the one that ships. `README.md` and `CLAUDE.md` are
+> the current shape of the tree.
+
 > **Last updated**: 2026-03-12
 > **Purpose**: Full implementation record — every file, every decision, every setup step.
 

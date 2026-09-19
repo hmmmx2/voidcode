@@ -20,9 +20,14 @@ RUN corepack enable
 # Only the manifests, so this layer is cached until a dependency actually changes.
 # Copying the whole repo first would invalidate it on every source edit and turn a
 # 5-second rebuild into a 3-minute one.
+#
+# ONE WORKSPACE PACKAGE, not two. `packages/shared/package.json` was copied here as well until
+# `@voidcode/shared` was deleted — a set of types (`ApiResponse<T>`, `PaginatedResponse`, a `User`
+# with `createdAt`/`updatedAt`) that nothing ever imported and that never matched what the API
+# returns. A `COPY` of a path that no longer exists fails the build, so this line went with it;
+# `tests/test_marketing_pages.py` now checks that every manifest copied here is one that exists.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
-COPY packages/shared/package.json packages/shared/
 
 # --frozen-lockfile fails rather than resolving something new. In CI a lockfile
 # that silently updates means the image does not match what was tested.
@@ -82,7 +87,13 @@ EXPOSE 3000
 # Hits a real route rather than TCP-accept. A Next.js server binds the port before
 # it can render, so a port check reports healthy during the window where every
 # request 500s.
+# `/`, not `/login`. This probed `/login` until that route was deleted with the logged-in UI, so
+# the container reported `unhealthy` from its first check onwards while serving every page
+# correctly — measured rather than reasoned about: `docker run` then `docker ps` said
+# `(unhealthy)` while curl returned 200 on all seven routes. `deploy/base/web-deployment.yaml` had
+# the same path in all three of its Kubernetes probes, where the consequence was worse: the startup
+# probe never succeeds, so the pod is killed and restarted forever and the site never serves.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "apps/web/server.js"]

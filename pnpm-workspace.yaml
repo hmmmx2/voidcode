@@ -1,3 +1,8 @@
 packages:
   - "apps/*"
+  # `packages/` is EMPTY, and the glob is kept rather than removed. It held one package,
+  # `@voidcode/shared` — a set of types nothing imported and that never matched what the API
+  # returns — which was deleted rather than left as a deletion candidate in two READMEs. A glob
+  # matching nothing costs nothing; a missing glob costs the next person who adds a package an
+  # afternoon of "pnpm cannot find my workspace".
   - "packages/*"

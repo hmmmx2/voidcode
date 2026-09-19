@@ -198,6 +198,44 @@ def test_nothing_advertises_an_unshipped_feature() -> None:
             assert unshipped not in rendered, f"{route} advertises {unshipped!r}"
 
 
+def test_the_container_probes_a_page_that_exists() -> None:
+    """The Docker `HEALTHCHECK` probed `/login` for as long as that route had been deleted.
+
+    Measured rather than reasoned about: `docker build`, `docker run`, and `docker ps` reported
+    `(unhealthy)` while curl returned 200 on all seven routes. Nothing else would have caught it,
+    because the image builds, starts and serves correctly -- what fails is the orchestrator's
+    opinion of it, which matters the moment anything waits on `service_healthy`.
+
+    The three Kubernetes probes on the same deployment had the same path and a worse consequence;
+    `apps/api/tests/test_deploy_manifests.py` covers those.
+    """
+    dockerfile = (ROOT / "apps/web/Dockerfile").read_text(encoding="utf-8")
+    probed = re.search(r"HEALTHCHECK.*?fetch\('http://127\.0\.0\.1:3000([^']*)'\)", dockerfile, re.S)
+    assert probed is not None, "the HEALTHCHECK no longer fetches a URL this test can read"
+
+    path = probed.group(1) or "/"
+    assert path in PAGES, (
+        f"the HEALTHCHECK probes {path!r}, which is not a page this site builds: {sorted(PAGES)}. "
+        "A health check on a 404 reports unhealthy forever."
+    )
+
+
+def test_the_web_image_copies_only_manifests_that_exist() -> None:
+    """A `COPY` of a deleted path fails the build, and it fails it three minutes in.
+
+    `packages/shared/package.json` was copied here until `@voidcode/shared` was deleted. Checking
+    it costs a millisecond and the alternative costs a CI run -- and the same line will need
+    deleting again the next time a workspace package goes.
+    """
+    dockerfile = (ROOT / "apps/web/Dockerfile").read_text(encoding="utf-8")
+    copied = re.findall(r"^COPY ((?:[\w./-]+ )+)[\w./]+/?$", dockerfile, re.M)
+    sources = [src for group in copied for src in group.split() if "/" in src or src.endswith(".json") or src.endswith(".yaml")]
+
+    assert sources, "no COPY sources were parsed, so this assertion is vacuous"
+    missing = [src for src in sources if not (ROOT / src).exists()]
+    assert not missing, f"apps/web/Dockerfile copies paths that do not exist: {missing}"
+
+
 def test_the_payment_return_pages_stay_out_of_search_results() -> None:
     """They are reached with a Stripe session id in the URL and say nothing useful out of context."""
     for route in ("/purchase/success", "/purchase/cancelled"):

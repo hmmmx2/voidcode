@@ -18,8 +18,8 @@ Unlike the manifests. `voidcode-web:test` was built and run:
 | size | 344 MB (`output: "standalone"`; without it the image needs the whole `node_modules`) |
 | runs as | uid 1000, non-root |
 | `.env` in the filesystem | none — the guard the release workflow enforces, run by hand |
-| `/`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | all 200, real content — **this run predates `/pricing` and `/download`**, which were split out of the overview afterwards and are not covered by the measurement above |
-| Docker `HEALTHCHECK` | `healthy` |
+| all seven routes — `/`, `/pricing`, `/download`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | 200, real content. Re-measured after `/pricing` and `/download` were split out of the overview; the first run predated both |
+| Docker `HEALTHCHECK` | **`unhealthy`, and that was the finding.** It probed `/login`, deleted with the logged-in UI, so the container reported unhealthy from its first check while serving every page correctly. Fixed to `/`. The same path was in all three Kubernetes probes below, where a startup probe that never succeeds means the pod restarts forever — so the site would never have served a request. Now checked by `tests/test_marketing_pages.py` and `apps/api/tests/test_deploy_manifests.py` |
 | errors in logs | 0 |
 
 That table used to list `/login`, `/register` and the two password-reset routes, and a note about
