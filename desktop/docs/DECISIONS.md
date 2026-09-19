@@ -1138,3 +1138,71 @@ is a position by any reading and matched none of the four names either. A deny-l
 name a slug or an id — with comments stripped first, because the prose describing the defect it
 fixed would otherwise trip it. It has a positive control over the predicate now, which is what would
 have caught the dead alternative on the day it was written.
+
+---
+
+## `UnknownVizError`: the smoke's camera failing the run it was photographing
+
+**Decided:** `capturePage` is retried by `src/main/smoke-capture.ts`, and a capture that never
+succeeds still fails the smoke — with a message that names the camera.
+
+`VOIDCODE_SMOKE_SHOTS=<dir> npm run smoke` failed intermittently with
+
+```
+[smoke] FAILED
+  - signed-in smoke threw: UnknownVizError
+```
+
+while plain `npm run smoke` passed. Two facts made that look like a real defect that only
+screenshot mode was revealing. The string `UnknownVizError` appears nowhere in `src`,
+`renderer/src`, `out` or `renderer/out`, so it had to be constructed at runtime. And the smoke
+already has a SHOTS-only reveal: console errors in `runBuildSmoke`'s route loop are collected
+inside the screenshot block, which `index.ts` notes at the command-palette probe as a reason not
+to lean on React warnings. A renderer error surfacing only under SHOTS was therefore the
+plausible reading.
+
+It was the wrong one. The string is Electron's, from the Electron binary and nothing else:
+
+> `case content::CopyFromSurfaceError::kUnknownVizError: return "UnknownVizError";`
+> — `shell/browser/api/electron_api_web_contents.cc`, v43.2.0, reached from `OnCapturePageDone`,
+> which does `promise.RejectWithErrorMessage(CopyFromSurfaceErrorToString(result.error()))`
+
+`capturePage` does not read the window's pixels. It asks viz for a copy of the composited surface,
+and that request fails on its own — a GPU hiccup, a frame not yet produced, a surface the OS has
+stopped compositing. Electron rejects with the enum stringified and nothing else: no route, no
+call site, no hint that the camera rather than the page had failed. It was SHOTS-only for the
+uninteresting reason that **nothing else in the smoke takes a picture**. Every assertion about the
+page had already passed when it fired.
+
+Reproduced at roughly one run in four on this machine, in both surviving forms — `signed-in smoke
+threw:` and `build/threw:` — and in a run where all four signed-in screenshots had already been
+written and every page assertion had passed.
+
+### What changed, and what deliberately did not
+
+The four `capturePage` + `writeFile` pairs — the signed-in route loop, `build-file-open`, the shell
+route loop and the sign-in dialog pair — are one function now. It retries five times at 300ms, which
+is a second and a half against a fault that clears in a frame.
+
+**The assertion is not relaxed.** A window that can never be captured still fails the smoke; the
+message names the attempt count, the last reason and the fact that this is Chromium's surface copy
+rather than the page. Retrying the camera is not tolerating a broken one, and the test file asserts
+that difference before it asserts the recovery.
+
+Three things were folded in while the code was in one place:
+
+- **An empty image resolves rather than rejecting** — Electron returns `gfx::Image()` when the view
+  has no bounds — so the old code would have written a 0x0 PNG and called it a success. That is the
+  same lie as photographing an empty workbench, which this smoke has already shipped twice.
+- **The write is outside the retry.** A capture that succeeded and a write that failed are different
+  faults; retrying the second spends five captures on a path that will not become writable and then
+  blames viz for it.
+- **The directory is created.** `VOIDCODE_SMOKE_SHOTS` is a path a developer types, and a missing one
+  used to surface as an ENOENT thrown from the middle of the signed-in page assertions.
+
+### Why this has a unit test rather than a green smoke run
+
+A fault that appears in one run out of four cannot be verified by running the smoke again. The
+rejection is injected in `tests/smoke-capture.test.ts` instead. Five mutants, all killed: no retry;
+an empty image counted as a picture; the final throw downgraded to a log; the write moved inside the
+retry; the `mkdir` dropped.
