@@ -373,6 +373,51 @@ describe("the installers reach the two repositories that hand them out", () => {
     expect(job().permissions?.contents, "`distribute` now holds write on this repository").toBe("read");
   });
 
+  it("publishes a version-less copy of every installer, under the names the website links", () => {
+    /*
+     * THE DOWNLOAD PAGE CANNOT READ THE API AND MUST STILL OFFER A FILE.
+     *
+     * `voidcode-web`'s DownloadSection reads `api.github.com` from the VISITOR'S browser to
+     * discover asset names, and unauthenticated requests there are capped at 60 an hour PER IP —
+     * so one office or campus NAT exhausts it for everyone behind it and the page said
+     * "No download yet". `releases/latest/download/<name>` is a redirect with no such limit, but
+     * it needs a name that does not change between releases, and `artifactName` carries the
+     * version.
+     *
+     * So `distribute` copies each artefact to a fixed name. These four strings are a CONTRACT with
+     * that page's `stableName` fields.
+     *
+     * WHAT THIS TEST CAN AND CANNOT DO, stated because the difference matters: it pins this side,
+     * so the workflow cannot be renamed without the change being deliberate. It CANNOT see the
+     * other repository, so the two lists are kept in step by a person. That is exactly the shape
+     * this repo warns about elsewhere — a pair that agrees with itself is not a pair that does
+     * something — and the honest remedy if these ever change is a committed contract file, the way
+     * `contracts/credit-packs.json` and `contracts/demo-snippet.json` already work. Four strings
+     * written once did not seem to earn that; a fifth would.
+     */
+    const copy = script("Copy each installer to a version-less name");
+    expect(copy, "no step copies the installers to stable names").toContain("cp ");
+
+    for (const [pattern, stable] of [
+      ["*-mac-arm64.dmg", "VoidCode-macOS-AppleSilicon.dmg"],
+      ["*-mac-x64.dmg", "VoidCode-macOS-Intel.dmg"],
+      ["*-win-x64.exe", "VoidCode-Windows-x64-Setup.exe"],
+      ["*-win-arm64.exe", "VoidCode-Windows-ARM64-Setup.exe"],
+    ] as const) {
+      expect(copy, `nothing copies ${pattern}`).toContain(pattern);
+      expect(copy, `${stable} is not the name published`).toContain(stable);
+    }
+
+    // And it refuses rather than publishing a name with no file behind it, which would be a
+    // button on the website that 404s.
+    expect(copy, "a missing artefact does not stop the copy").toContain("exit 1");
+
+    // The copies must be attached, not just made: both publishes glob the extension.
+    for (const [name, ext] of [["macOS", "dmg"], ["Windows", "exe"]] as const) {
+      expect(script(name), `${name} does not attach *.${ext}`).toContain(`*.${ext}`);
+    }
+  });
+
   it("publishes both as drafts", () => {
     // The download page reads `releases/latest`, which excludes drafts, so a human publishing is
     // what makes a build visible to anyone. Dropping this hands out an unreviewed build.

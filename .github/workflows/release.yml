@@ -253,6 +253,53 @@ jobs:
       # `SHA256SUMS.txt` goes with each. It lists every asset of the main release, including files
       # not copied here — which is why each repository's `verify-release.yml` filters to its own
       # extension rather than running a plain `--check`.
+      # ── A NAME THAT DOES NOT MOVE BETWEEN RELEASES ────────────────────────────────────────────
+      #
+      # `artifactName` in electron-builder.yml carries the version, so every release renames every
+      # file. That is right for an archive and wrong for a download page: the page was reading
+      # `api.github.com` from the VISITOR'S browser to discover the current names, and
+      # unauthenticated requests there are capped at 60 an hour PER IP. One office or campus NAT
+      # exhausts it for everyone behind it, and the page then said "No download yet — GitHub is
+      # rate-limiting this network, so the file list could not be read". A true sentence with the
+      # wrong conclusion: the release existed and the visitor could not reach it.
+      #
+      # `https://github.com/<repo>/releases/latest/download/<name>` is a redirect rather than an API
+      # call and is subject to no such limit — but it needs a name that will be the same next
+      # release. So each artefact is COPIED to a fixed name and both are published: the versioned
+      # one for anyone archiving a specific build, the fixed one for the page to link.
+      #
+      # `cp`, not `mv`. Losing the versioned name would make two downloaded releases
+      # indistinguishable, which is what the version was in the name for.
+      #
+      # THE NAMES ARE A CONTRACT WITH `voidcode-web`'s `DownloadSection.tsx`, whose `stableName`
+      # fields must match these exactly. A typo on either side is a download button that 404s, and
+      # nothing in either repository would notice until a person clicked it.
+      - name: Copy each installer to a version-less name
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          copy() {
+            pattern="$1"
+            stable="$2"
+            count=$(ls -1 $pattern 2>/dev/null | wc -l)
+            if [ "$count" -eq 0 ]; then
+              echo "::error::no file matched $pattern, so $stable cannot be published. The download"
+              echo "::error::page links that name directly and would 404."
+              exit 1
+            fi
+            if [ "$count" -ne 1 ]; then
+              echo "::error::$pattern matched $count files; one stable name cannot stand for several."
+              exit 1
+            fi
+            cp "$(ls -1 $pattern)" "$stable"
+            echo "  $(ls -1 $pattern) -> $stable"
+          }
+          copy '*-mac-arm64.dmg' 'VoidCode-macOS-AppleSilicon.dmg'
+          copy '*-mac-x64.dmg'   'VoidCode-macOS-Intel.dmg'
+          copy '*-win-x64.exe'   'VoidCode-Windows-x64-Setup.exe'
+          copy '*-win-arm64.exe' 'VoidCode-Windows-ARM64-Setup.exe'
+          ls -l
+
       - name: macOS
         env:
           GH_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
