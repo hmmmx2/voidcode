@@ -461,10 +461,19 @@ if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
 }
 
 /**
- * No credential-store switch: the job provides a real keyring (see the block above), and Electron
- * auto-selects `gnome-libsecret` from it. Forcing a backend here only overrode that.
+ * `--password-store=gnome-libsecret` on Linux, and this is the lever the earlier attempts missed.
+ *
+ * The assumption that Electron would AUTO-SELECT the keyring was wrong — the diagnostic proved it,
+ * run after run: with no switch, `backend=basic_text`. Chromium's OSCrypt only auto-detects
+ * gnome-libsecret from a desktop-environment signal (`XDG_CURRENT_DESKTOP` etc.), which a headless
+ * runner does not set, so it falls to `basic` — and Electron 43 reports `basic_text` as unavailable.
+ *
+ * The backend follows this switch exactly (`basic` gave `basic_text`), so `gnome-libsecret` selects
+ * the Secret Service the job now provides. `basic` was the wrong value all along, not the wrong
+ * mechanism. A real argv, before the script path, so nothing about switch timing is in question.
  */
 const electronArgs = [];
+if (process.platform === "linux") electronArgs.push("--password-store=gnome-libsecret");
 electronArgs.push(
   "out/main/index.js",
   `--remote-debugging-port=${CDP_PORT}`,
