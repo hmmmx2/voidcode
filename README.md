@@ -66,7 +66,7 @@ both halves resolve their root as `Path(__file__).resolve().parents[1]` — `fea
 taxonomy join, and the RL catalogue lookup. **Do not "tidy" these into subfolders.**
 
 ```
-apps/{web,api}     website and API
+apps/api/          the API
 features/          content, taxonomy, IRT,     ranking/          LambdaMART, fairness,
                    mastery, retrieval                            course builder
 content/           200 problem YAML            llm/              SFT pipeline + adapters
@@ -111,13 +111,12 @@ already, which is why each is named separately here.
 docker compose up -d postgres redis judge0-server   # infrastructure
 cd apps/api && python -m uvicorn src.main:app --port 8020          # the API
 cd desktop && npm ci && npm --prefix renderer ci && npm run dev   # the app itself
-pnpm install && pnpm dev                            # the website on :3000
 ```
 
 **The API's port is not settled, and the desktop app assumes one of the answers.** `platform/config.ts`
-falls back to `http://127.0.0.1:8020/v1` and `apps/api/tests/conftest.py` expects 8020; the root
-`package.json`'s `dev:api` script and `docker-compose.gpu.yml` both use 8000. Nothing reconciles
-them, so either start the API on 8020 as above, or tell the app where it is:
+falls back to `http://127.0.0.1:8020/v1` and `apps/api/tests/conftest.py` expects 8020;
+`docker-compose.gpu.yml` publishes 8000. Nothing reconciles them, so either start the API on 8020 as
+above, or tell the app where it is:
 
 ```bash
 cd desktop && cross-env VOIDCODE_API_URL=http://127.0.0.1:8000/v1 npm run dev
@@ -127,9 +126,19 @@ Pointed at an address nothing answers on, the account surfaces say VoidCode is n
 build — which is the honest message, and an unhelpful one to get from a port mismatch.
 
 The desktop app is the product: the editor, the problem sets, the tutor, and the optional account
-with its credits and research library all live there. `apps/web` is the website — an overview, a
+with its credits and research library all live there.
+
+**The website is a separate repository, `voidcode-web`,** deployed on Vercel — an overview, a
 pricing page, a download page, the two legal documents and Stripe's two return pages. It holds no
-session and calls our API not at all.
+session, no database and no credential, and calls our API not at all. Two things in this repository
+are its inputs: `desktop/renderer/src/components/Legal/` (the original of both legal documents,
+pinned by a digest in `desktop/src/shared/legal.ts`) and `contracts/credit-packs.json` (exported
+from the API's pack table). Both are verified on both sides; editing either means re-running that
+repository's `scripts/sync-from-app.mjs`.
+
+The installers live in two more: **`voidcode-mac`** and **`voidcode-windows`**, which hold a README
+and a checksum-verifying workflow and no source at all. `release.yml`'s `distribute` job copies each
+platform's build into its own draft release.
 
 The `Makefile` targets are written to run **inside WSL2 Ubuntu** (JDK, venv and Spark data live on
 ext4); they will not work from Git Bash. RL targets are prefixed `rl-` — `make rl-test`,
@@ -144,7 +153,6 @@ cd apps/api && python -m scripts.verify_problems \
             && python -m scripts.verify_interview_problems    # 125 items, 699 cases
 pytest tests -q                                               # both halves' suites
 pytest apps/api/tests -q                                      # needs Postgres up
-pnpm typecheck && pnpm build                                  # the website
 cd desktop && npm run typecheck && npm test && npm run smoke  # the app
 ```
 

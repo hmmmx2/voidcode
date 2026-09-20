@@ -274,7 +274,7 @@ describe("resolving a scope to a colour", () => {
 describe("the marketing copy, which deliberately did not change", () => {
   it("keeps its own greyscale table and no longer claims this file mirrors it", () => {
     /**
-     * `apps/web`'s demo is a static placeholder that must not flash when Monaco swaps in, and its
+     * `voidcode-web`'s demo is a static placeholder that must not flash when Monaco swaps in, and its
      * page is monochrome by identity. This file used to claim it mirrored
      * `marketing/demo/CodeStatic.tsx` "exactly"; it does not any more, and a stale claim of
      * agreement is worse than an acknowledged divergence — it invites someone to "fix" one side.
@@ -284,6 +284,8 @@ describe("the marketing copy, which deliberately did not change", () => {
       "utf8"
     );
     expect(here).not.toContain("mirror `marketing/demo/CodeStatic.tsx`'s hand tokenizer\n * exactly");
-    expect(here, "the divergence is not explained").toContain("apps/web");
+    // `voidcode-web`, not `apps/web`: the website is a separate repository, so the note has to name
+    // something a reader can actually find.
+    expect(here, "the divergence is not explained").toContain("voidcode-web");
   });
 });

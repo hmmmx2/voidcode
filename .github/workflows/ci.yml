@@ -163,32 +163,11 @@ jobs:
         # floor much above 41 therefore requires a warehouse in CI, not more tests.
         run: pytest tests -v --cov=features --cov=ranking --cov-report=term --cov-fail-under=40
 
-  web:
-    name: Web typecheck and build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        # This is the enforcement mechanism for the frontend half of the
-        # grading fix. There is no JS test runner in this repo, and adding one
-        # for two assertions would not pay for itself — but `expectedOutput`
-        # became `string | null` and `submitCode` lost its `testCases`
-        # parameter, so tsc is what finds every consumer that still assumes
-        # otherwise.
-        run: pnpm --filter @voidcode/web typecheck
-
-      - name: Build
-        run: pnpm --filter @voidcode/web build
+  # A `web` JOB STOOD HERE: pnpm install, typecheck, build. The website is its own repository,
+  # `voidcode-web`, with its own CI — and that CI checks strictly more than this job did: the two
+  # legal documents against their committed digests, the pricing page against the API's exported
+  # pack contract, the demo snippet against the catalogue, the env template against what the site
+  # actually reads, and every internal link.
+  #
+  # Nothing replaces it here, because there is nothing here to check. `desktop/tests/entry-docs`
+  # asserts the entry documents stop enumerating a tree this repository does not contain.

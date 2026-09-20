@@ -16,7 +16,7 @@
  * rendering the component is not available without adding a whole harness for one conditional.
  *
  * BOTH COPIES ARE CHECKED, and that is the uncomfortable part. This panel exists twice — once in
- * the desktop renderer and once in `apps/web` — as hand-maintained near-duplicates of about two
+ * the desktop renderer and once in the website — as hand-maintained near-duplicates of about two
  * thousand lines each. Three separate changes have now had to be applied to both. The duplication
  * is the real defect here; until it is addressed, a guard that only watched one copy would let the
  * other drift, so this reads both.
@@ -31,7 +31,7 @@ const repoRoot = path.join(desktopRoot, "..");
 
 const PANELS: Array<[string, string]> = [
   ["desktop", path.join(desktopRoot, "renderer/src/components/VoidCodeAI/VoidCodeAIPanel.tsx")],
-  // The website's copy is gone with its logged-in UI: apps/web is a landing page and two legal
+  // The website's copy is gone with its logged-in UI: `voidcode-web` is a landing page and two legal
   // documents now. The list stays a list, because the duplication it guards against is the kind
   // that comes back.
 ];

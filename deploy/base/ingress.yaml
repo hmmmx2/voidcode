@@ -23,19 +23,16 @@ spec:
     - hosts: [voidcode.example, api.voidcode.example]
       secretName: voidcode-tls
   rules:
-    # ── The website ────────────────────────────────────────────────────────────
+    # ── The website is not routed from here any more ──────────────────────────
     #
-    # Five static pages: the overview, the pricing, the download, and the two legal
-    # documents (plus Stripe's two return pages). It holds no session and calls no API.
-    - host: voidcode.example
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: voidcode-web
-                port: { name: http }
+    # A rule sending `voidcode.example/` to a `voidcode-web` Service stood here. The website is its
+    # own repository, deployed on Vercel, and `web-deployment.yaml` is deleted — so this rule would
+    # route the product's public host to a Service that does not exist, which is a 503 on the page
+    # that hands out the installer.
+    #
+    # The apex host therefore has NO rule in this cluster, deliberately: it is served by Vercel and
+    # its DNS points there. `apps/api/tests/test_deploy_manifests.py` asserts no manifest names
+    # `voidcode-web` again, because kustomize will happily build an ingress pointing at nothing.
 
     # ── The API, on its own host, and ONLY under /v1 ──────────────────────────
     #

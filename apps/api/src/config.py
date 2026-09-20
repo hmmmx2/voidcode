@@ -212,7 +212,7 @@ GPU_QUEUE_ENABLED = _flag("GPU_QUEUE_ENABLED", default=False)
 
 # How long a streaming request will wait for a slot before giving up.
 #
-# BOUNDED BY WHAT THE PROXIES WILL TOLERATE, not by patience. `apps/web/.../api/proxy` sets no
+# BOUNDED BY WHAT THE PROXIES WILL TOLERATE, not by patience. the website's former `/api/proxy` set no
 # timeout, so Node's default headers budget applies, and `nginx.conf` allows 300s between reads.
 # Response headers are not sent until this wait finishes, so the wait plus prompt preparation must
 # fit inside that -- 120s leaves a wide margin and is already longer than anyone will sit still for.

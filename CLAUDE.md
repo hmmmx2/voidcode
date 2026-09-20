@@ -72,19 +72,24 @@ two need a session, while the research library is public and a session only adds
 ticks. All three are optional and none is touched at startup — a launch with no session makes no
 request to our server at all, which `npm run smoke` counts against a loopback API and fails on.
 
-### The website hands out the installer
-```bash
-pnpm install          # workspace deps
-pnpm dev:web          # Next.js marketing site (:3000)
-```
-Seven pages, all prerendered: the overview (`/`), `/pricing`, `/download`, `/terms`, `/privacy`,
-and the two Stripe returns at `/purchase/success` and `/purchase/cancelled`. It has no sign-in, no
-session and makes no call to our API — the logged-in UI it used to carry is the desktop app now. The
-one network call it makes is to `api.github.com` for the latest release's assets, and `/download`
-degrades to a link when that fails.
+### The website is a separate repository
+**`voidcode-web`**, deployed on Vercel. Not in this tree, and not in the build: it is a Next 16 site
+that describes the product, hands out the installer and publishes the legal documents. It has no
+sign-in, no session, no database and makes no call to our API — the logged-in UI it used to carry is
+the desktop app now.
 
-It is a Next.js **server** (`output: "standalone"`), not a static export: `deploy/base/`
-deploys it as `voidcode-web` and the ingress routes the site's host to it.
+Two things here are its inputs, and both are checked on both sides rather than trusted:
+
+- **The legal documents.** `desktop/renderer/src/components/Legal/` is the ORIGINAL, because that is
+  where a person clicks "I agree" and where registration records which version they accepted.
+  `desktop/src/shared/legal.ts` commits a SHA-256 of each; `desktop/tests/legal-digest.test.ts`
+  checks the text against it here, and the website checks its copy against the same number there.
+- **The credit packs.** `contracts/credit-packs.json` is exported from
+  `apps/api/src/services/credit_packs.py` by `scripts/export_credit_packs.py`. A page advertising a
+  price the webhook does not charge is a false price published to the public.
+
+Editing either means re-running the website's `scripts/sync-from-app.mjs <path-to-this-checkout>`.
+Nothing here can tell you that you forgot — that is the residual cost of two repositories.
 
 ### Docker (Infrastructure only — no API)
 ```bash
@@ -123,14 +128,16 @@ apps/
     quantize_awq.py   W4A16 quantize merged model for vLLM (one-time, offline)
 
 desktop/              Electron app — THE PRODUCT (main + sandboxed Next renderer)
-apps/web/             Next.js 16 website: overview, pricing, download, legal, Stripe returns
+contracts/            What other repositories read: the credit packs the website prices from
 ```
+The website (`voidcode-web`) and the two installer repositories (`voidcode-mac`,
+`voidcode-windows`) are separate repositories; `release.yml`'s `distribute` job feeds the last two.
 
 **Training Stack**: PyTorch + Transformers + PEFT + TRL + BitsAndBytes (4-bit NF4 quantization)
 **Inference Stack (primary)**: vLLM + W4A16 AWQ model + PagedAttention (WSL2 only)
 **Inference Stack (fallback)**: HuggingFace model.generate() + BnB NF4 + PEFT (Windows/WSL2)
 **Desktop Stack**: Electron + electron-vite + Next.js static export + Monaco + Pyodide
-**Website Stack**: Next.js 16 + React 19 + Tailwind CSS v4 + react-three-fiber (landing page only)
+**Website Stack**: not in this repository — see `voidcode-web`
 
 ## v5.3 Multi-Mode Response System
 

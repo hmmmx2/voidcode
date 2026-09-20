@@ -103,61 +103,30 @@ def test_every_probe_targets_a_declared_port(objects) -> None:
                         f"declared: {declared or 'none'}")
 
 
-def _website_routes() -> set[str]:
-    """Every path the Next application actually builds, from its own `app` directory.
+def test_no_manifest_still_describes_the_website(objects) -> None:
+    """The web tier is gone from this repository, and nothing here may still route to it.
 
-    A route group in parentheses -- `(marketing)`, `(legal)` -- organises files and contributes no
-    URL segment, which is the part a hand-written list gets wrong.
+    WHAT STOOD HERE. A test that walked `apps/web/src/app` for the routes the Next application
+    builds and asserted every Kubernetes probe on the `voidcode-web` Deployment named one of them. It
+    caught a real defect: three probes pointed at `/login` for as long as that page had been deleted,
+    so the Deployment was `(unhealthy)` forever while the site served every page correctly.
+
+    The website is `voidcode-web` now, deployed on Vercel. `web-deployment.yaml` is deleted, and the
+    probes with it. WHAT REPLACES THE TEST IS THE ABSENCE CHECK, because a deletion leaves nothing
+    behind to notice a return: an ingress rule or a network policy still naming a Service that no
+    longer exists is a 503 for whatever host it routes, and kustomize will not complain.
     """
-    app_dir = ROOT / "apps/web/src/app"
-    routes: set[str] = set()
+    names = {object_["metadata"]["name"] for object_ in objects if "metadata" in object_}
+    assert names, "no manifests were loaded, so this assertion is vacuous"
+    assert "voidcode-web" not in names, "a manifest defines voidcode-web again"
 
-    def walk(directory: Path, prefix: str) -> None:
-        for child in sorted(p for p in directory.iterdir() if p.is_dir()):
-            segment = prefix if child.name.startswith("(") and child.name.endswith(")") else f"{prefix}/{child.name}"
-            if (child / "page.tsx").exists():
-                routes.add(segment or "/")
-            walk(child, segment)
-
-    if (app_dir / "page.tsx").exists():
-        routes.add("/")
-    walk(app_dir, "")
-    return routes
-
-
-def test_every_probe_path_is_a_route_the_application_serves(objects) -> None:
-    """All three of the website's probes pointed at `/login`, months after it was deleted.
-
-    THIS IS THE ONE THAT WOULD HAVE STOPPED THE SITE SERVING AT ALL. A startup probe that never
-    succeeds means the container is killed and restarted forever, so the manifests would have
-    applied cleanly, validated against every other test in this file, and produced a permanent
-    CrashLoopBackOff. The reasoning in the comment beside them was correct when written -- `/`
-    redirected for a signed-in visitor and middleware ran on it, while `/login` rendered
-    unconditionally -- and both halves stopped being true when the logged-in UI was deleted.
-
-    The Docker `HEALTHCHECK` had the same path and the same cause; `tests/test_marketing_pages.py`
-    covers that one, since it is not a manifest.
-
-    The API's probes are exempt: `/health` is a real endpoint that is deliberately NOT routed
-    through the ingress, so it cannot be checked against a list of published paths. See
-    `test_no_unauthenticated_endpoint_is_routed`.
-    """
-    routes = _website_routes()
-    assert len(routes) >= 5, f"the route walk found {len(routes)} pages, so this assertion is vacuous"
-
-    for dep in of_kind(objects, "Deployment"):
-        if dep["metadata"]["name"] != "voidcode-web":
-            continue
-        for container in dep["spec"]["template"]["spec"]["containers"]:
-            for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
-                spec = container.get(probe, {}).get("httpGet")
-                if not spec:
-                    continue
-                path = spec.get("path", "")
-                assert path in routes, (
-                    f"{container['name']}.{probe} probes {path!r}, which the application does not "
-                    f"build. It serves {sorted(routes)}. A probe on a 404 fails forever."
-                )
+    # Anywhere at all, not just as an object name: an ingress backend, a policy selector or a
+    # ConfigMap value naming it would each route or admit traffic for a Service that is not there.
+    rendered = yaml.safe_dump_all(objects)
+    assert "voidcode-web" not in rendered, (
+        "a manifest still references voidcode-web. The website is a separate repository on Vercel; "
+        "whatever names it here would route to a Service that does not exist."
+    )
 
 
 def test_every_referenced_secret_is_documented_as_created_out_of_band(objects) -> None:

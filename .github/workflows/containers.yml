@@ -47,15 +47,17 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     strategy:
-      # Independent so a web failure does not hide an API failure, and both logs exist.
+      # ONE IMAGE, AND THE MATRIX STAYS. A `web` entry stood beside this one, built from the
+      # repository ROOT because its Dockerfile copied `pnpm-lock.yaml` to install a workspace.
+      # The website is its own repository on Vercel and that Dockerfile is deleted: it could not
+      # have built outside the monorepo, and there is no image to publish.
+      #
+      # The matrix is kept for one entry rather than inlined, because `fail-fast: false` and the
+      # per-image steps below are the shape the next image wants.
       fail-fast: false
       matrix:
         include:
           - { name: api, dockerfile: apps/api/Dockerfile, context: apps/api }
-          # The web build needs the REPO ROOT as context, not apps/web: the Dockerfile
-          # copies pnpm-lock.yaml to install a workspace. Getting this wrong fails with a
-          # confusing "pnpm-lock.yaml not found".
-          - { name: web, dockerfile: apps/web/Dockerfile, context: . }
     steps:
       - uses: actions/checkout@v4
 
@@ -94,16 +96,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Inlined into the bundle at build time, which is why these are ARGs and not
-          # container env vars. NEXT_PUBLIC_API_URL was here until the website stopped
-          # calling the API at all; what it needs now is the repositories whose releases
-          # the download section lists — ONE PER PLATFORM, since the installers are
-          # published to a macOS repository and a Windows one. Empty is a valid value for
-          # either: that platform's panel then says no release has been published rather
-          # than drawing a dead button, and the other platform is unaffected.
-          build-args: |
-            NEXT_PUBLIC_RELEASES_REPO_MAC=${{ vars.VOIDCODE_RELEASES_REPO_MAC }}
-            NEXT_PUBLIC_RELEASES_REPO_WIN=${{ vars.VOIDCODE_RELEASES_REPO_WIN }}
+          # NO BUILD ARGS. `NEXT_PUBLIC_RELEASES_REPO_MAC` and `_WIN` were passed here for the
+          # web image, because a NEXT_PUBLIC_* value is inlined at build time rather than read
+          # at runtime. They belong to the website's Vercel project now. The API image takes no
+          # build-time configuration at all — everything it reads comes from its ConfigMap and
+          # Secret at runtime, which is what lets one image serve every environment.
 
       # A .dockerignore that stops excluding .env would put a live API key into a
       # published layer, and `docker history` would show it. This repo had no
@@ -156,9 +153,6 @@ jobs:
           kubectl -n voidcode set image deployment/voidcode-api \
             api=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }} \
             migrate=${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.ref_name }}
-          kubectl -n voidcode set image deployment/voidcode-web \
-            web=${{ env.REGISTRY }}/${{ github.repository }}/web:${{ github.ref_name }}
           # Fail the job if the rollout does not converge, rather than reporting success
           # for a deployment whose new pods are crash-looping.
           kubectl -n voidcode rollout status deployment/voidcode-api --timeout=5m
-          kubectl -n voidcode rollout status deployment/voidcode-web --timeout=5m

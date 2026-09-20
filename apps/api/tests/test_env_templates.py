@@ -3,8 +3,9 @@
 Three separate failures had accumulated here, none of them visible from the code:
 
   * NEITHER `.env.example` was tracked by git. `.gitignore`'s `.env*` swallowed both, so
-    `apps/api/.env.example` existed only on one machine and `apps/web/.env.example` did not exist
-    at all — a fresh clone had to reverse-engineer every variable from `config.py` and `auth.ts`.
+    `apps/api/.env.example` existed only on one machine and the website's did not exist at all — a
+    fresh clone had to reverse-engineer every variable from `config.py` and `auth.ts`. The website
+    is a separate repository now and carries that lesson in its own `.gitignore`, commented.
   * `.env.docker.example` documented `SECRET_KEY` and `NEXTAUTH_SECRET`, which **no code in this
     repo reads**, while omitting every auth and email variable that it does. An operator setting
     those two would reasonably believe the service was configured.
@@ -24,7 +25,12 @@ ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "apps" / "api" / "src" / "config.py"
 API_ENV = ROOT / "apps" / "api" / ".env.example"
 DOCKER_ENV = ROOT / "apps" / "api" / ".env.docker.example"
-WEB_ENV = ROOT / "apps" / "web" / ".env.example"
+# `WEB_ENV = ROOT / "apps" / "web" / ".env.example"` STOOD HERE. The website is its own
+# repository now, and its template is checked there — by `scripts/check-pages.mjs`'s sibling in
+# `voidcode-web`, against the `process.env` reads in its own `src/`. That check is stricter than
+# what this file did with it: it fails in BOTH directions, and the over-documenting direction is the
+# one that mattered — the template listed ten variables while the site read one, so a reader
+# generated secrets for an auth proxy that no longer exists.
 
 
 def config_variables() -> set[str]:
@@ -65,7 +71,7 @@ def test_the_templates_are_tracked_by_git() -> None:
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, timeout=60,
     ).stdout.splitlines()
-    for template in (API_ENV, DOCKER_ENV, WEB_ENV):
+    for template in (API_ENV, DOCKER_ENV):
         relative = template.relative_to(ROOT).as_posix()
         assert relative in tracked, f"{relative} is not tracked — check the .gitignore negation"
 
@@ -79,7 +85,7 @@ def test_no_template_carries_a_real_secret() -> None:
         (r"ghp_[A-Za-z0-9]{16,}", "a GitHub token"),
         (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "a private key"),
     ]
-    for template in (API_ENV, DOCKER_ENV, WEB_ENV):
+    for template in (API_ENV, DOCKER_ENV):
         text = template.read_text(encoding="utf-8")
         for pattern, what in patterns:
             assert not re.search(pattern, text), f"{template.name} contains {what}"
@@ -97,7 +103,7 @@ def test_secret_shaped_variables_are_empty_in_every_template() -> None:
                  # identifier that appears in hostnames and logs, and listing it here would demand
                  # it be empty in every template -- the opposite of what a deployment needs.
                  "RUNPOD_API_KEY")
-    for template in (API_ENV, DOCKER_ENV, WEB_ENV):
+    for template in (API_ENV, DOCKER_ENV):
         for line in template.read_text(encoding="utf-8").splitlines():
             if "=" not in line or line.strip().startswith("#"):
                 continue

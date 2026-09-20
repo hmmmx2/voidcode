@@ -1802,3 +1802,107 @@ Verified: desktop 2306 passed across 141 files, typecheck clean, root `pytest te
 three folders exist as git repositories with no remote: `voidcode-web` carries its seventeen commits
 of real history from `git subtree split`, and the two distribution repositories carry five files
 each.
+
+## The website leaves, and what it was holding together
+
+`apps/web` is gone: 95 files, plus `pnpm-workspace.yaml`, `turbo.json`, `pnpm-lock.yaml`, the root
+`package.json`, `deploy/base/web-deployment.yaml` and the `web` jobs in both workflows. 131 files
+changed, 878 lines added and 16,304 removed.
+
+**The one edit that could have broken the product rather than a test was checked first.**
+`pnpm-workspace.yaml`'s globs were `apps/*` and `packages/*`; `desktop/` is matched by neither, has
+its own lockfile, and its `package.json`, `electron-builder.yml` and vite config name pnpm, turbo and
+workspaces nowhere. `npm run smoke` builds the renderer and both bundles, and it passes.
+
+### The website was load-bearing for six tests, and each needed a decision
+
+Not a deletion. What those tests asserted was true and still matters; what changed is which
+repository can see it.
+
+**Two route walkers** read `apps/web/src/app` — one in `entry-docs.test.ts` to check CLAUDE.md's
+page count, one in `test_deploy_manifests.py` to check the Kubernetes probes named a route that
+exists. The second caught a real defect once: three probes pointed at `/login` for as long as that
+page had been deleted, so the Deployment was `(unhealthy)` forever while the site served every page
+correctly. Both are replaced by ABSENCE checks, because a deletion leaves nothing behind to notice a
+return: no manifest may name `voidcode-web` again (an ingress rule pointing at a deleted Service is
+a 503 kustomize renders without complaint), and the entry documents may no longer enumerate a tree
+this repository does not contain.
+
+**`test_marketing_pages.py` is deleted and its contents are in two places.** The parts about the
+website's own pages — links resolving, the nav, the noindex on Stripe's return pages, nothing
+advertising an unshipped feature — are now `check-pages.mjs` there. The part that spanned both trees
+is below.
+
+**`test_env_templates.py`** loses `WEB_ENV`. Its own docstring said a template documenting a subset
+is worse than no template; the website's template had drifted to ten variables against one reader,
+and nothing compared it to the source because the guard only checked the file was tracked. That
+check exists there now, in both directions.
+
+### Three things that could not live in either repository alone
+
+Each is now one artefact, exported here and verified on both sides. The pattern is the legal digest's,
+generalised.
+
+**The prices.** `test_marketing_pages.py` called this the test that mattered most, and said why: *"A
+page that says RM20 buys 1,200 credits while the webhook grants something else is a false price
+published to the public internet, and the person who finds out is the one who paid."*
+`contracts/credit-packs.json` is exported from `credit_packs.py`; `test_credit_packs_contract.py`
+re-derives the packs by AST WALK rather than importing the exporter's regex, because a wrong parse
+would otherwise produce a wrong contract and a passing test.
+
+**The demo snippet.** The landing page shows `stable-softmax`'s template — the first VoidCode code a
+visitor ever sees, and a copy because it renders before any request resolves. Keeping that claim was
+an open question in the plan; the alternatives were a demo that quietly stops being real code, or
+copy implying it is a catalogue problem with nothing checking. `contracts/demo-snippet.json` keeps it.
+
+**The asset names.** Deliberately NOT a contract file: every release already publishes
+`SHA256SUMS.txt` listing every asset, the distribution repositories verify against it, and the
+download page reads the release feed. A fourth contract would add a copy without adding a reader. So
+this repository asserts only what it owns — that the build produces x64 and arm64 for both desktop
+platforms — and `release-config.test.ts` holds the `distribute` job's file counts to the same table.
+
+### A false sentence on the public pricing page, and the guard that let it stand
+
+The page said the rate behind its estimates was *"a projection from what the GPU costs to rent
+rather than a measured throughput"*. The live pricing row has carried `measured=True` since
+2026-09-10 — ten days.
+
+The guard was `"measured=False" in gpu_pricing.py`, and **that table is append-only**: two superseded
+rows still say it. A substring search over a file that keeps its history cannot answer a question
+about the present. The test's own failure message had even anticipated the change — *"the serving
+rate is measured now — this page may quote hours, and this test should say so"* — and it never fired.
+
+The contract carries the live row's flag now, resolved through `rate_for()`, the function the API
+itself uses, with an assertion that the last row is already effective so "last" and "live" cannot
+diverge. The page is corrected and checked in both directions. The paragraph's other two clauses
+were verified and are true: `PAYMENTS_ENABLED` and `GPU_METERING_ENABLED` are both False.
+
+### A fake kill in my own mutation campaign
+
+Five mutants against the pricing contract reported KILLED. The fifth — disabling the exporter's
+`on_sale=False` filter — should have SURVIVED, because no pack is retired yet, so the filter changes
+nothing. It reported killed only because an earlier mutant's run had left the contract rewritten by
+the idempotence test, and the fifth then failed for an unrelated reason.
+
+Re-run in isolation it survived, correctly. The fix is not to accept it: a synthetic table with a
+retired pack ARMS the check, so the filter is tested regardless of what the live table happens to
+contain. Then the mutant dies for the right reason. The live-table test is kept beside it and
+returns early with a comment saying it is not checking anything yet.
+
+### Four escaping mistakes, recorded because they all present as something else
+
+Writing JS and regexes through a shell heredoc into Python cost four rounds:
+
+- `app/**/page.tsx` inside a `/** */` block — the `*/` in `**/` CLOSES THE COMMENT. esbuild's error
+  pointed at a template literal forty lines later.
+- `` `\s*` `` inside a template literal collapses to `s*`, so `new RegExp` looked for a literal
+  "s". Printing the pattern is what found it; the check had been silently matching nothing.
+- A regex literal with a collapsed `
+` became a real newline inside `/.../` — a SyntaxError.
+- And the one that mattered: **a script that cannot parse exits non-zero, which looks exactly like
+  the check catching something.** One mutant reported REFUSED from a syntax error. Every control
+  after that checks the output text, not just the exit code.
+
+Verified: desktop 2305 passed across 141 files, both typechecks clean, `npm run smoke` PASS, root
+`pytest tests` exit 0, every API test that does not need Postgres exit 0, and `voidcode-web` green on
+all five of its own checks with ten static routes.

@@ -250,7 +250,7 @@ def test_hints_and_the_ladder_may_not_disagree(tmp_path: Path) -> None:
 
     `hints` is an ORM column the API serves; `hint_ladder` is loader-only and stripped at the seeder
     boundary, so nothing downstream would notice them diverging — the learner would read one and the
-    tutor select from the other. `apps/web/src/lib/mock-data.ts` is the cautionary case: a second
+    tutor select from the other. the website's `mock-data.ts` is the cautionary case: a second
     copy of one problem's hints drifted until it carried Two Sum's text under a softmax title, and
     nothing failed.
     """

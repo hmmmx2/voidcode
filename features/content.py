@@ -269,7 +269,7 @@ def _validate_hint_ladder(raw: dict, path: Path) -> None:
 
     # TWO FIELDS HOLDING THE SAME TEXT IS HOW DRIFT STARTS, so they are not allowed to disagree.
     # `hints` is an ORM column the API serves; `hint_ladder` is loader-only and stripped at the
-    # seeder boundary, so nothing downstream would notice them diverging. `apps/web`'s mock-data.ts
+    # seeder boundary, so nothing downstream would notice them diverging. the website's `mock-data.ts`
     # is the cautionary case: a second copy of one problem's hints drifted until it was carrying
     # Two Sum's text under the softmax title, and nothing failed.
     hints = raw.get("hints")

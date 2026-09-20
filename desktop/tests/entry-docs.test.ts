@@ -33,98 +33,55 @@ const read = (relative: string): string =>
 const README = read("README.md");
 const CLAUDE = read("CLAUDE.md");
 
-/** Every route the website actually builds, from its own `app` directory. */
-function websiteRoutes(): string[] {
-  const appDir = path.join(repo, "apps/web/src/app");
-  const routes: string[] = [];
-
-  const walk = (dir: string, prefix: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      // `(marketing)` and `(legal)` are route groups: they organise files and contribute no
-      // segment to the URL, which is exactly the kind of thing a hand-written list gets wrong.
-      const segment = /^\(.*\)$/.test(entry.name) ? prefix : `${prefix}/${entry.name}`;
-      const full = path.join(dir, entry.name);
-      if (fs.existsSync(path.join(full, "page.tsx"))) routes.push(segment === "" ? "/" : segment);
-      walk(full, segment);
-    }
-  };
-  walk(appDir, "");
-  if (fs.existsSync(path.join(appDir, "page.tsx"))) routes.push("/");
-  return [...new Set(routes)].sort();
-}
-
-describe("the website, as the entry documents describe it", () => {
-  const routes = websiteRoutes();
-
-  it("finds the routes to check", () => {
-    // Vacuity: a walk that stopped finding pages would make every assertion below pass for the
-    // wrong reason — the failure mode of any test that reads a directory tree.
-    expect(routes.length).toBeGreaterThanOrEqual(5);
-  });
-
-  it("is described with the right number of pages", () => {
-    /**
-     * Read out of the sentence rather than asserted against a literal, so the test fails when the
-     * document and the tree disagree rather than when the tree changes.
-     */
-    const claimed = /^(Seven|Six|Five|Four|Eight|Nine) pages\b/m.exec(CLAUDE);
-    expect(claimed, "CLAUDE.md no longer counts the website's pages in a sentence this can read")
-      .not.toBeNull();
-    const words: Record<string, number> = { Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9 };
-
-    expect(
-      words[(claimed as RegExpExecArray)[1] ?? ""],
-      `CLAUDE.md says ${String((claimed as RegExpExecArray)[1])} pages; apps/web builds ${String(routes.length)}: ${routes.join(", ")}`
-    ).toBe(routes.length);
-  });
-
-  it("names every route it builds, where it names routes at all", () => {
-    /**
-     * CLAUDE.md lists the website's pages BY PATH, so every route has to appear there — `/pricing`
-     * and `/download` were missing for a while, because they were split out of the overview after
-     * the sentence was written. That is what makes adding a page a documentation change rather than
-     * an undocumented one.
-     *
-     * The README describes them in prose instead ("the two legal documents"), which is the right
-     * register for a README and cannot be checked path by path. What it IS held to is naming the
-     * two pages that were added, since a prose list is exactly where an addition goes missing.
-     */
-    for (const route of routes) {
-      if (route === "/") continue; // named as "the overview" rather than as a path
-      expect(CLAUDE, `CLAUDE.md does not mention ${route}`).toContain(route);
-    }
-    for (const page of ["pricing", "download"]) {
-      expect(README.toLowerCase(), `README.md does not mention the ${page} page`).toContain(page);
-    }
-  });
-
-  it("is still true that it holds no session and calls no API of ours", () => {
-    // The claim both documents make, and the reason it is safe to describe the site as static
-    // pages: nothing under `apps/web` reaches our own API. `api.github.com` is the one exception,
-    // for the download page's release assets, and both documents say so.
-    const web = path.join(repo, "apps/web/src");
-    const offenders: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full);
-          continue;
-        }
-        if (!/\.tsx?$/.test(entry.name)) continue;
-        const source = fs.readFileSync(full, "utf8");
-        // The proxy and the session that used to live here.
-        for (const banned of ["NEXT_PUBLIC_API_URL", "/api/proxy", "next-auth"]) {
-          if (source.includes(banned)) offenders.push(`${path.relative(repo, full)}: ${banned}`);
-        }
+describe("the website, which is no longer in this repository", () => {
+  /**
+   * WHAT STOOD HERE, AND WHY IT COULD NOT STAY.
+   *
+   * A route walker over `apps/web/src/app`, and four assertions built on it: that the walk found at
+   * least five pages, that CLAUDE.md's "Seven pages" sentence agreed with the count, that every
+   * route it built was named in CLAUDE.md by path, and that nothing under `apps/web` reached our own
+   * API. All of them read a directory that is now a different repository.
+   *
+   * THE ASSERTIONS DID NOT MOVE HERE — THEY MOVED THERE. `voidcode-web` carries
+   * `scripts/check-pages.mjs`, which does the same work against its own tree and rather more of it:
+   * every internal link resolves, the nav offers exactly three pages, the Stripe return pages stay
+   * out of search results, and no component advertises an unshipped feature. That last one is
+   * WIDER than what this file checked — the monorepo's version read only the page files under `app/` and nothing they import, and a
+   * mutant showed that adding a claim to a section component changed nothing.
+   *
+   * WHAT REPLACES IT HERE IS THE OPPOSITE ASSERTION. The entry documents must stop enumerating a
+   * tree this repository does not contain. A CLAUDE.md that says "Seven pages, all prerendered" and
+   * lists them by path is describing something a reader cannot find, and nothing would fail — which
+   * is the failure mode this file exists to prevent in the first place.
+   */
+  it("is not enumerated by the entry documents any more", () => {
+    for (const [name, doc] of [["README.md", README], ["CLAUDE.md", CLAUDE]] as const) {
+      expect(doc, `${name} still counts the website's pages`).not.toMatch(
+        /(Four|Five|Six|Seven|Eight|Nine) pages/
+      );
+      // The Stripe return routes are the giveaway: they exist only on the website, so naming one is
+      // this repository describing the internals of another.
+      for (const route of ["/purchase/success", "/purchase/cancelled"]) {
+        expect(doc, `${name} still names the website route ${route}`).not.toContain(route);
       }
-    };
-    walk(web);
+    }
+  });
 
-    expect(offenders, "the website talks to our API again; both entry documents say it does not")
-      .toEqual([]);
-    expect(CLAUDE).toContain("api.github.com");
+  it("is named as a separate repository, so a reader can find it", () => {
+    // The other direction. Deleting the description entirely would leave no trail from here to the
+    // thing that publishes this product's download page and legal documents.
+    for (const [name, doc] of [["README.md", README], ["CLAUDE.md", CLAUDE]] as const) {
+      expect(doc, `${name} does not name the website's repository`).toContain("voidcode-web");
+    }
+  });
+
+  it("no longer has a tree here for anything to read", () => {
+    // A guard against a half-finished revert: if `apps/web/src` comes back, the checks that used to
+    // cover it are in another repository and would not run against it.
+    expect(
+      fs.existsSync(path.join(repo, "apps/web/src")),
+      "apps/web/src exists again — its checks live in voidcode-web and would not cover it"
+    ).toBe(false);
   });
 });
 

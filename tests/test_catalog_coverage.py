@@ -233,26 +233,44 @@ def test_every_visualization_copy_is_guarded() -> None:
         f"listed but absent: {sorted(map(str, guarded - found))}")
 
 
-#: The landing page's demo runner still uses this; the editor that used to is gone with the
-#: website's workspace UI, so `defaultCode` is now read by the demo alone.
-MOCK_DATA = Path(__file__).resolve().parents[1] / "apps" / "web" / "src" / "lib" / "mock-data.ts"
-_DEFAULT_CODE = re.compile(r"export const defaultCode = `(.*?)`;", re.S)
+# ── The landing page's demo snippet ──────────────────────────────────────────
 
 
-def test_the_editors_default_code_still_matches_the_catalogue() -> None:
-    """`defaultCode` is a copy of `stable-softmax`'s template, and copies in this file rot.
+#: The exported contract the website renders its demo from. `apps/web/src/lib/mock-data.ts` was read
+#: directly until the website became its own repository; see `scripts/export_demo_snippet.py`.
+DEMO_CONTRACT = Path(__file__).resolve().parents[1] / "contracts" / "demo-snippet.json"
 
-    It has to be a copy: it renders before any request resolves, so it cannot be fetched. But the
-    exports that used to sit beside it drifted badly enough that `mockProblem` ended up with the ML
-    curriculum's title on Two Sum's body — a problem no longer in the catalogue at all. Those had no
-    importers and are deleted; this one is read by the landing page's demo, which is now the first
-    VoidCode code a visitor ever sees, so it gets an assertion instead of a comment asking nicely.
+
+def test_the_demo_snippet_still_matches_the_catalogue() -> None:
+    """The contract the website renders is `stable-softmax`'s real template.
+
+    WHAT THIS USED TO READ. `apps/web/src/lib/mock-data.ts`'s `defaultCode`, compared
+    character-for-character with `content/problems/stable-softmax.yaml`. The reasoning was right and
+    still is: the demo renders before any request resolves so it cannot be fetched, it is the first
+    VoidCode code a visitor ever sees, and drift means the learner sees one thing and the grader
+    another.
+
+    THE CLAIM IS KEPT RATHER THAN DROPPED, which was the open question when the website was split
+    out. Dropping it would have meant either a demo that quietly stops being real code, or landing
+    copy implying it is a catalogue problem when nothing checks that. Keeping it costs one exported
+    file: this asserts the contract matches the catalogue, and `voidcode-web`'s own check asserts
+    its page matches the contract.
     """
+    import json
+
     from features.content import load_raw
 
-    match = _DEFAULT_CODE.search(MOCK_DATA.read_text(encoding="utf-8"))
-    assert match, "defaultCode is no longer a plain template literal; this check reads nothing"
-    template = load_raw()["stable-softmax"]["code_templates"][0]["template_code"]
-    assert match.group(1) == template, (
-        "apps/web's defaultCode has drifted from content/problems/stable-softmax.yaml. The learner "
-        "sees one thing and the grader another.")
+    assert DEMO_CONTRACT.exists(), (
+        "contracts/demo-snippet.json is missing — run `python scripts/export_demo_snippet.py`"
+    )
+    published = json.loads(DEMO_CONTRACT.read_text(encoding="utf-8"))
+    template = load_raw()[published["slug"]]["code_templates"][0]["template_code"]
+
+    assert published["template_code"] == template, (
+        "contracts/demo-snippet.json has drifted from "
+        f"content/problems/{published['slug']}.yaml. Run `python scripts/export_demo_snippet.py` "
+        "and commit it — then re-sync the website, or its demo keeps showing the old template."
+    )
+    # A positive control: an empty template would satisfy the equality above against an empty
+    # contract, and the demo would render nothing while this test passed.
+    assert len(template.strip()) > 40, f"{published['slug']}'s template is suspiciously short"

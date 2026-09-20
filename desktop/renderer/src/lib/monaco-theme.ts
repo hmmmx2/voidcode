@@ -36,7 +36,7 @@
  * is still the most recessive rule in the table, which is the relationship that
  * matters and the one `monaco-theme.test.ts` asserts.
  *
- * THE MARKETING COPY IN `apps/web` STAYS GREYSCALE, deliberately. That page's
+ * THE MARKETING COPY IN `voidcode-web` STAYS GREYSCALE, deliberately. That page's
  * identity is monochrome and its demo is a static placeholder that must not
  * flash when Monaco swaps in, so its own theme and `CodeStatic.tsx` keep the old
  * table and keep mirroring each other. This file no longer mirrors them, and the

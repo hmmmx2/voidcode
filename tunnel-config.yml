@@ -6,8 +6,8 @@
 # THE FRONTEND INGRESS RULE IS GONE. This file used to route a main domain to a
 # Next.js app on :3000 and an `api` subdomain to the API. The logged-in UI is the
 # desktop application now — installed, not visited — so there is no front end to
-# route to, and the website that remains is deployed as `voidcode-web` in
-# deploy/base/ rather than tunnelled from a laptop.
+# route to, and the website that remains is a separate repository deployed on
+# Vercel rather than tunnelled from a laptop or served from this cluster.
 #
 # What is left mirrors the real deployment on purpose: deploy/base/ingress.yaml
 # publishes `api.<domain>` and nothing else, so a tunnel that does the same is a

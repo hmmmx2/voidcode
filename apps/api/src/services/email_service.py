@@ -84,7 +84,7 @@ def password_reset_code_email(to: str, code: str) -> Email:
 #
 # Nothing called it -- no route, no service, no task -- so no account has ever received it. And the
 # link it built, `{APP_BASE_URL}/verify-email?token=...`, pointed at a page that DOES NOT EXIST:
-# there is no `verify-email` route under `apps/web/src/app`. Had anything ever sent it, the person
+# there is no `verify-email` route on the website (`voidcode-web`). Had anything ever sent it, the person
 # would have followed a link to a 404 and been left with an address the application still called
 # unverified.
 #

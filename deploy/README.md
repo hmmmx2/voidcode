@@ -9,22 +9,23 @@ available when they were written and **no cluster was reachable**, so `kubectl a
 --dry-run=client` validated nothing — it needs a live API server for its OpenAPI schema and fails
 with `unable to recognize` without one.
 
-## The images ARE verified
+## There is no web tier here any more
 
-Unlike the manifests. `voidcode-web:test` was built and run:
+A table stood here recording what was measured about the `voidcode-web:test` image: its size, its
+non-root uid, all seven routes returning 200, and the finding that made it worth writing down — the
+Docker `HEALTHCHECK` probed `/login`, deleted with the logged-in UI, so the container reported
+`unhealthy` from its first check while serving every page correctly. The same path was in all three
+Kubernetes probes, where a startup probe that never succeeds means the pod restarts forever.
 
-| check | result |
-|---|---|
-| size | 344 MB (`output: "standalone"`; without it the image needs the whole `node_modules`) |
-| runs as | uid 1000, non-root |
-| `.env` in the filesystem | none — the guard the release workflow enforces, run by hand |
-| all seven routes — `/`, `/pricing`, `/download`, `/terms`, `/privacy`, `/purchase/success`, `/purchase/cancelled` | 200, real content. Re-measured after `/pricing` and `/download` were split out of the overview; the first run predated both |
-| Docker `HEALTHCHECK` | **`unhealthy`, and that was the finding.** It probed `/login`, deleted with the logged-in UI, so the container reported unhealthy from its first check while serving every page correctly. Fixed to `/`. The same path was in all three Kubernetes probes below, where a startup probe that never succeeds means the pod restarts forever — so the site would never have served a request. Now checked by `tests/test_marketing_pages.py` and `apps/api/tests/test_deploy_manifests.py` |
-| errors in logs | 0 |
+**The website is a separate repository now, `voidcode-web`, deployed on Vercel.** Its Dockerfile,
+its Deployment, its ingress rule and its image are all deleted — the Dockerfile could not have built
+outside the monorepo anyway, since it copied `pnpm-lock.yaml` to install a workspace.
 
-That table used to list `/login`, `/register` and the two password-reset routes, and a note about
-`AUTH_TRUST_HOST=true` without which every route 307'd with `UntrustedHost`. None of it applies: the
-web tier has no auth, no session and no API calls. Sign-in is in the desktop app.
+The finding is kept because the lesson outlives its subject: a health check on a route that does not
+exist fails forever while the application is fine, and nothing but the orchestrator's opinion says
+so. `apps/api/tests/test_deploy_manifests.py` still checks the API's own probes, and now also
+asserts that no manifest names `voidcode-web` again — because an ingress rule pointing at a deleted
+Service is a 503 that kustomize will render without complaint.
 
 What *is* verified about the manifests:
 
@@ -48,7 +49,7 @@ git. Create them out of band:
 kubectl -n voidcode create secret generic voidcode-api-secrets --from-env-file=apps/api/.env
 ```
 
-One secret, for the API. There is no `voidcode-web-secrets` any more: the web tier is static pages
+One secret, for the API. There is no `voidcode-web-secrets` any more, and no web tier at all: the website is a separate repository on Vercel, holding no session, no database and no credential. It was static pages
 that sign nothing and hold no session.
 
 This paragraph used to say what to add "when Google and Microsoft sign-in lands". It landed, and
