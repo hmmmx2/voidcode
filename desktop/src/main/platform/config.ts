@@ -26,7 +26,6 @@ import { app } from "electron";
 
 export interface BuildConfig {
   apiUrl: string | null;
-  siteUrl: string | null;
   allowOverride: boolean;
 }
 
@@ -39,7 +38,6 @@ export function buildConfig(): BuildConfig {
   const baked = typeof __VOIDCODE_BUILD__ === "undefined" ? undefined : __VOIDCODE_BUILD__;
   return {
     apiUrl: baked?.apiUrl ?? null,
-    siteUrl: baked?.siteUrl ?? null,
     allowOverride: baked?.allowOverride === true,
   };
 }
@@ -94,19 +92,24 @@ export function apiBase(): string | null {
   return candidate.replace(/\/+$/, "");
 }
 
-/** The public website — download page, legal pages, payment return pages — or `null`. */
-export function siteUrl(): string | null {
-  const fromEnv = overridesAllowed() ? process.env.VOIDCODE_SITE_URL : undefined;
-  const candidate = (fromEnv !== undefined && fromEnv !== "" ? fromEnv : null) ?? buildConfig().siteUrl;
-  if (candidate === null) return null;
-  try {
-    return new URL(candidate).protocol === "https:" || overridesAllowed()
-      ? candidate.replace(/\/+$/, "")
-      : null;
-  } catch {
-    return null;
-  }
-}
+/*
+ * `siteUrl()` STOOD HERE AND HAD NO CALLERS, which is the second time this exact thing has happened
+ * in this file — the note below it is the first.
+ *
+ * It read `VOIDCODE_SITE_URL` or the baked `VOIDCODE_BUILD_SITE_URL`, validated the scheme, and
+ * returned an address nothing asked for. `release-config.test.ts` described it as "the public site,
+ * for the legal links and the payment return pages", and neither is true of this application: the
+ * legal documents are rendered in-app from `renderer/src/components/Legal`, and credits are bought
+ * against the API through `/account/credits`. The only `shell.openExternal` calls in the codebase
+ * are for research PDFs and the preview webview. The app never links to the website at all.
+ *
+ * It was found while writing down which repository variables the owner has to configure for a first
+ * release — one of four, and the one that would have done nothing. That is the point: the variable
+ * looked like a control, the workflow passed it, the build baked it, and a test asserted both ends
+ * agreed. Everything agreed about a value no code could act on.
+ *
+ * If the app ever does need to link to the site, add it back with its caller in the same commit.
+ */
 
 /*
  * `oauthClientId()` STOOD HERE, with a long note on why a client id is public and why `null` was a

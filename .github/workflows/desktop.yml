@@ -386,7 +386,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           VOIDCODE_BUILD_API_URL: ${{ vars.VOIDCODE_BUILD_API_URL }}
-          VOIDCODE_BUILD_SITE_URL: ${{ vars.VOIDCODE_BUILD_SITE_URL }}
 
       # The signature the hook made, checked by something other than the hook. `codesign --verify`
       # walks the nested helpers with `--deep --strict`, so a bundle whose outer app is signed and

@@ -41,9 +41,21 @@ const readRepo = (relative: string): string =>
  * catches this now is not a stronger pin here — it is the rule the repository already holds
  * elsewhere, that a knob nothing reads is worse than no knob, applied on removal.
  */
+/*
+ * AND IT HAPPENED A SECOND TIME, to the entry that was removed from this table alongside this note.
+ *
+ * `VOIDCODE_BUILD_SITE_URL` sat here described as "the public site, for the legal links and the
+ * payment return pages". The workflow passed it, `electron.vite.config.ts` baked it,
+ * `platform/config.ts` validated it in `siteUrl()`, and the assertions below confirmed both ends
+ * agreed — while `siteUrl()` had no callers at all, and neither purpose in that description was
+ * this application's: the legal documents render in-app and credits are bought against the API.
+ *
+ * The docstring above was already the right warning and the table was already the thing it warned
+ * about. What finally caught it was not a test: it was writing down, for a person, the list of
+ * variables they had to go and set, and asking of each one what would break if they did not.
+ */
 const BUILD_VARS = {
   VOIDCODE_BUILD_API_URL: "where the app sends a session; null disables every account feature",
-  VOIDCODE_BUILD_SITE_URL: "the public site, for the legal links and the payment return pages",
 } as const;
 
 interface Step {

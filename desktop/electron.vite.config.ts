@@ -25,7 +25,6 @@ import path from "node:path";
  */
 const BUILD = {
   apiUrl: process.env.VOIDCODE_BUILD_API_URL ?? null,
-  siteUrl: process.env.VOIDCODE_BUILD_SITE_URL ?? null,
   allowOverride: process.env.VOIDCODE_BUILD_ALLOW_OVERRIDE === "1",
 };
 
