@@ -2134,3 +2134,44 @@ Check-run ANNOTATIONS are served by the API. So every one of those steps now als
 lines as `::error::` — the pytest `FAILED`/`ERROR` lines, the collection-error line, the coverage
 verdict, and the smoke's own `[smoke] FAIL`. The summary stays for the reader who is in the browser;
 the annotations are for the reader who is not.
+
+## An annotation that carried the verdict and cut off the reason
+
+`CI` went green. `desktop` did not, and the two things it reported are worth separating.
+
+**The `.native` fix worked.** Windows `npm test` passed for the first time. What it exposed is that
+the annotation plumbing added for exactly this moment was still one layer short: the smoke prints
+`[smoke] FAILED` on its own line and every reason beneath it as `  - <reason>`, and the emitter
+matched `^\[smoke\] (FAIL|ERROR)`. So the one annotation that came back read, in full,
+`[smoke] FAILED`. A verdict with the reason cut off — the same mistake as the browser-only step
+summary, committed one layer in, in the fix for it. It now emits from the header to the end.
+
+The accounts job had the same shape and a different cause: `Accounts end to end` SUCCEEDED (the
+script exits 0 on a clean skip, by design) and `A skip is a failure here` failed, so the harness
+either skipped or printed neither verdict — and which of those it was is in the `[account]` lines
+that were going only to the step summary. They are annotations now too.
+
+**Ruled out without a runner:** a venv built from `verify-accounts`'s pip list verbatim imports
+`src.main` and builds the app object. So the accounts failure is not another `openai` — not a gap in
+`main`'s import closure.
+
+### A flake removed by construction rather than chased
+
+`memory-build.test.ts > notices a change that kept the same size` failed on the Linux runner, having
+passed on the previous commit and on every developer machine. Not caused by the change it arrived
+with: that test passes `projectRoot` directly and never binds a workspace root, so `bindRoot` is not
+in its path.
+
+`index.ts`'s cheap gate skips a file whose mtime AND size both match, without hashing it. The test
+writes `x = 1` then `x = 2` — six bytes either way — so the whole thing rests on two writes landing
+on different mtimes, which nothing guarantees. When they do not, the file is skipped, the embedder is
+never called, and the failure reads `expected "spy" to be called at least once`: the symptom, and not
+one word of the cause.
+
+Not reproduced locally — the window is a fraction of a millisecond and depends on the filesystem's
+timestamp granularity — so the mtime is bumped explicitly instead. The assertion still means what it
+meant: getting past the gate was never what was under test, the hash deciding to re-embed is, and
+mutating the gate to size-only still fails it. Checked.
+
+A test that depends on wall-clock behaviour nothing promises is a test that will fail on someone
+else's machine and blame the code.

@@ -173,6 +173,25 @@ describe("re-indexing", () => {
 
     embedAll.mockClear();
     await write("a.py", "x = 2\n");
+
+    // THE MTIME IS BUMPED EXPLICITLY, and the race it removes is why. `index.ts`'s cheap gate
+    // skips a file whose mtime AND size both match, WITHOUT hashing it — and these two writes are
+    // the same six bytes, so the whole test rests on them landing on different mtimes. Nothing
+    // guarantees that: two writes milliseconds apart can share a timestamp, and then the file is
+    // skipped, `embedAll` is never called, and this fails with "expected spy to be called at least
+    // once" — which names the symptom and not one word of the cause. It failed exactly that way on
+    // the Linux runner, having passed on the previous commit and on every developer machine.
+    //
+    // Not reproduced locally: the window is a fraction of a millisecond and depends on the
+    // filesystem's timestamp granularity. So it is removed by construction rather than chased.
+    //
+    // The assertion still means what it meant. Getting past the gate is not what is under test —
+    // the HASH deciding to re-embed is, and a size-only gate would still skip this file and still
+    // fail. `does NOT re-embed a file git merely touched` above covers the other half of the
+    // matrix: mtime differs, hash identical, no re-embed.
+    const later = new Date(Date.now() + 2_000);
+    await fs.utimes(path.join(root, "a.py"), later, later);
+
     await buildIndex({ sender, projectRoot: root });
 
     expect(embedAll).toHaveBeenCalled();

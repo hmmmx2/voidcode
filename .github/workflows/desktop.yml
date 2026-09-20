@@ -217,9 +217,13 @@ jobs:
           # serves. The step summary above is browser-only, and the Linux smoke failure that
           # prompted all of this could not be read from outside at all.
           grep "\[smoke\]" smoke.log || true
+          # FROM THE HEADER TO THE END, not just the header. `[smoke] FAILED` is printed on its
+          # own line and every reason follows it as `  - <reason>` — so the first version of this
+          # emitted one annotation reading exactly "[smoke] FAILED", which is a verdict with the
+          # reason cut off. Same mistake as the step summary, one layer in.
           while IFS= read -r line; do
             [ -n "$line" ] && echo "::error::$line"
-          done < <(grep -E "^\[smoke\] (FAIL|ERROR)" smoke.log | head -10)
+          done < <(sed -n '/^\[smoke\] FAILED/,$p' smoke.log | head -25)
 
   verify-accounts:
     # Registration, sign-in and reset-by-code against the REAL API and a real Postgres, driven
@@ -306,13 +310,25 @@ jobs:
         # a green run that tested nothing is worse than a red one, because nobody looks at it.
         # Every dependency is installed above, so "skipped" means this job is broken.
         run: |
+          # EVERY `[account]` LINE AS AN ANNOTATION, not just the one-line verdict. The step
+          # summary below is browser-only and served by no API, so "did not report PASS" was the
+          # entire readable output of two failed runs — a verdict with no reason attached. Check-run
+          # annotations ARE served, so the harness's own trace goes there too. Capped at 20 because
+          # GitHub keeps the first N per check run and the useful lines come first.
+          emit_account_lines() {
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::$line"
+            done < <(grep "\[account\]" smoke-account.log | head -20)
+          }
           if grep -q "\[account\] SKIP" smoke-account.log; then
             echo "::error::smoke:account skipped in a job that provides every dependency it needs."
+            emit_account_lines
             grep "\[account\]" smoke-account.log
             exit 1
           fi
           if ! grep -q "\[account\] PASS" smoke-account.log; then
             echo "::error::smoke:account did not report PASS."
+            emit_account_lines
             # ALSO INTO THE STEP SUMMARY, because job logs need admin rights to download through the
             # API. The first time this job failed, all that could be read from outside was this
             # step's one-line annotation; the reason was in a log nobody could fetch.
