@@ -410,6 +410,11 @@ const profile = mkdtempSync(join(tmpdir(), "voidcode-account-"));
 const childEnv = { ...process.env, VOIDCODE_API_URL: `http://127.0.0.1:${API_PORT}/v1` };
 delete childEnv.VOIDCODE_DEV_SESSION_TOKEN;
 
+// Logging only — makes main print `[app] safeStorage: backend=… available=…` at startup, which is
+// the one line that tells whether the job's keyring took. A DEDICATED flag, not the removed
+// password-store one whose deletion silently took the diagnostic with it last run.
+childEnv.VOIDCODE_DIAG_SAFESTORAGE = "1";
+
 /**
  * NO `--password-store=basic` ANY MORE, and the diagnostic is why.
  *

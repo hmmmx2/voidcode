@@ -354,14 +354,18 @@ jobs:
           # `--auto-servernum` gives that inner shell its own X display.
           code=0
           dbus-run-session -- bash -c '
-            # `--daemonize`, WITHOUT WHICH THE DAEMON DOES NOT PERSIST. The first version piped an
-            # empty password to `gnome-keyring-daemon --unlock` with no `--daemonize`, so it ran in
-            # the foreground attached to the pipe and exited the moment `echo` closed it — leaving no
-            # Secret Service on the bus, so Electron still found `basic_text` and reported it
-            # unavailable. With `--daemonize` it forks and keeps owning org.freedesktop.secrets on
-            # the session bus dbus-run-session created, which is what libsecret talks to. Empty
-            # password because the CI keyring protects nothing.
-            printf "\n" | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null 2>&1 || true
+            # `eval "$(…)"`, NOT `>/dev/null`. gnome-keyring-daemon prints the env vars that connect
+            # a client to it — GNOME_KEYRING_CONTROL and SSH_AUTH_SOCK — and `--daemonize` alone,
+            # with its output discarded, started the daemon but left the session unable to reach it,
+            # so Electron still reported `basic_text available=false`. Capturing and exporting those
+            # vars is what wires the collection unlock through. Empty password (`printf "\n"`)
+            # because the CI keyring protects nothing; `--unlock` creates and unlocks the default
+            # login keyring, which safeStorage writes into.
+            #
+            # The `[app] safeStorage: backend=… available=…` line (VOIDCODE_DIAG_SAFESTORAGE, set by
+            # the harness) reports whether this worked; if it still says basic_text, this recipe is
+            # wrong and the next step is a real keyring debug rather than another blind tweak.
+            eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets --daemonize 2>/dev/null)" || true
             xvfb-run --auto-servernum npm run smoke:account
           ' 2>&1 | tee smoke-account.log || code=$?
           echo "harness exit: $code" | tee -a smoke-account.log

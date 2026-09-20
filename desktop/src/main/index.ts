@@ -116,7 +116,16 @@ async function onReady(): Promise<void> {
    * captures this process's stdout into its failure output. Linux only for the backend name —
    * `getSelectedStorageBackend` does not exist on Windows or macOS.
    */
-  if (process.env.VOIDCODE_SMOKE === "1" || process.env.VOIDCODE_PASSWORD_STORE_BASIC === "1") {
+  if (
+    process.env.VOIDCODE_SMOKE === "1" ||
+    process.env.VOIDCODE_PASSWORD_STORE_BASIC === "1" ||
+    process.env.VOIDCODE_DIAG_SAFESTORAGE === "1"
+  ) {
+    // `VOIDCODE_DIAG_SAFESTORAGE` is a THIRD trigger, and it exists because I blinded this once.
+    // The account harness used to set `VOIDCODE_PASSWORD_STORE_BASIC`, which also fired this line —
+    // then I removed that var (it forced the wrong backend) and the diagnostic silently went with
+    // it, so a run I needed to read said nothing. A logging switch must not share a gate with a
+    // behaviour switch; this one does only logging.
     const { safeStorage } = await import("electron");
     const backend =
       process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : "n/a";
