@@ -38,6 +38,12 @@ beforeAll(async () => {
   // A bundle shaped like a real export: a root page, static routes, and two dynamic segments
   // whose only prerendered child is the shell.
   root = await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-bundle-"));
+  // `realpath`, and the containment tests below are the reason. `inside()` compares a path the
+  // handler resolved against this root with `startsWith`; a raw root on a runner whose temp
+  // directory is reached through a symlink (macOS `/var` → `/private/var`) or an 8.3 alias
+  // (Windows `RUNNER~1` → `runneradmin`) makes that comparison false for a file that is plainly
+  // inside the bundle. It read as "the traversal escaped" on two CI runners while nothing had.
+  root = await fs.realpath(root);
   const write = async (relative: string, body: string) => {
     await fs.mkdir(path.join(root, path.dirname(relative)), { recursive: true });
     await fs.writeFile(path.join(root, relative), body);

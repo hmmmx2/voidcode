@@ -13,5 +13,18 @@
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
 
+# PINNED EXACTLY, unlike everything else in this file, and `.github/workflows/ci.yml` carries the
+# same pin. `ruff.toml` selects the whole `RUF` family, so a new ruff release adds rules to CI with
+# no commit — and a floating version means a green local run and a red CI run are answers from two
+# different linters. That happened: 0.16 promoted RUF036 out of preview against a machine holding
+# 0.15.20. Raise this and the workflow together, in the commit that fixes what the bump finds.
+ruff==0.16.8
+
+# Test-only, and for one purpose: `test_requirements_cover_the_api.py` parses
+# `.github/workflows/*.yml` to check that a job which runs the API installs what the API imports.
+# It reads the workflow as YAML rather than as text because "does THIS job install it" is a question
+# about one job's steps, and a text search over the file answers it for the wrong job.
+pyyaml>=6.0
+
 # httpx is already a runtime dependency; ASGITransport comes from it, so the
 # suite drives the app in-process without binding a port.

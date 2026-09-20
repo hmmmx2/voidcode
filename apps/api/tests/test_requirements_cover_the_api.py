@@ -137,3 +137,107 @@ def test_the_parser_reads_every_line_shape_the_files_use(tmp_path, monkeypatch):
     names = declared("requirements.gpu.txt")
     assert {"httpx", "fastapi", "uvicorn", "argon2-cffi", "email-validator"} <= names
     assert not any("[" in n or "=" in n or n != n.lower() for n in names)
+
+
+# ── The hand-picked lists, which are what CI actually installs ───────────────
+
+#: Every workflow with a job that either runs this suite or starts the app.
+_WORKFLOWS = (".github/workflows/ci.yml", ".github/workflows/desktop.yml")
+
+#: What a step's `run:` contains when its job needs the auth router to import. Both shapes matter:
+#: one runs these tests, the other spawns `src.main:app` through the account harness.
+_RUNS_THE_API = ("pytest apps/api/tests", "smoke:account")
+
+REPO = API.parents[1]
+
+
+def _pip_arguments(run: str) -> str:
+    """The packages a `run:` block actually asks pip for — comments removed, continuations joined.
+
+    COMMENTS ARE STRIPPED FIRST, AND THAT IS THE WHOLE POINT OF THIS FUNCTION. The first version of
+    the test below searched the raw `run:` text, and `ci.yml`'s install step carries a paragraph
+    explaining which package had been missing — so the guard was satisfied by the comment that
+    describes the bug rather than by the fix. A guard whose subject is prose about itself is the
+    trap `docs/` records under "the comment explaining a banned pattern IS the banned pattern".
+    """
+    uncommented = "\n".join(line.split("#", 1)[0] for line in run.splitlines())
+    # `pip install a \` + newline + `  b` is one command; join before matching.
+    joined = re.sub(r"\\s*\n\s*", " ", uncommented)
+    return "\n".join(line for line in joined.splitlines() if "pip install" in line)
+
+
+def _api_jobs() -> list[tuple[str, str, str]]:
+    """(workflow, job name, the pip arguments of every step) for jobs that exercise the API.
+
+    yaml rather than a text search over the file, because "does this job install X" is a question
+    about a job, and two jobs in one file have two different lists.
+    """
+    import yaml
+
+    found = []
+    for relative in _WORKFLOWS:
+        document = yaml.safe_load((REPO / relative).read_text(encoding="utf-8"))
+        for name, job in (document.get("jobs") or {}).items():
+            runs = [
+                step["run"]
+                for step in (job.get("steps") or [])
+                if isinstance(step, dict) and isinstance(step.get("run"), str)
+            ]
+            if any(marker in run for run in runs for marker in _RUNS_THE_API):
+                found.append((relative, name, "\n".join(_pip_arguments(run) for run in runs)))
+    return found
+
+
+def test_a_job_that_runs_the_api_was_found_in_each_workflow():
+    """The floor. Everything below is vacuous if the markers stop matching anything, and a renamed
+    script or a moved job is exactly how that happens quietly."""
+    jobs = _api_jobs()
+    assert jobs, f"no job in {_WORKFLOWS} runs any of {_RUNS_THE_API}; the guard below checks nothing"
+    covered = {relative for relative, _, _ in jobs}
+    assert covered == set(_WORKFLOWS), (
+        f"only {sorted(covered)} has a job matching {_RUNS_THE_API}; expected all of {_WORKFLOWS}"
+    )
+
+
+def test_the_workflows_install_what_the_api_needs():
+    """THE GAP THIS FILE'S OWN DOCSTRING NAMES, closed.
+
+    The three requirements files are checked above, and CI installs none of them — it installs a
+    hand-picked list, which is stated at the top of this file as the reason the omission went
+    unnoticed the first time. It then went unnoticed a second time: `prometheus-client` was added to
+    all three files and to `desktop.yml`'s account job and not to `ci.yml`'s, so
+    `test_backend_registry.py` and `test_monitoring_dashboard.py` refused to run rather than pass
+    vacuously — correct of them — and the job failed with an annotation that named no package.
+
+    Reading the workflow rather than importing is the same choice the rest of this file makes: this
+    has to pass in an environment that has none of these installed.
+    """
+    for relative, job, installs in _api_jobs():
+        # A job that installs a whole requirements file is asking for the declared set, which the
+        # tests above already hold. That is the better shape and is not failed for.
+        if re.search(r"pip install[^\n]*-r[^\n]*apps/api/requirements\.txt", installs):
+            continue
+        missing = [
+            dist
+            for dist in sorted(ACCOUNT_DEPENDENCIES)
+            if not re.search(rf"(?<![A-Za-z0-9._-]){re.escape(dist)}(?![A-Za-z0-9._-])", installs)
+        ]
+        assert not missing, (
+            f"{relative} job {job!r} runs the API but never installs {missing}. The auth router "
+            f"cannot import without them, and the failure reads as a broken test rather than a "
+            f"missing package. What it does install:\n{installs}"
+        )
+
+
+def test_the_pip_argument_reader_ignores_comments_and_follows_continuations():
+    """`_pip_arguments` is the only reason the test above is not satisfied by its own documentation.
+
+    Positive control and negative control in one place, because the negative is the one that failed:
+    a package named ONLY in a comment must not count, and a package on a continuation line must.
+    """
+    assert "argon2-cffi" not in _pip_arguments("pip install fastapi\n# argon2-cffi goes here")
+    assert "argon2-cffi" in _pip_arguments("pip install fastapi \\n  argon2-cffi email-validator")
+    # A comment on the same line as a real install does not hide the packages before it.
+    assert "fastapi" in _pip_arguments("pip install fastapi  # the web framework")
+    # And a line that is not a pip install contributes nothing, however much it names.
+    assert _pip_arguments("pytest apps/api/tests -v  # needs prometheus-client") == ""

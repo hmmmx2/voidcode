@@ -169,12 +169,51 @@ jobs:
       # The runtime half of the exit criterion. Needs a display on Linux, hence
       # xvfb; the assertion is that a live Study window exposes no fs/pty/lsp
       # namespace and that mode:get agrees with argv.
+      # THE OUTPUT IS TEED AND SUMMARISED, and that is not decoration. Job logs need admin
+      # rights to download through the API, so when this step failed on the Linux runner the
+      # only thing readable from outside was the step's name and "exit code 1" — no `[smoke]`
+      # line, no FAIL reason, nothing to fix. The smoke prints every check it ran and a final
+      # `FAIL — <reasons>`; putting that in the step summary is what makes the next failure
+      # diagnosable without the log. `verify-accounts` already does this for the same reason.
+      #
+      # `tee` also matters because the smoke's own exit code is not trustworthy on its own:
+      # the single-instance lock quits a concurrent run before any check executes, and it
+      # exits 0 having tested nothing. The `[smoke]` lines are the evidence; the code is not.
+      #
+      # `shell: bash` ON ALL THREE, which is a change on Windows and macOS where these steps
+      # previously took the runner default. It is deliberate: in PowerShell, redirecting a
+      # native command's stderr with `2>&1` wraps each line in an ErrorRecord and can report
+      # failure for a process that exited 0, so the same line would mean different things on
+      # different runners. bash is present on every GitHub-hosted runner.
       - name: Smoke — Study window privilege boundary
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npm run smoke
+        shell: bash
+        run: xvfb-run --auto-servernum npm run smoke 2>&1 | tee smoke.log
       - name: Smoke — Study window privilege boundary
         if: runner.os != 'Linux'
-        run: npm run smoke
+        shell: bash
+        run: npm run smoke 2>&1 | tee smoke.log
+
+      - name: What the smoke said
+        # `always()`, because the interesting case is the one where the step above failed.
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f smoke.log ]; then
+            echo "no smoke.log — the step above did not get as far as running it"
+            exit 0
+          fi
+          {
+            echo "### smoke (${{ matrix.os }})"
+            echo ""
+            echo '```'
+            grep "\[smoke\]" smoke.log || echo "(the smoke printed no [smoke] line at all — it did not reach its first check)"
+            echo ""
+            echo "--- last 60 lines ---"
+            tail -60 smoke.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep "\[smoke\]" smoke.log || true
 
   verify-accounts:
     # Registration, sign-in and reset-by-code against the REAL API and a real Postgres, driven

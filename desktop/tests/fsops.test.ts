@@ -47,6 +47,13 @@ beforeEach(async () => {
   __resetWorkspaceRoots();
   sender = fakeSender();
   root = await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-fsops-"));
+  // `realpath`, for the reason `diffs.test.ts` already gives: macOS hands back `/var/...` where the
+  // real path is `/private/var/...`, and the Windows runner's `runneradmin` home has the 8.3 alias
+  // `RUNNER~1`. Everything under test resolves before it acts, so a raw fixture root is a state
+  // production cannot reach — the delete assertion below compares against what `trashItem` was
+  // actually handed, which is the resolved path. This is where it failed on two of the three CI
+  // runners and on neither developer machine.
+  root = await fs.realpath(root);
   __setProjectRoot(sender, root);
   trashItem.mockReset();
   trashItem.mockResolvedValue(undefined);

@@ -19,6 +19,7 @@
  * from a dead window resolves to `undefined` rather than to whatever window happens
  * to occupy that slot next. `undefined` means deny, exactly as it does for mode.
  */
+import fs from "node:fs";
 import { dialog } from "electron";
 import type { WebContents } from "electron";
 import { resolveWithin, resolveWithinAllowingNew } from "./paths.js";
@@ -34,6 +35,43 @@ export class NoWorkspaceError extends Error {
 }
 
 /**
+ * The root as the filesystem spells it, which is the only spelling that can be compared with one.
+ *
+ * EVERY PATH THE USER SEES WAS COMPUTED AGAINST THE WRONG SPELLING UNTIL THIS EXISTED. The root was
+ * stored exactly as the native dialog returned it; containment was safe because `resolveWithin`
+ * canonicalises both sides on every call, and `fsops.ts`'s `realRootFor` says in as many words why
+ * ("on Windows a stored `C:\PROGRA~1` and a resolved `C:\Program Files` are the same directory with
+ * different strings"). What nothing canonicalised was the root used for DISPLAY: `path.relative`
+ * between a raw root and a canonical absolute walks up out of one tree and back down into the
+ * other, so `main.py` was reported as `../../../../../private/var/folders/…/main.py`. It is not
+ * cosmetic — `displayPath` is the key `forgetFile` prunes the memory index by, the string the
+ * approval window shows before a write is authorised, and what the agent's diff panel renders.
+ *
+ * It needed a symlinked or short-named parent to show, which is why it survived every local run:
+ * this machine's `os.tmpdir()` is already canonical, and a project under `/Users/me/…` or
+ * `C:\Users\me\…` is too. The CI runners are not — macOS resolves `/var/folders` to
+ * `/private/var/folders`, and the Windows runner's `runneradmin` home has the 8.3 alias
+ * `RUNNER~1`. Eleven tests failed there and none here.
+ *
+ * Canonicalised HERE rather than at each reader, because a reader that forgot would be a silent
+ * reintroduction of exactly this bug, and there is no assertion that could notice one call site
+ * out of eight. Sync on purpose: binding happens once when a project is opened, `__setProjectRoot`
+ * is a sync seam, and making this async would make every caller of it async for one `stat`.
+ *
+ * A root that cannot be resolved is stored as given. That is the pre-existing behaviour and the
+ * right one — it is a directory the user just picked in a dialog, so the failure is a race
+ * (unmounted, renamed) and `resolveWithin` will refuse it on the next call with a real error,
+ * which is a better answer than throwing out of the dialog handler.
+ */
+function canonical(root: string): string {
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return root;
+  }
+}
+
+/**
  * Bind a root to a window and arrange for it to be forgotten when that window dies.
  *
  * The `destroyed` listener is registered per assignment rather than once per window
@@ -44,7 +82,7 @@ function bindRoot(sender: WebContents, root: string): void {
   // Captured now, not read in the callback: property access on a destroyed WebContents
   // throws, and an uncaught throw in main surfaces as a modal error dialog.
   const id = sender.id;
-  rootByWebContentsId.set(id, root);
+  rootByWebContentsId.set(id, canonical(root));
   sender.once("destroyed", () => {
     rootByWebContentsId.delete(id);
   });

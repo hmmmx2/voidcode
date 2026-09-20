@@ -63,6 +63,16 @@ jobs:
       # This file was not following the advice its own test suite gives.
       TEST_DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
       DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
+      # ALEMBIC READS THIS ONE AND NOTHING ELSE. `alembic/env.py` overrides `alembic.ini` from
+      # `DATABASE_URL_SYNC` — not from `DATABASE_URL` — so without this line the "Run migrations"
+      # step below silently used `alembic.ini`'s hardcoded
+      # `postgresql://alwin:alwin_dev@localhost:5433/alwin_tutor`. That happened to be this job's
+      # own service, so it worked, which is worse than failing: the job was one port number away
+      # from migrating something else and nothing would have said so. It is not hypothetical —
+      # running these same steps by hand with only `DATABASE_URL` set pointed `alembic upgrade
+      # head` at a developer's live database and applied a DROP TABLE to it. Sync driver, because
+      # alembic runs synchronously; the asyncpg URLs above are for the app and the test session.
+      DATABASE_URL_SYNC: postgresql://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
       # A skip is the right answer on a laptop with no Docker. It is the wrong answer HERE, where
       # Postgres is a declared service: "not reachable" is a broken job, not an absent dependency.
       # `conftest.py` raises at collection when this is set and nothing answers, so the run fails
@@ -83,11 +93,21 @@ jobs:
           # Not requirements.txt: it pins torch, which is ~2.5 GB and is not
           # needed by any router the tests exercise. The API test suite builds
           # its app from the routers directly and never imports `main`.
+          # `prometheus-client` IS REQUIRED AND WAS MISSING, and the suite already said so in
+          # writing. `tests/test_requirements_cover_the_api.py`'s docstring names this exact hole —
+          # "`/metrics` needs `prometheus-client` — and nothing noticed, because CI installs a
+          # hand-picked list rather than any of the three files" — and then guarded the three
+          # requirements files while the hand-picked list stayed hand-picked. Without it,
+          # `metrics.REGISTRY` is None and `test_backend_registry.py` and
+          # `test_monitoring_dashboard.py` refuse to run vacuously: they ERROR with "install it
+          # rather than skipping", which is the right behaviour and is what turned this job red.
+          # `test_the_workflows_install_what_the_api_needs` now derives this list's contents from
+          # the same table, so the two cannot drift again.
           pip install \
             "fastapi>=0.109.0" "uvicorn[standard]" "pydantic>=2.5.0" \
             "sqlalchemy[asyncio]>=2.0.0" asyncpg alembic psycopg2-binary \
             redis httpx python-dotenv \
-            argon2-cffi email-validator
+            argon2-cffi email-validator prometheus-client
           pip install -r apps/api/requirements-dev.txt
 
       - name: Run migrations
@@ -119,7 +139,15 @@ jobs:
       - name: Install
         # numpy and PyYAML only. `tests/` covers the memory guard, the packing
         # helper and the taxonomy loader — none of which needs Spark or torch.
-        run: pip install pytest pytest-asyncio pytest-cov ruff numpy pyyaml lightgbm scikit-learn
+        #
+        # RUFF IS PINNED, AND IT IS THE ONLY PIN HERE. It was unpinned, and `select = ["RUF"]` in
+        # ruff.toml takes the whole rule family — so a ruff release adds rules to this job without
+        # a commit touching the repository. That is exactly how this step first went red: 0.16
+        # promoted RUF036 out of preview, a developer machine had 0.15.20 and answered "All checks
+        # passed!", and the two were not running the same linter. `requirements-dev.txt` carries the
+        # same pin so a local run asks CI's question. Raise both together, deliberately, and fix
+        # what the new version finds in that commit.
+        run: pip install pytest pytest-asyncio pytest-cov "ruff==0.16.8" numpy pyyaml lightgbm scikit-learn
 
       - name: Validate the concept taxonomy
         # Its own CLI: acyclicity, referential integrity, cardinality bounds and

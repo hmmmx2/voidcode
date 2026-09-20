@@ -40,8 +40,12 @@ beforeEach(async () => {
   __resetWorkspaceRoots();
   alice = fakeSender();
   bob = fakeSender();
-  rootA = await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-ws-a-"));
-  rootB = await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-ws-b-"));
+  // CANONICAL, because `currentProjectRoot` is now canonical — see the last describe in this
+  // file. Without this the four `toBe(rootA)` assertions below compare a raw temp path with the
+  // realpath the module stores, and they fail on exactly the runners where the two differ
+  // (macOS `/var` → `/private/var`, Windows 8.3 aliases) while passing on a laptop.
+  rootA = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-ws-a-")));
+  rootB = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-ws-b-")));
   await fs.writeFile(path.join(rootA, "only-in-a.py"), "a", "utf8");
   await fs.writeFile(path.join(rootB, "only-in-b.py"), "b", "utf8");
 });
@@ -135,5 +139,53 @@ describe("confinement still holds per window", () => {
     __setProjectRoot(alice, rootA);
 
     await expect(readWorkspaceFile(alice, path.join(rootB, "only-in-b.py"))).rejects.toThrow();
+  });
+});
+
+describe("the root is stored as the filesystem spells it", () => {
+  /**
+   * THE BUG THIS PREVENTS WAS IN EVERY DISPLAYED PATH, and it hid because it needs a root whose
+   * string is not its own realpath. `openProjectViaDialog` stored `filePaths[0]` verbatim;
+   * containment was safe because `resolveWithin` canonicalises both sides on every call, so the
+   * only thing that went wrong was the part nothing canonicalised — `path.relative(rawRoot,
+   * canonicalAbsolute)`, which walks up out of one spelling of a directory and back down into the
+   * other. `main.py` was reported as `../../../../../private/var/folders/.../main.py`, and that
+   * string is the memory index's key, the approval dialog's subject line, and what the agent diff
+   * panel renders.
+   *
+   * Eleven tests caught it on the macOS and Windows CI runners and none on a developer machine,
+   * because `os.tmpdir()` is already canonical here and a project under `/Users/me` or
+   * `C:\Users\me` is too. This test asks the question directly instead, so it does not depend on
+   * which runner happens to have a symlinked temp directory.
+   */
+  it("canonicalises a root reached through a symlink", async (ctx) => {
+    const parent = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "voidcode-ws-link-")));
+    const real = path.join(parent, "real-project");
+    const viaLink = path.join(parent, "link-to-project");
+    await fs.mkdir(real);
+    try {
+      // "junction" on Windows, which — unlike a symlink there — needs no elevation and no
+      // Developer Mode, so this should run on all three runners. `paths.test.ts` records the
+      // elevation requirement for the symlink cases it needs.
+      await fs.symlink(real, viaLink, "junction");
+    } catch {
+      // `ctx.skip()` rather than `return`: a test that returns early reports as PASSED having
+      // asserted nothing, which is the shape of green that hides a missing check.
+      ctx.skip();
+      return;
+    }
+
+    __setProjectRoot(alice, viaLink);
+    expect(currentProjectRoot(alice)).toBe(real);
+    expect(currentProjectRoot(alice)).not.toBe(viaLink);
+  });
+
+  it("stores a root that cannot be resolved exactly as given", () => {
+    // A directory that is not there is a race — unmounted or renamed between the dialog and the
+    // bind — and `resolveWithin` refuses it on the next call with a real error. Throwing out of
+    // the bind instead would surface as a modal dialog on a path the user just picked.
+    const missing = path.join(rootA, "not-created");
+    __setProjectRoot(bob, missing);
+    expect(currentProjectRoot(bob)).toBe(missing);
   });
 });

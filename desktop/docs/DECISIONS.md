@@ -1934,3 +1934,83 @@ rename exists to remove. **The consequence, stated rather than glossed:** the pr
 this machine only. A fresh clone gets no such rule, so nothing in CI prevents a second copy of the
 brief under the old name from being committed there. A tracked guard would have to spell the name it
 is banning, which is the thing being removed — so this is a trade, not an oversight.
+
+## The first CI run that could be read, and the five things it found
+
+Six jobs failed on `e1e4f28`. Job logs need admin rights to download through the API, so all that
+could be read from outside was per-job check-run annotations — which for two jobs said nothing but
+`Process completed with exit code 1`. Each was reproduced locally before it was fixed; none of them
+could fail on a developer machine, and that is the through-line.
+
+### Every displayed path was computed against the wrong spelling of the root
+
+Eleven tests failed on macOS and Windows and none on Linux or locally. The root was stored exactly as
+the native dialog returned it. Containment was never at risk — `resolveWithin` calls `realpath` on
+both sides on every call, and `fsops.ts`'s `realRootFor` already documents the Windows short-name
+case — but `displayPathFor` took `path.relative(rawRoot, canonicalAbsolute)`, which walks up out of
+one spelling of a directory and back down into the other. `main.py` came out as
+`../../../../../private/var/folders/…/main.py`.
+
+That string is not cosmetic: it is the key `forgetFile` prunes the memory index by, the subject line
+the approval window shows before a write is authorised, and what the agent diff panel renders.
+
+Fixed in `bindRoot`, so every one of the eight readers gets a canonical root, rather than at each
+reader where one omission would silently restore the bug. Two of the eleven failures were the
+tests' own fault in the opposite direction — `fsops.test.ts` expected the raw path from a production
+path that correctly resolves, and `app-scheme.test.ts` built a `startsWith` containment predicate on
+a raw bundle root, so a file plainly inside it read as an escape.
+
+**HOW IT WAS REPRODUCED, which is the reusable part.** A directory junction plus `TMP`/`TEMP`/
+`TMPDIR` pointed at it gives a Windows machine a non-canonical `os.tmpdir()`, which is the macOS
+`/var` → `/private/var` and Windows `RUNNER~1` → `runneradmin` condition. It found the same eleven
+failures, plus a twelfth the annotations had truncated — and then four more in `workspace.test.ts`
+that the FIX caused, which would otherwise have been the next red run. `workspace.test.ts` now
+carries the invariant directly, through a junction, so it no longer depends on which runner has a
+symlinked temp directory.
+
+### A floating linter is a different linter
+
+`ruff check .` answered "All checks passed!" locally and exit 1 in CI. The job installed `ruff`
+unpinned and got 0.16.8; this machine had 0.15.20. 0.16 promoted RUF036 out of preview, and
+`ruff.toml` selects the whole `RUF` family — so a ruff release adds rules to CI with no commit
+touching the repository. Pinned in the workflow and in `requirements-dev.txt` together, so a local
+run asks CI's question. The finding itself was one line.
+
+### The hand-picked pip list, exactly as its own test predicted
+
+`test_requirements_cover_the_api.py` opens with: "`/metrics` needs `prometheus-client` — and nothing
+noticed, **because CI installs a hand-picked list rather than any of the three files**." It then
+guarded the three requirements files. The hand-picked list stayed hand-picked, `prometheus-client`
+went into all three files and into `desktop.yml`'s account job and not into `ci.yml`'s, and
+`test_backend_registry.py` and `test_monitoring_dashboard.py` refused to run vacuously — correctly —
+with an annotation that named no package.
+
+The guard now reads the workflows as YAML and asks whether a job that runs the API installs what the
+API imports. Its first version searched the raw `run:` text and was satisfied by the paragraph that
+explains the bug, which is the trap this repository already records as "the comment explaining a
+banned pattern IS the banned pattern". `_pip_arguments` strips comments, joins backslash
+continuations, and has a negative control asserting a package named only in a comment does not count.
+
+### Alembic does not read `DATABASE_URL`
+
+`alembic/env.py` overrides `alembic.ini` from `DATABASE_URL_SYNC` and nothing else. `ci.yml` set
+`DATABASE_URL` and `TEST_DATABASE_URL` and not that one, so the migration step fell back to
+`alembic.ini`'s hardcoded `postgresql://alwin:alwin_dev@localhost:5433/alwin_tutor` — which happened
+to be the job's own service. It worked, which is worse than failing: the job was one port number
+away from migrating something else and nothing would have said so.
+
+Not hypothetical. Running those same steps by hand with only `DATABASE_URL` set pointed
+`alembic upgrade head` at the live development database and applied this branch's DROP TABLE to it.
+`DATABASE_URL_SYNC` is now set explicitly in the job, with that sentence next to it.
+
+### A failure nobody can read is a failure nobody can fix
+
+The Linux smoke step failed with no annotation beyond its exit code, and it is the one failure here
+that was NOT diagnosed: reproducing it needs Linux Electron, and the runner's log is not fetchable.
+So the step was changed rather than guessed at — it tees its output and a following `always()` step
+writes every `[smoke]` line and the last sixty lines into `$GITHUB_STEP_SUMMARY`, which is readable
+without admin rights. `verify-accounts` already did this for the same reason.
+
+`shell: bash` on all three platforms went with it. In PowerShell, redirecting a native command's
+stderr with `2>&1` wraps each line in an ErrorRecord and can report failure for a process that
+exited 0 — so the same line would have meant different things on different runners.

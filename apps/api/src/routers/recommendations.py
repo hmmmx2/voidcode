@@ -54,7 +54,7 @@ router = APIRouter(prefix="/v1/recommendations", tags=["recommendations"])
 #: Cached across requests. Loading is the only expensive step and the file does not change while
 #: the process runs. `False` distinguishes "not yet attempted" from "attempted and unavailable",
 #: so a missing model is not retried on every request.
-_ranker: object | None | bool = False
+_ranker: object | bool | None = False
 
 
 
