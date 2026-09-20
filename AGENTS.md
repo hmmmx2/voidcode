@@ -1,6 +1,16 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+The agent-facing brief for this repository: the commands that actually work, where things live, and
+the invariants an automated contributor must not break. `README.md` is the same tree explained to a
+person; this is the same tree explained to a tool, which is why the two are checked against each
+other by `desktop/tests/entry-docs.test.ts`.
+
+`AGENTS.md` is the tool-neutral filename, and the name is deliberate. This file was previously named
+after one assistant vendor, which put that vendor's branding into a repository presented as the
+owner's own work; removing it afterwards cost a history rewrite across four repositories. If a
+coding tool insists on its own filename, create that file locally as a one-line `@AGENTS.md` pointer
+and add it to `.git/info/exclude` — per-clone, never pushed. Do not rename this file back, and do
+not commit a second copy of it.
 
 ## Project Overview
 

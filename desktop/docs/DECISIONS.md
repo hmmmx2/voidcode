@@ -1906,3 +1906,31 @@ Writing JS and regexes through a shell heredoc into Python cost four rounds:
 Verified: desktop 2305 passed across 141 files, both typechecks clean, `npm run smoke` PASS, root
 `pytest tests` exit 0, every API test that does not need Postgres exit 0, and `voidcode-web` green on
 all five of its own checks with ten static routes.
+
+## The entry brief loses its vendor name
+
+The repository's agent brief is now `AGENTS.md`; it was previously named after an assistant vendor.
+The rename is cosmetic in the tree and not cosmetic in intent: these
+repositories are public and presented as the owner's own work, and the previous name put one
+assistant vendor's branding at the top level of the file listing. The same instruction already cost a
+history rewrite — `git filter-repo --message-callback` over every ref in four repositories to strip
+167 attribution trailers, because the trailer had created a second entry in GitHub's **Contributors**
+panel. The filename was the last visible instance.
+
+**What moved with it.** Eleven references across five documents (`docs/specs/ARCHITECTURE.md`,
+`PLATFORM_README.md`, `PROJECT_DOCUMENTATION.md` ×3, this file ×2) and fourteen in
+`desktop/tests/entry-docs.test.ts`. The tree listing in `PROJECT_DOCUMENTATION.md` kept its column
+alignment for free: both names are nine characters.
+
+**The rename is guarded already, and not by a new test.** `entry-docs.test.ts` opens the brief by
+name at module load, so renaming it back is an ENOENT that fails the whole file rather than one
+assertion. Nothing further was added.
+
+**The pointer is deliberately per-clone.** A tool that only looks for its own filename can be
+satisfied with a one-line `@AGENTS.md` file of that name, listed in `.git/info/exclude` rather than
+`.gitignore`. That file is local and never pushed, which is the point twice over: the pointer cannot
+be committed by a stray `git add -A`, and the tracked ignore rules do not have to carry the name the
+rename exists to remove. **The consequence, stated rather than glossed:** the protection holds on
+this machine only. A fresh clone gets no such rule, so nothing in CI prevents a second copy of the
+brief under the old name from being committed there. A tracked guard would have to spell the name it
+is banning, which is the thing being removed — so this is a trade, not an oversight.

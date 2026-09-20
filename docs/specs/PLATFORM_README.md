@@ -180,4 +180,4 @@ See [`TUNNEL_SETUP.md`](TUNNEL_SETUP.md) for named tunnel setup and OAuth redire
 | [`LLM_ARCHITECTURE.md`](LLM_ARCHITECTURE.md) | LLM deep dive — training, quantization, vLLM internals, SSE format |
 | [`FUTURE_IMPLEMENTATION.md`](FUTURE_IMPLEMENTATION.md) | Roadmap — Unsloth, MLflow, DPO, speculative decoding, observability |
 | `ROADMAP_LLM_LEARNING.md` | Self-study guide — transformers → fine-tuning → deployment. **Gone:** it is in neither source repository at any ref, so this row is kept as a record of what the platform README used to point at rather than as a link to nothing. |
-| [`CLAUDE.md`](../../CLAUDE.md) | Claude Code instructions for this repository |
+| [`AGENTS.md`](../../AGENTS.md) | The agent-facing brief for this repository — commands, layout, invariants |

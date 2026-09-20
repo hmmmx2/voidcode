@@ -8,9 +8,9 @@
 
 ---
 
-## 0. Instructions for Claude Code
+## 0. Instructions for the coding agent
 
-**This is a standalone repository and a standalone session.** SYNTHIEN AI has its own specification and its own Claude Code session. Do not read from it, write to it, or reason about it here. If a task appears to need something from that project, it belongs in the other session.
+**This is a standalone repository and a standalone session.** SYNTHIEN AI has its own specification and its own agent session. Do not read from it, write to it, or reason about it here. If a task appears to need something from that project, it belongs in the other session.
 
 **Session start checklist. Run this at the top of every new session, including resumed ones.**
 
@@ -170,7 +170,7 @@ Verify every item before Phase 1 and record the results in `docs/DECISIONS.md`.
 
 ## 3. Phase 1 — Training has moved
 
-Training, reinforcement learning, parallelism strategies, kernels, and precision work are now specified in `VOIDCODE_TRAINING_SPEC.md` and built in a separate Claude Code session against this same repository.
+Training, reinforcement learning, parallelism strategies, kernels, and precision work are now specified in `VOIDCODE_TRAINING_SPEC.md` and built in a separate agent session against this same repository.
 
 The two halves serve different employers, run at different times, and need different hardware. The training half is blocked on the A6000 arriving. This platform half is blocked on nothing and should start first.
 
@@ -505,7 +505,7 @@ Keep this current. When a phase completes, mark it. When a recruiter asks what y
 
 ## 13. Suggested sequence across both repositories
 
-Run these as two separate Claude Code sessions against two separate repositories. Never both in one session.
+Run these as two separate agent sessions against two separate repositories. Never both in one session.
 
 **Now, on existing hardware.** Phase 2 here, the Spark pipeline. It is the top gap for two of your three target roles and needs no GPU.
 

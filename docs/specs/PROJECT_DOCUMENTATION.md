@@ -4,7 +4,7 @@
 > desktop application: the product is an Electron app now, the website is a handful of static pages
 > that hold no session, and identity is a bearer token rather than a signed header. The subsystem
 > detail below is still the best description of those parts that exists, which is why the file is
-> kept — but the architecture it draws is not the one that ships. `README.md` and `CLAUDE.md` are
+> kept — but the architecture it draws is not the one that ships. `README.md` and `AGENTS.md` are
 > the current shape of the tree.
 
 > **Last updated**: 2026-03-12
@@ -118,7 +118,7 @@ voidcode_ai/
 ├── tunnel-config.yml                 # Cloudflare Tunnel config
 ├── start-tunnels.bat                 # Tunnel launch script (Windows)
 │
-├── CLAUDE.md                         # Claude Code instructions
+├── AGENTS.md                         # Agent brief for this repository
 ├── ARCHITECTURE.md                   # Architecture overview
 ├── DOCKER_GPU_INFERENCE.md           # GPU Docker setup guide
 ├── ENGINEERING_RECOMMENDATION.md     # Engineering decisions
@@ -1748,7 +1748,7 @@ docker-compose.prod.yml
 nginx.conf
 tunnel-config.yml
 start-tunnels.bat
-CLAUDE.md
+AGENTS.md
 README.md
 ARCHITECTURE.md
 DOCKER_GPU_INFERENCE.md

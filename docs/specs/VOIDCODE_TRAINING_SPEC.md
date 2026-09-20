@@ -8,7 +8,7 @@
 
 ---
 
-## 0. Instructions for Claude Code
+## 0. Instructions for the coding agent
 
 Read this whole file before writing code. Section 1.2 contains a hardware truth table that rules several phases out on local hardware entirely.
 

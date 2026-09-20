@@ -1,9 +1,9 @@
 /**
  * The two documents a newcomer reads first, held to the tree they describe.
  *
- * `README.md` and `CLAUDE.md` are where every question starts, so a wrong sentence in either costs
+ * `README.md` and `AGENTS.md` are where every question starts, so a wrong sentence in either costs
  * more than the same sentence buried in a spec — and both had gone wrong in the same way after the
- * website's logged-in UI was deleted. `CLAUDE.md` described "five static pages: the landing page
+ * website's logged-in UI was deleted. `AGENTS.md` described "five static pages: the landing page
  * with the download section on it", written before that page was split into an overview, a pricing
  * page and a download page; the count was still five because two pages had been added and two of
  * the five were the Stripe returns, which is the sort of arithmetic nobody re-checks.
@@ -31,15 +31,15 @@ const read = (relative: string): string =>
   fs.readFileSync(path.join(repo, relative), "utf8").replace(/\r\n/g, "\n");
 
 const README = read("README.md");
-const CLAUDE = read("CLAUDE.md");
+const AGENTS = read("AGENTS.md");
 
 describe("the website, which is no longer in this repository", () => {
   /**
    * WHAT STOOD HERE, AND WHY IT COULD NOT STAY.
    *
    * A route walker over `apps/web/src/app`, and four assertions built on it: that the walk found at
-   * least five pages, that CLAUDE.md's "Seven pages" sentence agreed with the count, that every
-   * route it built was named in CLAUDE.md by path, and that nothing under `apps/web` reached our own
+   * least five pages, that AGENTS.md's "Seven pages" sentence agreed with the count, that every
+   * route it built was named in AGENTS.md by path, and that nothing under `apps/web` reached our own
    * API. All of them read a directory that is now a different repository.
    *
    * THE ASSERTIONS DID NOT MOVE HERE — THEY MOVED THERE. `voidcode-web` carries
@@ -50,12 +50,12 @@ describe("the website, which is no longer in this repository", () => {
    * mutant showed that adding a claim to a section component changed nothing.
    *
    * WHAT REPLACES IT HERE IS THE OPPOSITE ASSERTION. The entry documents must stop enumerating a
-   * tree this repository does not contain. A CLAUDE.md that says "Seven pages, all prerendered" and
+   * tree this repository does not contain. An AGENTS.md that says "Seven pages, all prerendered" and
    * lists them by path is describing something a reader cannot find, and nothing would fail — which
    * is the failure mode this file exists to prevent in the first place.
    */
   it("is not enumerated by the entry documents any more", () => {
-    for (const [name, doc] of [["README.md", README], ["CLAUDE.md", CLAUDE]] as const) {
+    for (const [name, doc] of [["README.md", README], ["AGENTS.md", AGENTS]] as const) {
       expect(doc, `${name} still counts the website's pages`).not.toMatch(
         /(Four|Five|Six|Seven|Eight|Nine) pages/
       );
@@ -70,7 +70,7 @@ describe("the website, which is no longer in this repository", () => {
   it("is named as a separate repository, so a reader can find it", () => {
     // The other direction. Deleting the description entirely would leave no trail from here to the
     // thing that publishes this product's download page and legal documents.
-    for (const [name, doc] of [["README.md", README], ["CLAUDE.md", CLAUDE]] as const) {
+    for (const [name, doc] of [["README.md", README], ["AGENTS.md", AGENTS]] as const) {
       expect(doc, `${name} does not name the website's repository`).toContain("voidcode-web");
     }
   });
@@ -109,10 +109,10 @@ describe("the API's port, as the entry documents describe it", () => {
     expect(containerPort).toBe("8000");
     expect(
       appPort === containerPort,
-      "the ports agree now — delete the paragraph in README.md and CLAUDE.md that explains why they do not"
+      "the ports agree now — delete the paragraph in README.md and AGENTS.md that explains why they do not"
     ).toBe(false);
 
-    for (const [name, doc] of [["README.md", README], ["CLAUDE.md", CLAUDE]] as const) {
+    for (const [name, doc] of [["README.md", README], ["AGENTS.md", AGENTS]] as const) {
       expect(doc, `${name} does not name the app's port`).toContain(appPort);
       expect(doc, `${name} does not name the container's port`).toContain(containerPort);
       expect(doc, `${name} does not say the two are unreconciled`).toContain("not settled");
@@ -122,7 +122,7 @@ describe("the API's port, as the entry documents describe it", () => {
   it("points at the override that resolves it", () => {
     // The actual remedy, which is worth more than the explanation: the variable, and the fact that
     // a packaged build ignores it.
-    for (const doc of [README, CLAUDE]) {
+    for (const doc of [README, AGENTS]) {
       expect(doc).toContain("VOIDCODE_API_URL");
     }
     const config = fs.readFileSync(path.join(root, "src/main/platform/config.ts"), "utf8");
@@ -135,12 +135,12 @@ describe("the API's port, as the entry documents describe it", () => {
 describe("the account surfaces the entry documents point at", () => {
   it("are routes that exist", () => {
     /**
-     * `CLAUDE.md` lists where the optional account lives. Each has to be a real route in the
+     * `AGENTS.md` lists where the optional account lives. Each has to be a real route in the
      * renderer, because the list is what somebody reads instead of exploring the tree — and two of
      * these three did not exist when the account was first described.
      */
     for (const route of ["/account", "/account/credits", "/research"]) {
-      expect(CLAUDE, `CLAUDE.md does not mention ${route}`).toContain(route);
+      expect(AGENTS, `AGENTS.md does not mention ${route}`).toContain(route);
       const page = path.join(root, "renderer/src/app", "(profile)", route.slice(1), "page.tsx");
       const alternative = path.join(root, "renderer/src/app", "(homepage)", route.slice(1), "page.tsx");
       expect(
