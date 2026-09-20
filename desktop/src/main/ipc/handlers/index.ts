@@ -610,6 +610,32 @@ export function registerHandlers(): void {
     const provider2 = providerById(input.provider);
     const installed = provider2 === undefined ? [] : (await provider2.listModels()).map((m) => m.id);
     const choice = pickAgentModel(installed, input.model);
+
+    /**
+     * UNDER THE SMOKE ONLY, say what arrived. This is instrumentation, not logging.
+     *
+     * `agent/expected one proposed diff, got 0` has failed on the Windows and macOS runners across
+     * several rounds while passing on every developer machine, and each round I inferred a cause
+     * from that count and was wrong: first a race in reading the store, then a stale provider list
+     * the panel had fetched before the smoke scripted one, then a stored preference this machine
+     * had and a runner did not — a fresh `--user-data-dir` locally still passes.
+     *
+     * The count cannot distinguish "the model refused to propose" from "no provider resolved, so
+     * the turn threw before reaching the model". These three values do, and the smoke's output is
+     * captured into the job's annotations now, so the next run answers it instead of me guessing a
+     * fourth time.
+     *
+     * Behind `VOIDCODE_SMOKE` because it names the request's provider and model, which is nobody's
+     * business in an installed build.
+     */
+    if (process.env.VOIDCODE_SMOKE === "1") {
+      console.log(
+        `[smoke] agent turn: provider=${JSON.stringify(input.provider)} ` +
+          `resolved=${String(provider2 !== undefined)} installed=${JSON.stringify(installed)} ` +
+          `model=${JSON.stringify(input.model)} chose=${JSON.stringify(choice?.model ?? null)}`
+      );
+    }
+
     if (choice === undefined) {
       throw new IpcError(
         "E_UNAVAILABLE",

@@ -312,6 +312,38 @@ process.on("SIGINT", () => {
   stopEverything();
   process.exit(130);
 });
+/**
+ * ANY CRASH IS STILL A VERDICT.
+ *
+ * `verify-accounts`'s guard step reads this script's output and fails unless it finds
+ * `[account] PASS`. That contract had nothing enforcing it: every deliberate refusal goes through
+ * `die` or `skip`, and an UNEXPECTED throw went nowhere near either. Node printed a bare stack to
+ * stderr and exited, so the log held the cause with no `[account]` prefix on it, the guard said
+ * "smoke:account did not report PASS", and the annotation carried a verdict with the reason
+ * missing. Two runs were spent on that.
+ *
+ * The CDP connection is the specific way it happened. `new WebSocket(...)` followed by an awaited
+ * promise that rejects on `error` has no catch around it, so a refused or dropped socket is an
+ * unhandled rejection — and `--unhandled-rejections` defaults to throwing, which exits before any
+ * line of this script runs again.
+ *
+ * Registered here rather than wrapping each await: the point is that NO path can leave without
+ * saying something, and a list of wrapped awaits is a list somebody adds to without noticing.
+ */
+const crashed = (label) => (err) => {
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  console.log(`[account] FAIL: ${label} -- ${detail}`);
+  console.log("--- api log (tail) ---");
+  console.log(apiLog.slice(-2500));
+  try {
+    stopEverything();
+  } catch {
+    // Already failing; a cleanup that also throws must not replace the reason above.
+  }
+  process.exit(1);
+};
+process.on("uncaughtException", crashed("uncaught exception"));
+process.on("unhandledRejection", crashed("unhandled rejection"));
 
 /*
  * EIGHT MINUTES, and the number is measured rather than padded.
@@ -368,12 +400,33 @@ console.log(`[account] api: up on ${API_PORT}`);
 // also makes the safeStorage assertion meaningful: the profile starts with nothing in it, so a
 // token read back can only be one this run stored.
 const profile = mkdtempSync(join(tmpdir(), "voidcode-account-"));
-const binary = process.platform === "win32" ? "electron.exe" : "electron";
 const childEnv = { ...process.env, VOIDCODE_API_URL: `http://127.0.0.1:${API_PORT}/v1` };
 delete childEnv.VOIDCODE_DEV_SESSION_TOKEN;
 
+/**
+ * ASK ELECTRON WHERE ITS BINARY IS. Do not construct the path.
+ *
+ * This built `node_modules/electron/dist/` + `electron.exe` or `electron` by platform, and on the
+ * Linux runner that path did not exist: the job died with
+ * `Error: spawn node_modules/electron/dist/electron ENOENT` and, because the throw happened before
+ * any `[account]` line could be printed, the only symptom was the guard step reporting
+ * "smoke:account did not report PASS". Two runs were spent on a missing file.
+ *
+ * `npm run smoke` never had this problem because it invokes `electron` through the bin shim, which
+ * resolves the real location — so the same runner launched Electron fine one job over. The package's
+ * main export IS that path (its `index.js` reads `path.txt` beside itself), so importing it asks the
+ * installer rather than guessing at its layout, and the guess is what was wrong.
+ */
+const { default: electronBinary } = await import("electron");
+if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
+  skip(
+    `electron's own export does not point at a binary that exists (${String(electronBinary)}). ` +
+      "Run `npm ci` in desktop/ — its postinstall is what downloads the runtime."
+  );
+}
+
 electron = spawn(
-  join("node_modules", "electron", "dist", binary),
+  electronBinary,
   ["out/main/index.js", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`],
   { stdio: ["ignore", "pipe", "pipe"], env: childEnv }
 );
@@ -396,6 +449,14 @@ const ws = new WebSocket(target.webSocketDebuggerUrl, { maxPayload: 64 * 1024 * 
 await new Promise((resolve, reject) => {
   ws.once("open", resolve);
   ws.once("error", reject);
+  // A socket that neither opens nor errors would hang here until the job's own timeout, with the
+  // last line of output being "api: up" -- indistinguishable from the crash above.
+  setTimeout(() => reject(new Error("the debugger socket neither opened nor errored within 30s")), 30_000);
+}).catch((err) => {
+  die(
+    `could not attach to the app's debugger at ${String(target.webSocketDebuggerUrl)}: ` +
+      `${err instanceof Error ? err.message : String(err)}`
+  );
 });
 let nextId = 0;
 const pending = new Map();
