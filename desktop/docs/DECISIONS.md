@@ -2250,3 +2250,43 @@ The Linux and macOS fixes cannot be checked on this machine. The local smoke pas
 unaffected -- `CMD_OR_CTRL` resolves to `ctrlKey` there, so a green local run says nothing about the
 Cmd branch. Both are mechanical and both follow a rule read out of the code they fix, which is the
 best that is available without those runners.
+
+## The agent diff was never a race, and this machine's Ollama is why it looked like one
+
+`settled` came back TRUE, which is the whole value of having added it: the turn FINISHED and
+proposed nothing. Not a clock.
+
+The panel fetches its provider list when it MOUNTS, which happens before the smoke installs its
+scripted provider. It then sends the chosen provider's id with the turn, and `handlers/index.ts`
+resolves it with `providerById(input.provider)`: an unknown id yields no models,
+`pickAgentModel` returns undefined, and the handler throws `E_UNAVAILABLE`. The turn ends cleanly
+having proposed nothing — exactly what was observed.
+
+On this machine a real Ollama is running, so the panel's first fetch found the `ollama` id, and the
+scripted provider — registered under that same id, which is what made this invisible — answered for
+it. The runners have no Ollama, so the panel had nothing to send. **The stub was correct and
+unreachable.** A reload after scripting is the smallest fix that keeps the turn going through the
+real composer: the panel remounts, fetches again, and finds the stub.
+
+The store-polling fix from the previous round was aimed at the wrong thing. It stays, because the
+single read WAS an unsynchronised race and would have become one eventually — but it did not fix
+this, and the `settled` flag added beside it is what proved this was not what it looked like.
+
+### A throw in the middle of a smoke hides everything after it
+
+The more useful finding of the round. Linux reported ONE failure where Windows and macOS reported
+the agent failure as well, and the reason is that `runBuildSmoke` wraps its whole body in one
+`try`: the vault's refusal became `build/threw` and every check after it was skipped. The suite
+reported the wrong SIZE of problem, not just the wrong problem.
+
+The vault block has its own `try` now, downgrading exactly one case — this machine has no credential
+store at all, matched on the sentence `EncryptionUnavailableError` itself uses — to a printed SKIP.
+Any other fault still fails.
+
+### And the switch that did not take
+
+`--password-store=basic` on the command line was in the pushed workflow and had no effect. Rather
+than keep guessing where Electron parses a switch that arrives after the script path, it is set with
+`app.commandLine.appendSwitch` before `app` is ready, which is the documented place — guarded on
+`VOIDCODE_SMOKE` **and** Linux, so no installed build is ever quietly downgraded to a plaintext
+store. A real user with no keyring keeps the refusal and the sentence explaining it.

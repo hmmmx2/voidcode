@@ -48,6 +48,30 @@ installCrashHandlers();
 // relying on each `BrowserWindow` call to opt in — so a window created later
 // without the full `securePreferences` block still gets it.
 app.enableSandbox();
+
+/**
+ * Under the smoke, on Linux, pick a credential-store backend that exists.
+ *
+ * SMOKE-ONLY AND LINUX-ONLY, and both halves are deliberate. A headless CI runner has no keyring,
+ * so `safeStorage.isEncryptionAvailable()` is false, `vault.ts` raises
+ * `EncryptionUnavailableError` — correctly; that refusal is the product behaviour — and the smoke's
+ * `build/vault` check threw. Worse than the one failure: a throw inside `runBuildSmoke` skips every
+ * check after it, which is why the Linux runner never reported the agent failure its siblings did.
+ *
+ * `--password-store=basic` was passed on the command line first and did not take effect. Rather
+ * than keep guessing at where Electron parses a switch that arrives after the script path, it is
+ * set here, before `app` is ready, which is the documented place for it. `basic_text` is a backend
+ * `inference/vault.ts` handles on purpose: `backendIsDurable()` names it as one it can vouch
+ * against, so the secret is kept for the launch only and `storedDurably` comes back false — exactly
+ * what the smoke already tolerates off Windows and macOS.
+ *
+ * Guarded on `VOIDCODE_SMOKE` so no installed build is ever quietly downgraded to a plaintext
+ * store. A real user with no keyring should keep getting the refusal and the sentence explaining it.
+ */
+if (process.env.VOIDCODE_SMOKE === "1" && process.platform === "linux") {
+  app.commandLine.appendSwitch("password-store", "basic");
+}
+
 registerAppScheme();
 
 /**
@@ -2895,7 +2919,20 @@ async function runBuildSmoke(): Promise<string[]> {
      * been read — but note it *does* overwrite a developer's stored key, which is why the final
      * `clear` is an assertion rather than a courtesy: leaving a smoke value behind would be worse.
      */
-    {
+    /**
+     * SCOPED TRY, so a vault that cannot run does not take the rest of Build Mode with it.
+     *
+     * The Linux runner has no keyring, `setSecret` refused — correctly — and the refusal became
+     * `build/threw` from the catch-all at the bottom of this function. That skipped every check
+     * after this one, which is why Linux reported ONE failure where Windows and macOS reported the
+     * agent failure too. A guard that hides its siblings makes the suite report the wrong size of
+     * problem.
+     *
+     * A genuine vault fault is still a failure. What is downgraded is exactly one case: this
+     * platform has no credential store at all, which is a fact about the machine rather than about
+     * the code, and is now said out loud instead of throwing.
+     */
+    try {
       const vault = (await window!.webContents.executeJavaScript(`
         (async () => {
           const set = await window.host.vault.set({ key: "openrouter", value: "sk-smoke-not-a-real-key" });
@@ -2931,6 +2968,20 @@ async function runBuildSmoke(): Promise<string[]> {
         console.log(
           `[smoke] vault: set, read back and cleared through the real credential store (durable: ${String(v.storedDurably)}), and clearing nothing said so`
         );
+      }
+    } catch (err) {
+      const message = (err as Error).message;
+      // The ONE downgrade, matched on the vault's own sentence rather than on any error: this
+      // machine has no credential store, which `EncryptionUnavailableError` says in those words.
+      // Anything else is a real fault and still fails.
+      if (/no credential store/i.test(message)) {
+        console.log(
+          "[smoke] vault: SKIPPED — this machine has no credential store, which is what " +
+            "`EncryptionUnavailableError` reports and is a fact about the machine, not the code. " +
+            "Every check after this one still ran."
+        );
+      } else {
+        failures.push(`build/vault threw: ${message}`);
       }
     }
 
@@ -3587,6 +3638,33 @@ async function runBuildSmoke(): Promise<string[]> {
           };
         })(),
       });
+
+      /**
+       * RELOADED, so the panel sees the provider that was just scripted.
+       *
+       * This is why `agent/expected one proposed diff, got 0` failed on the CI runners and passed
+       * on every developer machine, and the mechanism is worth stating because nothing about the
+       * message hints at it.
+       *
+       * The panel fetches its provider list when it MOUNTS, which happened before
+       * `__scriptProvider` ran above. It then sends the chosen provider's id with the turn, and
+       * `handlers/index.ts` resolves it with `providerById(input.provider)` — an unknown id gives
+       * no models, `pickAgentModel` returns undefined, and the handler throws `E_UNAVAILABLE`. The
+       * turn ends cleanly having proposed nothing, which is exactly what was observed: `settled`
+       * was true and the diff count was zero.
+       *
+       * On this machine a real Ollama is running, so the panel's first fetch found the `ollama` id
+       * and the scripted provider — registered under that same id — answered for it. The runners
+       * have no Ollama, so the panel had nothing to send. The stub was correct and unreachable.
+       *
+       * A reload after scripting is the smallest fix that keeps the turn going through the real
+       * composer: the panel remounts, fetches again, and now finds the stub.
+       */
+      await window!.webContents.reload();
+      await new Promise<void>((done) => window!.webContents.once("did-finish-load", () => done()));
+      // The provider list is fetched on mount; give that round trip a moment to land before the
+      // composer is driven, or the panel is mounted with an empty selector again.
+      await new Promise((r) => setTimeout(r, 1_500));
 
       /**
        * Driven through the composer, not by calling the channel.
