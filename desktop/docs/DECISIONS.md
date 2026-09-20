@@ -1605,3 +1605,117 @@ with `WinError 121`, and the other five runs each failed one or two DIFFERENT te
 victims in total, with 32 "semaphore timeout" errors across a full-suite run. A real defect fails the
 same test every time. That is recorded rather than smoothed over, and it is the same condition
 `REQUIRE_POSTGRES` exists to make loud instead of silent.
+
+## Two repositories, one document, one number
+
+The website is being extracted into its own repository. This is the part that has to happen while it
+is still here, because two of the three mechanisms below can only be PROVEN against both trees at
+once -- after the split there is no second tree to compare with.
+
+### The digest replaces a comparison that cannot survive the move
+
+`test_marketing_pages.py` compares the application's copy of each legal document with the website's,
+character for character. It is a good test and it is about to become impossible -- not harder,
+absent.
+
+What replaces it is one committed SHA-256 per document in `src/shared/legal.ts`. Each repository
+hashes its own copy against the same number; neither reads the other. Editing the text without
+bumping the constant fails in the repository holding the source, and a copy that has drifted fails
+in its own CI.
+
+**THE SCOPE IS THE WHOLE DESIGN.** The digest covers the `SECTIONS` array only -- from
+`const SECTIONS: Section[] = [` to the `Sub-components` banner, carriage returns stripped. The two
+copies legitimately differ OUTSIDE that range: the website's file carries a "this is a copy" header
+and a breadcrumb pointing at the site root rather than the application's Settings screen. A digest
+over the whole file would differ by construction and could never agree.
+
+Getting the boundary right took being wrong first. The obvious marker for "outside" was
+"Last updated" -- and section 12's prose says *"This page carries a 'Last updated' date"*, so the
+phrase is inside the digest as well as in the footer. The assertion is on the BREADCRUMB now, which
+is the thing the two copies actually disagree about.
+
+The rule is implemented three times -- TypeScript, Python, and a dependency-free Node script in the
+website -- and each copy carries a note saying to change all of them or none. That is the cost of
+the two repositories being independent.
+
+**Three mutants, all killed:** change a word of the document without the constant; change the
+constant without the document; make the extraction return nothing. The third is the one that
+matters -- a rule returning `""` would agree with a digest of `""` and every other assertion would
+pass.
+
+### The website refuses to deploy a legal document it cannot verify
+
+`apps/web` has no test runner at all, so adding one for a thirty-line check would have forced a
+dependency decision on the extracted repository. `scripts/check-legal-digest.mjs` uses `node:crypto`
+and `node:fs` and nothing else, and `package.json` runs it as `prebuild` -- so **Vercel runs it on
+every deploy**.
+
+A failed deploy is the right outcome rather than a warning: the alternative is publishing a privacy
+policy that is not the one the application records consent against, to the person least able to check
+it. Positive-controlled three ways -- a changed word, a changed constant, and a disturbed marker all
+refuse the build.
+
+### The download page reads two repositories, and that fixes a real defect
+
+`NEXT_PUBLIC_RELEASES_REPO` becomes `_MAC` and `_WIN`, with independent state per platform fetched
+through `Promise.allSettled`.
+
+This is not plumbing. GitHub allows 60 anonymous API requests an hour per IP, which a shared office
+network exhausts, and with one feed a single 403 blanked the whole section -- including the platform
+whose feed was fine. `Promise.all` would have reintroduced exactly that one layer up, which is why
+`allSettled` is used and why the note says so.
+
+A single version line now appears only when both repositories are on the same tag. They are released
+from two repositories and can legitimately differ for a while; one number in the section head would
+then be a claim about downloads that do not carry it, and the visitor cannot tell which half it
+describes. Each panel shows its own version instead.
+
+**The Linux sentence was deleted, not moved.** It read "Linux builds (AppImage and .deb), older
+versions and the source are on the releases page" and pointed at the single repository. The two
+distribution repositories carry installers and nothing else, so that sentence would send a Linux
+visitor to a release page with nothing on it for them.
+
+### Two guards for things that were silently unpinned
+
+**The rename broke nothing, and that was the problem.** No test named either variable, so the
+component, the Dockerfile and the workflow could have disagreed with nothing failing -- and a
+misconfigured build does not crash, it renders a page that says "no release has been published"
+forever, which reads as "not released yet". `test_download_section_matches_the_build.py` now derives
+the offered downloads from the KINDS **regexes** -- not their `os`/`arch` fields, because the regex
+is what decides which file a panel links to -- and compares them with `electron-builder.yml`'s
+target matrix. Five mutants killed, including the plan's own: drop `arm64` from `win.target`.
+
+**The website's env template documented ten variables and the site read one.**
+`NEXT_PUBLIC_API_URL`, `INTERNAL_API_SECRET`, `AUTH_SECRET`, `AUTH_TRUST_HOST` and five OAuth
+provider credentials all belonged to a server-side auth proxy and a NextAuth session that went when
+sign-in moved into the desktop app; `src/auth.ts` does not exist. The existing guard checked only
+that the file was tracked and carried no real secret.
+
+The over-documenting direction is the one that bites: a template asking for a secret implies
+something uses it, so the next person generates one and sets it in a deployment believing the site
+holds a credential. It holds none. `test_web_env_template.py` derives the set from
+`process.env.*` reads in `src/` and fails in BOTH directions.
+
+`AUTH_URL` was renamed to `SITE_URL` while doing it. It was NextAuth's variable and is now read only
+for `metadataBase`; on Vercel, `AUTH_URL` is a name people set expecting an auth library to read it.
+Its fallback chain is `SITE_URL` -> Vercel's own `VERCEL_PROJECT_PRODUCTION_URL` -> localhost,
+because the localhost fallback is invisible locally and visible only to crawlers.
+
+### The NOTICE is not a copy, and Apache-2.0 says so
+
+`apps/web` gets `LICENSE` (verbatim) and its own `NOTICE`. The application's NOTICE names Pyodide as
+a bundled MPL-2.0 component and takes positions on CUDA, model weights and research papers -- none
+of which the website ships. Section 4(d) requires a derivative to carry the original's attribution
+notices "excluding those notices that do not pertain to any part of the Derivative Works", so they
+are excluded rather than copied: a verbatim copy would CLAIM the site distributes an MPL-2.0
+component.
+
+What the site does bundle was checked rather than assumed -- every dependency in its
+`package.json` has importers in `src/`, Monaco and three.js included, so the list names them.
+
+A test caught this omission, incidentally: `README.md` linked `LICENSE` and `NOTICE` before either
+existed, and `markdown links point at files that exist` failed.
+
+Verified: desktop 2300 passed across 141 files, both typechecks clean, `npm run build` for the
+website exit 0 with `prebuild` verifying both documents and all ten routes static, root
+`pytest tests` exit 0, and every API test that does not need Postgres exit 0.

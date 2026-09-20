@@ -31,9 +31,9 @@ spec:
           # with the logged-in UI; a secret mounted into a tier that cannot use it is a
           # blast radius with no benefit.
           #
-          # NEXT_PUBLIC_RELEASES_REPO is deliberately absent too: like every
-          # NEXT_PUBLIC_* value it is inlined at build time, so setting it here would do
-          # nothing. See the Dockerfile's ARG.
+          # NEXT_PUBLIC_RELEASES_REPO_MAC and _WIN are deliberately absent too: like
+          # every NEXT_PUBLIC_* value they are inlined at build time, so setting them here
+          # would do nothing. See the Dockerfile's ARGs.
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

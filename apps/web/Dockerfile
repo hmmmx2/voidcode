@@ -54,8 +54,19 @@ COPY . .
 # `owner/name` of the repository whose releases the download section lists. Inlined into the
 # bundle by Next at build time, like every NEXT_PUBLIC_* value, so it cannot be set at runtime.
 # Empty builds a page that says no release has been published — which is correct until one is.
-ARG NEXT_PUBLIC_RELEASES_REPO=
-ENV NEXT_PUBLIC_RELEASES_REPO=$NEXT_PUBLIC_RELEASES_REPO
+# ONE PER PLATFORM. `NEXT_PUBLIC_RELEASES_REPO` was a single value here; the installers are now
+# published to two repositories, one per operating system, and the download section reads them
+# independently so a rate-limited feed for one platform cannot hide the other's installer.
+#
+# The old single name is GONE rather than kept as a fallback. A deployment that set only the old
+# name would look configured and serve Windows visitors macOS disk images.
+#
+# Empty is still a valid value for both: the section then says no release has been published rather
+# than drawing a dead button.
+ARG NEXT_PUBLIC_RELEASES_REPO_MAC=
+ENV NEXT_PUBLIC_RELEASES_REPO_MAC=$NEXT_PUBLIC_RELEASES_REPO_MAC
+ARG NEXT_PUBLIC_RELEASES_REPO_WIN=
+ENV NEXT_PUBLIC_RELEASES_REPO_WIN=$NEXT_PUBLIC_RELEASES_REPO_WIN
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm --filter @voidcode/web build

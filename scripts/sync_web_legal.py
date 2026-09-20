@@ -6,7 +6,9 @@ deciding whether to install anything wants to read the terms first. Neither pack
 the other — separate tsconfig roots, separate builds — so the website carries a copy.
 
 `tests/test_marketing_pages.py` compares the two and fails on any difference, and this script is
-what the failure tells you to run. Edit
+what the failure tells you to run. It also writes `apps/web/src/lib/legal.ts`, the website's own
+copy of the two document digests — the mechanism that replaces that comparison once the website
+is a separate repository and there is no second tree to compare against. Edit
 `desktop/renderer/src/components/Legal/{PrivacyClient,TermsClient}.tsx` — the application's copy is
 the original, because that is the one a person clicks "I agree" against — then:
 
@@ -14,6 +16,8 @@ the original, because that is the one a person clicks "I agree" against — then
 """
 
 import pathlib
+
+from mirror_web_legal_constants import mirror
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "desktop/renderer/src/components/Legal"
@@ -76,3 +80,8 @@ def sync(name: str) -> None:
 
 for name in ("PrivacyClient.tsx", "TermsClient.tsx"):
     sync(name)
+
+# The website's own copy of the two SHA-256 digests and the displayed version, so it can check
+# its own documents after it becomes a separate repository and cannot read this tree. See that
+# script's docstring for why the numbers are copied rather than recomputed.
+print(f"wrote {mirror().relative_to(ROOT).as_posix()}")

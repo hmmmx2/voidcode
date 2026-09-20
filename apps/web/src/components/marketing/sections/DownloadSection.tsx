@@ -48,10 +48,29 @@ import { Reveal } from "@/components/motion/Reveal";
  * primary action is the worst failure available.
  */
 
-/** `owner/name` of the repository that publishes the installers. Empty until the owner sets it. */
-const REPO = (process.env.NEXT_PUBLIC_RELEASES_REPO ?? "").trim();
+/**
+ * ONE REPOSITORY PER PLATFORM, and that is a behaviour change rather than plumbing.
+ *
+ * The installers are published to two separate repositories -- one for macOS, one for Windows --
+ * because they are what a person downloads and nothing else needs to be in those repositories at
+ * all. This section used to read a single `NEXT_PUBLIC_RELEASES_REPO`.
+ *
+ * WHAT THAT FIXES. With one feed, a single 403 blanked the whole section: GitHub rate-limits
+ * anonymous requests at 60 an hour PER IP, which a shared office network exhausts easily, and the
+ * failure took both platforms' download buttons with it. Two feeds are fetched independently and
+ * held in independent state, so a rate-limited macOS feed no longer hides the Windows installer.
+ *
+ * The old single-repository variable is DELETED rather than left as a fallback. A fallback would be
+ * read by a deployment that set only the old name, which would then serve Windows visitors macOS
+ * disk images -- and it would look configured.
+ */
+const REPOS = {
+  mac: (process.env.NEXT_PUBLIC_RELEASES_REPO_MAC ?? "").trim(),
+  win: (process.env.NEXT_PUBLIC_RELEASES_REPO_WIN ?? "").trim(),
+} as const;
 
-const CACHE_KEY = "voidcode:release";
+/** Separate keys, so one platform's cached feed is never served as the other's. */
+const CACHE_KEY = { mac: "voidcode:release:mac", win: "voidcode:release:win" } as const;
 const CACHE_MS = 10 * 60 * 1000;
 
 interface Kind {
@@ -148,16 +167,22 @@ interface Release {
   assets?: Asset[];
 }
 
-type State =
+/** One platform's feed. The two are held separately so one failing cannot blank the other. */
+type Feed =
   | { status: "loading" }
   | { status: "unavailable"; reason: string }
   | { status: "ready"; release: Release; found: Map<string, Asset> };
 
+type State = { mac: Feed; win: Feed };
+
+type Os = keyof State;
+
 const key = (kind: Kind): string => `${kind.os}-${kind.arch}`;
 
 /** A placeholder is not a repository, and refusing anything else keeps a pasted URL out of the path. */
-function repoName(): string | null {
-  return /^[\w.-]+\/[\w.-]+$/.test(REPO) && REPO !== "OWNER/REPO" ? REPO : null;
+function repoName(os: Os): string | null {
+  const value = REPOS[os];
+  return /^[\w.-]+\/[\w.-]+$/.test(value) && value !== "OWNER/REPO" ? value : null;
 }
 
 /** Bytes as a person would say them. Two significant figures is all a download size deserves. */
@@ -211,9 +236,9 @@ async function detect(): Promise<string | null> {
   return `${os}-${arch}`;
 }
 
-function cached(repo: string): Release | null {
+function cached(os: Os, repo: string): Release | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = sessionStorage.getItem(CACHE_KEY[os]);
     if (raw === null) return null;
     const entry = JSON.parse(raw) as { key: string; at: number; release: Release };
     if (entry.key !== repo || Date.now() - entry.at > CACHE_MS) return null;
@@ -224,16 +249,19 @@ function cached(repo: string): Release | null {
   }
 }
 
-function remember(repo: string, release: Release): void {
+function remember(os: Os, repo: string, release: Release): void {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ key: repo, at: Date.now(), release }));
+    sessionStorage.setItem(CACHE_KEY[os], JSON.stringify({ key: repo, at: Date.now(), release }));
   } catch {
     /* see cached() */
   }
 }
 
 export function DownloadSection() {
-  const [state, setState] = useState<State>({ status: "loading" });
+  const [state, setState] = useState<State>({
+    mac: { status: "loading" },
+    win: { status: "loading" },
+  });
   const [copied, setCopied] = useState<string | null>(null);
   /** The visitor's platform, resolved independently of the release feed — it is known offline. */
   const [detected, setDetected] = useState<string | null>(null);
@@ -249,55 +277,85 @@ export function DownloadSection() {
   }, []);
 
   useEffect(() => {
-    const repo = repoName();
-    if (repo === null) {
-      setState({
-        status: "unavailable",
-        reason: "The first release has not been published yet, so there is nothing to download here.",
-      });
-      return;
-    }
-
     let cancelled = false;
-    const unavailable = (reason: string): void => {
-      if (!cancelled) setState({ status: "unavailable", reason });
-    };
 
-    const load = async (): Promise<void> => {
-      let release = cached(repo);
+    /** One platform's feed, resolved to a `Feed` rather than thrown. */
+    const loadOne = async (os: Os): Promise<Feed> => {
+      const repo = repoName(os);
+      if (repo === null) {
+        return {
+          status: "unavailable",
+          reason:
+            "The first release has not been published yet, so there is nothing to download here.",
+        };
+      }
+
+      let release = cached(os, repo);
       if (release === null) {
         try {
           const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
             headers: { accept: "application/vnd.github+json" },
           });
-          if (response.status === 404) return unavailable("No release has been published yet.");
-          if (response.status === 403 || response.status === 429) {
-            return unavailable(
-              "GitHub is rate-limiting this network, so the file list could not be read."
-            );
+          if (response.status === 404) {
+            return { status: "unavailable", reason: "No release has been published yet." };
           }
-          if (!response.ok) return unavailable("The release list could not be read just now.");
+          if (response.status === 403 || response.status === 429) {
+            return {
+              status: "unavailable",
+              reason: "GitHub is rate-limiting this network, so the file list could not be read.",
+            };
+          }
+          if (!response.ok) {
+            return {
+              status: "unavailable",
+              reason: "The release list could not be read just now.",
+            };
+          }
           release = (await response.json()) as Release;
-          remember(repo, release);
+          remember(os, repo, release);
         } catch {
-          return unavailable("Could not reach GitHub to read the release list.");
+          return {
+            status: "unavailable",
+            reason: "Could not reach GitHub to read the release list.",
+          };
         }
       }
 
       const assets = release.assets ?? [];
       const found = new Map<string, Asset>();
-      for (const kind of KINDS) {
+      // THIS PLATFORM'S KINDS ONLY. A macOS feed carrying a stray .exe is not a Windows download,
+      // and matching every pattern against every feed would draw it as one.
+      for (const kind of KINDS.filter((candidate) => candidate.os === os)) {
         const asset = assets.find((candidate) => kind.pattern.test(candidate.name ?? ""));
         if (asset !== undefined) found.set(key(kind), asset);
       }
       if (found.size === 0) {
-        return unavailable("The latest release does not carry installers for macOS or Windows.");
+        return {
+          status: "unavailable",
+          reason: "The latest release does not carry an installer for this platform.",
+        };
       }
-
-      if (!cancelled) setState({ status: "ready", release, found });
+      return { status: "ready", release, found };
     };
 
-    void load();
+    /*
+     * `allSettled`, and the choice matters.
+     *
+     * `Promise.all` rejects on the first failure and would discard a perfectly good feed because
+     * the other one was rate-limited — which is the exact defect the two-repository split exists to
+     * fix, reintroduced one layer up. `loadOne` already resolves every refusal to a `Feed`, so
+     * nothing here should reject; `allSettled` is what makes that a guarantee rather than an
+     * assumption about code somebody may edit later.
+     */
+    void Promise.allSettled([loadOne("mac"), loadOne("win")]).then(([mac, win]) => {
+      if (cancelled) return;
+      const settle = (result: PromiseSettledResult<Feed>): Feed =>
+        result.status === "fulfilled"
+          ? result.value
+          : { status: "unavailable", reason: "The release list could not be read just now." };
+      setState({ mac: settle(mac), win: settle(win) });
+    });
+
     return () => {
       cancelled = true;
     };
@@ -315,18 +373,32 @@ export function DownloadSection() {
     );
   }, []);
 
-  const repo = repoName();
-  const releasesUrl = repo === null ? null : `https://github.com/${repo}/releases`;
-  const version =
-    state.status === "ready" ? (state.release.tag_name ?? "").replace(/^v/, "") : null;
-  const published =
-    state.status === "ready" && state.release.published_at !== undefined
-      ? new Date(state.release.published_at).toLocaleDateString(undefined, {
+  const tagOf = (feed: Feed): string | null =>
+    feed.status === "ready" ? (feed.release.tag_name ?? "").replace(/^v/, "") || null : null;
+
+  /**
+   * ONE VERSION LINE, AND ONLY WHEN BOTH REPOSITORIES AGREE.
+   *
+   * The two platforms are released from two repositories and can legitimately be on different tags
+   * for a while — one publishes before the other, or a macOS build is re-cut. A single number in
+   * the section head would then be a claim about downloads that do not carry it, and the visitor
+   * has no way to tell which half it describes. Each panel already shows its own version, so the
+   * honest answer when they disagree is to say nothing here rather than pick a winner.
+   */
+  const macTag = tagOf(state.mac);
+  const winTag = tagOf(state.win);
+  const version = macTag !== null && macTag === winTag ? macTag : null;
+
+  const publishedOf = (feed: Feed): string | null =>
+    feed.status === "ready" && feed.release.published_at !== undefined
+      ? new Date(feed.release.published_at).toLocaleDateString(undefined, {
           year: "numeric",
           month: "short",
           day: "numeric",
         })
       : null;
+  // The same rule: a date is shown only where a single version is.
+  const published = version === null ? null : publishedOf(state.mac);
 
   return (
     <Section id="download">
@@ -388,7 +460,13 @@ export function DownloadSection() {
             {PLATFORMS.map((platform) => {
               const kinds = KINDS.filter((kind) => kind.os === platform.os);
               const mine = detected !== null && detected.startsWith(`${platform.os}-`);
-              const found = state.status === "ready" ? state.found : new Map<string, Asset>();
+              const feed = state[platform.os];
+              const found = feed.status === "ready" ? feed.found : new Map<string, Asset>();
+              const ownVersion = tagOf(feed);
+              const releasesUrl =
+                repoName(platform.os) === null
+                  ? null
+                  : `https://github.com/${repoName(platform.os)}/releases`;
               const available = kinds.filter((kind) => found.has(key(kind)));
               const primaryKind =
                 available.find((kind) => key(kind) === detected) ?? available[0] ?? null;
@@ -426,13 +504,13 @@ export function DownloadSection() {
                     ) : (
                       <>
                         <Pill href="#download" variant="outline" size="lg" aria-disabled="true">
-                          {state.status === "loading" ? "Checking for a release…" : "No download yet"}
+                          {feed.status === "loading" ? "Checking for a release…" : "No download yet"}
                         </Pill>
                         <p className="mt-3 max-w-[40ch] text-sm text-ink-3">
-                          {state.status === "loading"
+                          {feed.status === "loading"
                             ? "Reading the latest release…"
-                            : state.status === "unavailable"
-                              ? state.reason
+                            : feed.status === "unavailable"
+                              ? feed.reason
                               : `The latest release carries no ${platform.title} installer.`}
                         </p>
                       </>
@@ -517,27 +595,43 @@ export function DownloadSection() {
                       </ul>
                     ) : (
                       <p className="mt-3 text-xs leading-relaxed text-ink-3">
-                        Each file&apos;s SHA-256 is listed here once a release is published. Compare
+                        {ownVersion !== null ? `Version ${ownVersion}. ` : ""}Each file&apos;s
+                        SHA-256 is listed here once a release is published. Compare
                         it with the command above before installing.
                       </p>
                     )}
                   </div>
+
+                  {/* This platform's own release history, beside this platform's own files. One
+                      link per panel rather than one for the section, because the two platforms are
+                      published from two repositories and may be on different versions. */}
+                  {releasesUrl === null ? null : (
+                    <p className="mt-6 text-xs text-ink-3">
+                      Older {platform.title} versions are on{" "}
+                      <a
+                        href={releasesUrl}
+                        className="text-ink-2 underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
+                      >
+                        the releases page
+                      </a>
+                      .
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
-          {releasesUrl !== null ? (
-            <p className="mt-10 text-sm text-ink-3">
-              Linux builds (AppImage and .deb), older versions and the source are on{" "}
-              <a
-                href={releasesUrl}
-                className="text-ink-2 underline decoration-line-strong underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
-              >
-                the releases page
-              </a>
-              .
-            </p>
-          ) : null}
+          {/*
+            THE LINUX SENTENCE WAS DELETED, NOT MOVED, and that is a correction rather than tidying.
+            It read "Linux builds (AppImage and .deb), older versions and the source are on the
+            releases page" and pointed at the one repository this section used to read. The
+            installers now come from two repositories that carry installers and nothing else — no
+            Linux build, no source. Left as it was, the sentence would send a Linux visitor to a
+            release page with nothing on it for them, which is worse than not mentioning Linux.
+
+            Older versions are per platform, so the link is per platform too: each panel carries its
+            own, beside the files it describes.
+          */}
         </Reveal>
       </Container>
     </Section>

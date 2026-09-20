@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
+    "//prebuild": "Refuses to build if a legal document has drifted from its committed digest. npm runs this before `build`, so Vercel runs it on every deploy — a stale privacy policy is a factual misstatement to the person least able to check it, and the one failure here that should stop a deploy.",
+    "prebuild": "node scripts/check-legal-digest.mjs",
     "build": "next build",
+    "verify:legal": "node scripts/check-legal-digest.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

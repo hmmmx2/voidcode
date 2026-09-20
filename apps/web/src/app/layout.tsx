@@ -26,9 +26,24 @@ export const metadata: Metadata = {
   // failure is invisible locally; only crawlers see it.
   //
   // `metadata` is evaluated on the server, so a non-NEXT_PUBLIC_ variable is
-  // correct here — this must not reach the browser bundle. AUTH_URL is already
-  // the canonical frontend origin (NextAuth uses it for callback URLs).
-  metadataBase: new URL(process.env.AUTH_URL ?? "http://localhost:3000"),
+  // correct here — this must not reach the browser bundle.
+  //
+  // THIS READ `AUTH_URL`, whose name is now a lie. It was NextAuth's canonical-origin variable,
+  // and NextAuth went with the logged-in UI; nothing here signs anything. The name mattered
+  // because this site deploys to Vercel, where `AUTH_URL` is a name people set expecting an auth
+  // library to read it — a variable whose name describes a system that does not exist is worse
+  // than one with no name at all. `SITE_URL` says what it is: the origin crawlers resolve
+  // og:image against.
+  //
+  // `VERCEL_PROJECT_PRODUCTION_URL` is the fallback because Vercel sets it on every deployment,
+  // so a deploy that forgets `SITE_URL` still gets a reachable origin instead of localhost —
+  // which is the failure that is invisible locally and visible only to crawlers.
+  metadataBase: new URL(
+    process.env.SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL !== undefined
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000")
+  ),
   title: "VoidCode AI",
   description: "Guided preparation for machine learning and systems interviews.",
 };

@@ -94,13 +94,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Inlined into the bundle at build time, which is why it is an ARG and not a
-          # container env var. NEXT_PUBLIC_API_URL was here until the website stopped
-          # calling the API at all; what it needs now is the repository whose releases
-          # the download section lists. Empty is a valid value — the section then says no
-          # release has been published rather than drawing a dead button.
+          # Inlined into the bundle at build time, which is why these are ARGs and not
+          # container env vars. NEXT_PUBLIC_API_URL was here until the website stopped
+          # calling the API at all; what it needs now is the repositories whose releases
+          # the download section lists — ONE PER PLATFORM, since the installers are
+          # published to a macOS repository and a Windows one. Empty is a valid value for
+          # either: that platform's panel then says no release has been published rather
+          # than drawing a dead button, and the other platform is unaffected.
           build-args: |
-            NEXT_PUBLIC_RELEASES_REPO=${{ vars.VOIDCODE_RELEASES_REPO }}
+            NEXT_PUBLIC_RELEASES_REPO_MAC=${{ vars.VOIDCODE_RELEASES_REPO_MAC }}
+            NEXT_PUBLIC_RELEASES_REPO_WIN=${{ vars.VOIDCODE_RELEASES_REPO_WIN }}
 
       # A .dockerignore that stops excluding .env would put a live API key into a
       # published layer, and `docker history` would show it. This repo had no

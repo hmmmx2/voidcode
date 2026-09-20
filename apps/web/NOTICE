@@ -1,0 +1,48 @@
+VoidCode — website
+Copyright 2026 VoidCode contributors
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+
+WHY THIS IS NOT A COPY OF THE APPLICATION'S NOTICE
+
+The desktop application's NOTICE names Pyodide (MPL-2.0, bundled for the sandboxed Python tier),
+and records that CUDA, model weights and research papers are deliberately NOT redistributed. It
+also points at `resources/licenses/` inside the packaged build and at two CycloneDX SBOMs attached
+to each release.
+
+None of that pertains to this website, which ships none of those things and has no packaged build.
+Apache-2.0 section 4(d) requires a derivative work to carry the attribution notices from the
+original's NOTICE "excluding those notices that do not pertain to any part of the Derivative
+Works", so they are excluded here rather than copied. Copying them would be worse than omitting
+them: it would claim this site distributes an MPL-2.0 component and takes a position on model
+weights, neither of which is true.
+
+What carries over is the copyright attribution above.
+
+
+WHAT THIS WEBSITE BUNDLES
+
+Browser code, from npm, all permissively licensed. The authoritative list is `package-lock.json`;
+these are the ones a reader would want named:
+
+  Next.js, React, React DOM ...... MIT
+  three.js ....................... MIT   (the landing page's WebGL scenes)
+  @react-three/fiber, drei ....... MIT
+  monaco-editor,
+  @monaco-editor/react ........... MIT   (the read-only editor in the landing-page demo)
+  clsx, tailwind-merge,
+  class-variance-authority,
+  tailwindcss-animate ............ MIT
+
+None of these requires a notice beyond the copyright and permission text that accompanies it, which
+is why they are listed rather than reproduced. Their full licence text is in `node_modules` in any
+checkout and in the lockfile's resolved metadata.
+
+
+THE LEGAL DOCUMENTS ARE NOT THIS PROJECT'S TO CHANGE HERE
+
+`src/components/Legal/{PrivacyClient,TermsClient}.tsx` are copies of the desktop application's
+Terms of Use and Privacy Policy. The original is the application's, because that is where a person
+accepts them and where registration records which version was accepted. `npm run verify:legal`
+refuses to build if this copy has drifted from the digest committed in `src/lib/legal.ts`.
