@@ -174,6 +174,7 @@ def test_text_only_requests_are_never_blocked(monkeypatch):
 # than failed where the inference stack is absent, so the light CI job stays light.
 
 import json  # noqa: E402
+import re  # noqa: E402
 import subprocess  # noqa: E402
 
 _ENDPOINT_MODEL_PROBE = r"""
@@ -212,8 +213,21 @@ def _run_probe():
     src = _ENDPOINT_MODEL_PROBE % {"api": api, "png": PNG}
     proc = subprocess.run([sys.executable, "-c", src], capture_output=True, text=True, cwd=api)
     if proc.returncode != 0:
-        if "No module named 'torch'" in proc.stderr or "No module named 'transformers'" in proc.stderr:
-            pytest.skip("inference stack not installed; endpoint model cannot be imported")
+        # A DENY-LIST OF TWO MODULE NAMES STOOD HERE and `uvicorn` walked straight past it.
+        # `apps/api/src/main.py` imports uvicorn at line 58, before it ever reaches torch, so on
+        # `ci.yml`'s ML tree job — which installs neither, on purpose — these three tests failed
+        # with "probe failed rc=1" and a child traceback, rather than skipping. The same trap this
+        # repository records elsewhere: a list of the bad spellings misses the next one.
+        #
+        # So the rule instead of the list. OURS vs THEIRS: a third-party module missing means this
+        # environment has no inference stack, which is a legitimate skip. One of OUR packages
+        # missing means a rename or a deletion, and that must fail loudly — skipping there would
+        # retire the test silently, which is the whole failure mode this file exists to prevent.
+        missing = re.findall(r"No module named '([A-Za-z0-9_.]+)'", proc.stderr)
+        ours = {"src", "scripts", "rl", "features", "reward", "analysis", "ranking"}
+        theirs = sorted({m for m in missing if m.split(".")[0] not in ours})
+        if theirs:
+            pytest.skip(f"inference stack not installed ({', '.join(theirs)})")
         pytest.fail(f"probe failed rc={proc.returncode}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
     line = [out for out in proc.stdout.splitlines() if out.startswith("PROBE")]
     assert line, f"probe printed nothing parseable:\n{proc.stdout}\n{proc.stderr}"

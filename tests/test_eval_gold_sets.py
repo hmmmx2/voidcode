@@ -422,6 +422,7 @@ def test_grounded_modes_match_production():
     while the harness grounded two modes and production grounded four.
     """
     sys.path.insert(0, str(ROOT / "apps" / "api"))
+    pytest.importorskip("fastapi", reason="the grounding rule lives in the API package")
     from src.main import _should_ground as production_should_ground
 
     for mode in ("debug", "explain", "teaching", "followup", "empathy", "general"):

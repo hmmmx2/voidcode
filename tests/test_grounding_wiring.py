@@ -9,6 +9,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
@@ -32,6 +34,7 @@ def test_grounding_is_decided_by_harm_not_by_routing() -> None:
     `empathy` must never cite sources at a learner saying "I give up", and neither it nor `general`
     has budget for retrieved context.
     """
+    pytest.importorskip("fastapi", reason="the grounding rule lives in the API package")
     from src.main import _should_ground
 
     for grounded in ("explain", "teaching", "debug", "followup"):
@@ -43,6 +46,7 @@ def test_grounding_is_decided_by_harm_not_by_routing() -> None:
 def test_a_misroute_no_longer_costs_retrieval() -> None:
     """The property the change exists for, stated directly: the two modes debug most often leaks to
     both ground, so landing in either keeps the sources."""
+    pytest.importorskip("fastapi", reason="the grounding rule lives in the API package")
     from src.main import _should_ground
 
     assert _should_ground("explain") and _should_ground("teaching")

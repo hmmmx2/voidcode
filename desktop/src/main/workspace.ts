@@ -38,20 +38,26 @@ export class NoWorkspaceError extends Error {
  * The root as the filesystem spells it, which is the only spelling that can be compared with one.
  *
  * EVERY PATH THE USER SEES WAS COMPUTED AGAINST THE WRONG SPELLING UNTIL THIS EXISTED. The root was
- * stored exactly as the native dialog returned it; containment was safe because `resolveWithin`
- * canonicalises both sides on every call, and `fsops.ts`'s `realRootFor` says in as many words why
- * ("on Windows a stored `C:\PROGRA~1` and a resolved `C:\Program Files` are the same directory with
- * different strings"). What nothing canonicalised was the root used for DISPLAY: `path.relative`
- * between a raw root and a canonical absolute walks up out of one tree and back down into the
- * other, so `main.py` was reported as `../../../../../private/var/folders/…/main.py`. It is not
- * cosmetic — `displayPath` is the key `forgetFile` prunes the memory index by, the string the
- * approval window shows before a write is authorised, and what the agent's diff panel renders.
+ * stored exactly as the native dialog returned it, while every absolute it was compared against had
+ * been through `realpath`. Containment was never at risk — `resolveWithin` resolves both sides on
+ * every call, so they agree whatever spelling they agree on. What nothing canonicalised was the root
+ * used for DISPLAY: `path.relative` between a raw root and a resolved absolute walks up out of one
+ * spelling of a directory and back down into the other, so `main.py` was reported as
+ * `../../../../../private/var/folders/…/main.py`. It is not cosmetic — `displayPath` is the key
+ * `forgetFile` prunes the memory index by, the string the approval window shows before a write is
+ * authorised, and what the agent's diff panel renders.
  *
  * It needed a symlinked or short-named parent to show, which is why it survived every local run:
  * this machine's `os.tmpdir()` is already canonical, and a project under `/Users/me/…` or
  * `C:\Users\me\…` is too. The CI runners are not — macOS resolves `/var/folders` to
  * `/private/var/folders`, and the Windows runner's `runneradmin` home has the 8.3 alias
  * `RUNNER~1`. Eleven tests failed there and none here.
+ *
+ * `fsops.ts`'s `realRootFor` carries a note claiming its `fs.realpath` makes `C:\PROGRA~1` and
+ * `C:\Program Files` the same string. IT DOES NOT — measured below — and that note has been
+ * corrected. The claim was harmless there because both sides of its comparison go through the same
+ * non-expanding call; it was not harmless as a description, because it is exactly the sentence that
+ * made the first version of this function use plain `realpathSync` and ship half a fix.
  *
  * Canonicalised HERE rather than at each reader, because a reader that forgot would be a silent
  * reintroduction of exactly this bug, and there is no assertion that could notice one call site
@@ -65,7 +71,14 @@ export class NoWorkspaceError extends Error {
  */
 function canonical(root: string): string {
   try {
-    return fs.realpathSync(root);
+    // `.native`, NOT plain `realpathSync`, AND THE DIFFERENCE IS NOT COSMETIC. The first version of
+    // this used `fs.realpathSync`, which resolves symlinks and junctions — enough for macOS's
+    // `/var` -> `/private/var` — and leaves a Windows 8.3 short name EXACTLY AS GIVEN. Measured on
+    // this machine: `realpathSync("C:\PROGRA~1")` returns `C:\PROGRA~1`, while
+    // `realpathSync.native("C:\PROGRA~1")` returns `C:\Program Files`. So the fix went out, macOS
+    // went green, and nine tests kept failing on the Windows runner with `RUNNER~1` still in the
+    // path. `.native` goes through the OS resolver and answers both cases with one call.
+    return fs.realpathSync.native(root);
   } catch {
     return root;
   }

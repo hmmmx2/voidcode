@@ -12,6 +12,12 @@ node_modules/
 
 # testing
 /coverage
+# The pytest-cov DATA FILE, which `/coverage` above does not cover -- that is a directory and
+# this is a binary sqlite blob written into the repository root by every `--cov` run, locally
+# and in CI. It appeared as untracked the first time the ML tree job's coverage step was
+# actually reached.
+.coverage
+.coverage.*
 
 # next.js
 .next/

@@ -213,7 +213,13 @@ jobs:
             tail -60 smoke.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # The FAIL line as an ::error::, so it reaches the check-run annotations the API
+          # serves. The step summary above is browser-only, and the Linux smoke failure that
+          # prompted all of this could not be read from outside at all.
           grep "\[smoke\]" smoke.log || true
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done < <(grep -E "^\[smoke\] (FAIL|ERROR)" smoke.log | head -10)
 
   verify-accounts:
     # Registration, sign-in and reset-by-code against the REAL API and a real Postgres, driven

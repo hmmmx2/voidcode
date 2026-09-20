@@ -11,11 +11,25 @@ import sys
 from pathlib import Path
 
 import pytest
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rl.ppo import gae_advantages, normalise_advantages, ppo_loss, value_loss
+# THE ONLY MODULE IN THIS DIRECTORY THAT IMPORTED TORCH DIRECTLY, and a plain `import torch` at
+# collection time is not a skip — it is an ERROR. Five of those made pytest report
+# "Interrupted: 5 errors during collection" and exit 2, so `ci.yml`'s ML tree job ran NO tests at
+# all the first time it got that far, with an annotation that said only "exit code 2". That job
+# does not install torch on purpose: ~2.5 GB, and worthless without a GPU the runner does not have.
+#
+# `test_grpo.py`, `test_kernels.py` and `test_rmsnorm.py` all guard it exactly like this, which is
+# why none of them was among the five.
+torch = pytest.importorskip("torch", reason="needs torch")
+
+from rl.ppo import (  # noqa: E402
+    gae_advantages,
+    normalise_advantages,
+    ppo_loss,
+    value_loss,
+)
 
 
 def test_gae_with_a_perfect_value_function_gives_zero_advantage() -> None:

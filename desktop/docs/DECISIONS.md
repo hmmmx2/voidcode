@@ -2014,3 +2014,123 @@ without admin rights. `verify-accounts` already did this for the same reason.
 `shell: bash` on all three platforms went with it. In PowerShell, redirecting a native command's
 stderr with `2>&1` wraps each line in an ErrorRecord and can report failure for a process that
 exited 0 — so the same line would have meant different things on different runners.
+
+## The light CI job had never run a test, and the floor it was gated on had never been measured
+
+`ci.yml`'s ML tree job reached its test step for the first time today, because `Lint` had failed
+ahead of it on every previous attempt. What it found, in order, is a single failure mode seen four
+times: **a dependency the job excludes on purpose, imported at module scope instead of guarded.**
+
+### Exit code 2 is not a test failure
+
+Five collection errors, so pytest reported `Interrupted: 5 errors during collection` and ran NONE of
+the 705 tests. The annotation said "Process completed with exit code 2" and nothing else. An exit
+code cannot distinguish "a test is wrong" from "a module will not import here", and those have
+opposite fixes -- so the step now tees its output and a following `always()` step writes the failing
+names into `$GITHUB_STEP_SUMMARY`, which needs no admin rights.
+
+Four of the five were packages to install: `pandas` (two tests reach `analysis/calibration`),
+`sqlalchemy` and then `asyncpg` for `test_knowledge_corpus.py` -- the second only visible once the
+first was installed, which is the usual shape -- and `pydantic`. The fifth was the opposite case:
+`test_ppo.py` was the only torch test in that directory without a guard, and the job excludes torch
+deliberately, so it now uses `pytest.importorskip("torch")` exactly as `test_grpo.py`,
+`test_kernels.py` and `test_rmsnorm.py` beside it already did. **The line between the two: install it
+if the job is meant to exercise it, guard the import if the job is meant to skip it.** Never a
+collection error, which takes the whole suite down.
+
+`test_train_grpo_holdout.py` is the one case that does NOT use `importorskip`, and the difference is
+deliberate: all nineteen of its tests drive `scripts/train_grpo.py` in a SUBPROCESS, and the module
+docstring records that importing the trainer in-process once broke three unrelated tests. So it asks
+`importlib.util.find_spec("torch")` instead -- the same question, answered without loading a
+gigabyte-scale module into the session to decide something about a child process.
+
+### Seventeen failures behind the collection errors, and a deny-list of two
+
+`test_vision_content.py`'s subprocess probe already skipped when torch or transformers was missing --
+a list of two module names, and `uvicorn` walked straight past it, because `apps/api/src/main.py`
+imports uvicorn at line 58 and reaches torch never: torch and transformers are BOTH in try/except
+there, for the CPU-only SGLang path. The folklore that importing `main` pulls torch is out of date;
+it pulls the web stack.
+
+Replaced with the rule instead of the list: a missing THIRD-PARTY module is a skip, a missing one of
+OURS still fails. Skipping on our own module would let a rename retire the test silently, which is
+the failure this file exists to prevent.
+
+The last four were the plainest thing here: `test_debug_pre_classifier.py`, `test_eval_gold_sets.py`
+and `test_grounding_wiring.py` (twice) import `src.main` and were **the four of twelve such importers
+in that directory that had forgotten the guard the other eight already carry**. I wrote a
+`tests/conftest.py` helper for them first, then found `pytest.importorskip("fastapi", reason="... lives
+in the API package")` at eight existing sites and deleted mine. One mechanism for twelve beats a
+ninth mechanism for four, even when the ninth is better.
+
+### The API job, and a file that must never be committed
+
+One real failure: `test_tutor_withholding.py` calls `load_problem("layer-norm")`, which reads
+`data/catalogue.json` -- the RL reward function's answer key, kept out of the repository on purpose,
+so absent from every clone and every runner. `FileNotFoundError` read like a broken path. It now
+skips with the wording `tests/test_differential.py` already uses for the same file.
+
+Reproduced against a `git worktree`, which is the cheap way to get CI's exact state: a clean checkout
+has no untracked `apps/api/.env`, and that file supplies 29 settings the runner fills from code
+defaults instead. An earlier "643 passed" was measured with it present and meant less than it looked.
+One caveat recorded for the next person: a Windows-created worktree's `.git` holds a `C:/` gitdir,
+which WSL cannot resolve, so any test shelling out to git fails there for reasons of its own.
+
+### The coverage floor was 40 and the measurement is 33.89
+
+A drop, not a ratchet, and recorded as one. The fall from the 41% the gate was written against is the
+consolidation rather than a regression: `ranking/eval.py`, `ranking/split.py`, `features/segment.py`,
+`features/mine.py` and the IRT modules arrived together, ~600 statements that all need the warehouse
+and all sit at 0%. The numerator barely moved; the denominator grew.
+
+**Set to 33 rather than 34, and not for headroom.** The two tools disagree on exactly that number:
+`coverage report --fail-under=34` PASSES at 33.89%, because coverage.py rounds to its configured
+precision before comparing, while pytest-cov compares the float `coverage.report()` returns and
+fails. Both verified. A gate whose verdict depends on which tool evaluates it is not a gate.
+
+The better fix is left as a decision rather than taken: measure only what the job can execute, by
+omitting the warehouse-dependent modules. The number would then mean something and could ratchet,
+instead of tracking how much unreachable code the tree contains.
+
+## Half a fix, and the sentence that caused it
+
+The root-canonicalisation fix went out, macOS's `npm test` went green, and the Windows runner kept
+failing nine tests with `../../../../../runneradmin/AppData/Local/Temp/...` in every path. The fix
+used `fs.realpathSync`. Measured on this machine:
+
+    realpathSync("C:\PROGRA~1")         -> "C:\PROGRA~1"
+    realpathSync.native("C:\PROGRA~1")  -> "C:\Program Files"
+
+Plain `realpathSync` resolves symlinks and junctions and returns an 8.3 short name UNCHANGED. Only
+`.native`, which goes through the OS resolver, expands it — and it resolves symlinks too, so one
+call answers both the macOS `/var` case and the Windows `RUNNER~1` case.
+
+**THE REPRODUCTION WAS THE PROBLEM, NOT THE DIAGNOSIS.** The junction harness that found the
+original eleven failures is resolved by plain `realpathSync`, so it proved the symlink half and was
+structurally incapable of catching the other. A harness that reproduces one of two mechanisms reads
+exactly like a harness that reproduces the bug. `workspace.test.ts` now pins the short-name case
+directly, against `C:\PROGRA~1` — Node exposes no `GetShortPathName`, so a test cannot mint an 8.3
+alias for a directory it just created, and that path exists on every Windows install with 8.3
+generation on. Mutation checked: revert `.native` to plain and it fails with
+`expected 'C:\PROGRA~1' to be 'C:\Program Files'`.
+
+**And the sentence.** `fsops.ts`'s `realRootFor` carried a comment asserting that its `fs.realpath`
+makes `C:\PROGRA~1` and `C:\Program Files` the same string. It does not. The claim was harmless
+where it sat -- both sides of that comparison go through the same non-expanding call, so they agree
+either way -- and it was not harmless as a description, because it is the sentence that was read when
+choosing how to canonicalise a root that needed the LONG form. Corrected in place, with what it
+actually does.
+
+A comment that overstates a function is a defect with a delay on it.
+
+## Annotations, not step summaries
+
+Three CI failures in a row were diagnosed by rebuilding the job's environment locally and guessing
+which difference mattered; twice the guess was wrong. The step summaries added in response were the
+wrong instrument: `$GITHUB_STEP_SUMMARY` is visible in a browser and is served by no API, so an
+outside reader still had nothing but "Process completed with exit code 1".
+
+Check-run ANNOTATIONS are served by the API. So every one of those steps now also emits its failing
+lines as `::error::` — the pytest `FAILED`/`ERROR` lines, the collection-error line, the coverage
+verdict, and the smoke's own `[smoke] FAIL`. The summary stays for the reader who is in the browser;
+the annotations are for the reader who is not.

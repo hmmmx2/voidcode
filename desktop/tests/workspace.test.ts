@@ -180,6 +180,34 @@ describe("the root is stored as the filesystem spells it", () => {
     expect(currentProjectRoot(alice)).not.toBe(viaLink);
   });
 
+  it.runIf(process.platform === "win32")("expands a Windows 8.3 short name", async (ctx) => {
+    /**
+     * THE HALF THE SYMLINK TEST ABOVE CANNOT REACH, and the reason the first fix here went out
+     * incomplete: it used plain `fs.realpathSync`, macOS went green, and nine tests kept failing on
+     * the Windows runner with `RUNNER~1` still in every path.
+     *
+     * Plain `realpathSync` resolves symlinks and junctions and returns an 8.3 short name UNCHANGED.
+     * Only `realpathSync.native`, which goes through the OS resolver, expands it. A junction — what
+     * the test above builds — is resolved by both, so it could never have caught this.
+     *
+     * `C:\PROGRA~1` rather than a constructed fixture: Node exposes no `GetShortPathName`, so a
+     * test cannot mint a short alias for a directory it just made. This one exists on every Windows
+     * install with 8.3 generation on, which is the default. Read-only — nothing is written, and the
+     * root is bound only to be read straight back.
+     */
+    const short = path.join("C:", path.sep, "PROGRA~1");
+    const long = path.join("C:", path.sep, "Program Files");
+    if (!(await fs.stat(short).then(() => true, () => false))) {
+      // 8.3 generation disabled on this volume. Skipped visibly rather than returning early,
+      // which would report as a pass having asserted nothing.
+      ctx.skip();
+      return;
+    }
+
+    __setProjectRoot(alice, short);
+    expect(currentProjectRoot(alice)).toBe(long);
+  });
+
   it("stores a root that cannot be resolved exactly as given", () => {
     // A directory that is not there is a race — unmounted or renamed between the dialog and the
     // bind — and `resolveWithin` refuses it on the next call with a real error. Throwing out of

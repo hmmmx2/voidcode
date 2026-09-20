@@ -107,6 +107,10 @@ def test_the_measured_rates_are_reproducible():
     """The numbers in the docstrings are claims about this repo, so they are checked rather than
     quoted. A drift here means the rule's justification no longer holds."""
     sys.argv = ["x"]
+    # The guard the sibling test above already has, and the only one of the twelve
+    # `src.main` importers in this directory that was missing it -- with `test_eval_gold_sets`
+    # and `test_grounding_wiring`'s two. All four failed the light CI job on `uvicorn`.
+    pytest.importorskip("fastapi", reason="the router lives in the API package")
     import routing_eval as RE
     from src.main import decide_mode
 

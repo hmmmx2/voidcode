@@ -59,9 +59,17 @@ export class TrashUnavailableError extends Error {
 async function realRootFor(sender: WebContents): Promise<string> {
   const root = currentProjectRoot(sender);
   if (root === undefined) throw new NoWorkspaceError();
-  // Canonicalised, because the comparison below is against a `resolveWithin` result, which is
-  // always real. On Windows a stored `C:\PROGRA~1` and a resolved `C:\Program Files` are the
-  // same directory with different strings, and a string compare would let the root through.
+  // Canonicalised, because the comparison below is against a `resolveWithin` result, which has
+  // also been through `realpath`. What matters is that BOTH sides go through the same call, not
+  // which spelling it lands on.
+  //
+  // THE NOTE THAT USED TO BE HERE WAS WRONG, and it cost half a fix elsewhere. It said that on
+  // Windows this turns a stored `C:\PROGRA~1` into `C:\Program Files`. It does not:
+  // `fs.realpath` resolves symlinks and junctions and returns an 8.3 short name UNCHANGED — only
+  // `fs.realpath.native` expands it. Measured. Harmless here, because the root and the candidate
+  // are resolved by the same non-expanding function and therefore match either way; not harmless
+  // as a description, because `workspace.ts` read this sentence, used plain `realpathSync` for a
+  // root it needed the LONG form of, and left nine Windows tests failing.
   return fs.realpath(root);
 }
 

@@ -133,7 +133,20 @@ def load_problem(problem_id: str) -> dict:
     Stays here rather than moving into `src` with the detector: the catalogue is the RL reward
     function's answer key and has no business being importable from the serving path. The guard
     reads the protected name out of the learner's own submission precisely so it never needs this.
+
+    SKIPS RATHER THAN RAISING WHEN THE FILE IS ABSENT, and that is not a convenience. The catalogue
+    carries reference solutions and the hidden cases, so `.gitignore` keeps it out of the repository
+    on purpose — which means a fresh clone and every CI runner has no copy. Without this,
+    `test_it_reads_the_entry_point_from_the_catalogue` failed the API job with a `FileNotFoundError`
+    that read like a broken path rather than a file that is deliberately not published.
+    `tests/test_differential.py` skips the same way and for the same reason; the wording is its.
     """
+    if not CATALOGUE.exists():
+        pytest.skip(
+            f"{CATALOGUE} is absent — it is the private answer key and is not committed. "
+            "Regenerate from the desktop repo with:\n"
+            "  npm run export:catalogue -- <path>/data/catalogue.json"
+        )
     catalogue = json.loads(CATALOGUE.read_text(encoding="utf-8"))
     for problem in catalogue["problems"]:
         if problem["id"] == problem_id:

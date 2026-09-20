@@ -12,6 +12,7 @@ that was tried (see the note in tests/test_rl_eval.py).
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -20,6 +21,22 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# CHECKED WITHOUT IMPORTING, which matters more here than it usually would: this module's entire
+# premise is that the trainer is never imported in-process, and `pytest.importorskip("torch")`
+# would pull a gigabyte-scale module into the pytest session to answer a question about a child.
+# `find_spec` answers it for free.
+#
+# All nineteen tests below go through `run_in_subprocess`, and `scripts/train_grpo.py` imports torch
+# at line 44 — so on `ci.yml`'s ML tree job, which does not install torch on purpose, every one of
+# them failed with `subprocess failed:` and a `ModuleNotFoundError` from the CHILD. That reads like
+# a broken harness rather than an absent dependency, and it is the difference between a suite that
+# says "not applicable here" and one that says "nineteen things are wrong".
+if importlib.util.find_spec("torch") is None:
+    pytest.skip(
+        "scripts/train_grpo.py imports torch in the subprocess these tests drive",
+        allow_module_level=True,
+    )
 
 
 def run_in_subprocess(body: str) -> dict:
