@@ -2092,6 +2092,38 @@ async function runRestrictedWindowSmoke(): Promise<string[]> {
 const CMD_OR_CTRL = process.platform === "darwin" ? "metaKey: true" : "ctrlKey: true";
 
 /**
+ * A temp project root whose path is already its own realpath, on every platform.
+ *
+ * WHY THIS IS NOT JUST `mkdtemp`. `workspace.ts`'s `bindRoot` canonicalises whatever root it is
+ * given, through `fs.realpathSync.native` — added because every path the user sees was otherwise
+ * computed against the wrong spelling. Several things are then KEYED BY THAT ROOT, and the agent's
+ * transcript is one: `recentRuns(projectRoot)` called with the raw `mkdtemp` result finds nothing a
+ * run wrote under the canonical one.
+ *
+ * So the smoke reported `agent/expected one proposed diff, got 0` on Windows, whose runner home
+ * `runneradmin` has the 8.3 alias `RUNNER~1`, and on macOS, where `/var/folders` resolves to
+ * `/private/var/folders` — and passed on Linux and on any developer machine whose `os.tmpdir()` is
+ * already canonical. A regression from the fix, wearing the costume of a broken agent. Three
+ * guesses went to the provider before instrumentation showed it resolving a model perfectly.
+ *
+ * `realpathSync.native`, not `realpathSync`: the plain one resolves symlinks and returns an 8.3
+ * short name UNCHANGED, which would have fixed macOS and left Windows exactly as it was. And the
+ * promises API has no `.native` at all — checked, rather than assumed, after assuming it once.
+ *
+ * Resolved HERE rather than beside each caller, for the reason `bindRoot` gives: one call site
+ * forgetting is the same bug again, and no assertion would notice.
+ */
+async function smokeProjectRoot(tag: string): Promise<string> {
+  const fsp = await import("node:fs/promises");
+  const fsSync = await import("node:fs");
+  const os = await import("node:os");
+  const nodePath = await import("node:path");
+  const made = await fsp.mkdtemp(nodePath.join(os.tmpdir(), `voidcode-smoke-${tag}-`));
+  return fsSync.realpathSync.native(made);
+}
+
+
+/**
  * The IDE renders at `/build`, inside the ordinary app window.
  *
  * This catches a failure that would otherwise be silent: `/build` missing from the static
@@ -2731,7 +2763,23 @@ async function runBuildSmoke(): Promise<string[]> {
             .catch((e) => ({ spawned: false, message: String(e && e.message) }))
         `)) as Record<string, unknown>;
 
-        const projectRoot = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "voidcode-smoke-pty-"));
+      /**
+       * CANONICALISED, because `bindRoot` canonicalises and several things are KEYED BY THE ROOT.
+       *
+       * `workspace.ts` resolves a bound root through `fs.realpathSync.native` — added to fix every
+       * displayed path being computed against the wrong spelling. That made the root main stores
+       * differ from the raw `mkdtemp` result wherever the two spellings differ, and the agent's
+       * transcript is keyed by project root: `recentRuns(projectRoot)` from the RAW path found
+       * nothing the run had written under the CANONICAL one, so the smoke reported
+       * "agent/expected one proposed diff, got 0".
+       *
+       * A REGRESSION FROM THAT FIX, and the platforms tell the story: it failed on Windows, whose
+       * runner home `runneradmin` has the 8.3 alias `RUNNER~1`, and on macOS, where `/var/folders`
+       * resolves to `/private/var/folders` — and passed on Linux and on this machine, where
+       * `os.tmpdir()` is already its own realpath. Three guesses were spent on the provider before
+       * instrumentation showed it resolving a model perfectly and the diff simply not being found.
+       */
+        const projectRoot = await smokeProjectRoot("pty");
         __setProjectRoot(window!.webContents, projectRoot);
 
         const marker = "voidcode-terminal-smoke";
@@ -2793,7 +2841,7 @@ async function runBuildSmoke(): Promise<string[]> {
       const fsp = await import("node:fs/promises");
       const nodePath = await import("node:path");
 
-      const projectRoot = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "voidcode-smoke-save-"));
+      const projectRoot = await smokeProjectRoot("save");
       __setProjectRoot(window!.webContents, projectRoot);
 
       const save = (payload: unknown): Promise<Record<string, unknown>> =>
@@ -3033,7 +3081,7 @@ async function runBuildSmoke(): Promise<string[]> {
       const nodePath = await import("node:path");
       const { rememberProject, forgetProject } = await import("./store/recents.js");
 
-      const projectRoot = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "voidcode-smoke-open-"));
+      const projectRoot = await smokeProjectRoot("open");
       await fsp.writeFile(nodePath.join(projectRoot, "context-me.py"), "x = 1\n", "utf8");
       rememberProject(projectRoot);
 
@@ -3612,7 +3660,7 @@ async function runBuildSmoke(): Promise<string[]> {
       const fsp = await import("node:fs/promises");
       const nodePath = await import("node:path");
 
-      const projectRoot = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "voidcode-smoke-agent-"));
+      const projectRoot = await smokeProjectRoot("agent");
       const target = nodePath.join(projectRoot, "target.ts");
       await fsp.writeFile(target, "export const original = true;\n", "utf8");
       __setProjectRoot(window!.webContents, projectRoot);
@@ -3985,7 +4033,7 @@ async function runBuildSmoke(): Promise<string[]> {
       const fsp = await import("node:fs/promises");
       const nodePath = await import("node:path");
 
-      const projectRoot = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "voidcode-smoke-vision-"));
+      const projectRoot = await smokeProjectRoot("vision");
       await fsp.writeFile(
         nodePath.join(projectRoot, "settings.ts"),
         'export const LABEL = "Appearance";\nfunction onSave() { throw new Error("E_MODE_DENIED"); }\n',
