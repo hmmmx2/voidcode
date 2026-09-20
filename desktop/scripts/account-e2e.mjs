@@ -442,11 +442,32 @@ if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
   );
 }
 
-electron = spawn(
-  electronBinary,
-  ["out/main/index.js", `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`],
-  { stdio: ["ignore", "pipe", "pipe"], env: childEnv }
+/**
+ * `--password-store=basic` AS A REAL ARGV, not only via the env var above.
+ *
+ * The env var reaches main, which calls `app.commandLine.appendSwitch("password-store", "basic")`
+ * — and the accounts run still failed with `storage_unavailable`, the vault reporting no credential
+ * store. The likeliest reason is timing: Chromium reads `--password-store` while it initialises
+ * OSCrypt, which can be before the main script's `appendSwitch` runs, so the switch arrives too
+ * late. This script spawns Electron directly, so it can pass the switch on the ACTUAL command line,
+ * where nothing can be too late for it. Kept the env var too: it is what covers `npm run smoke`,
+ * which does not build its own argv, and belt-and-braces costs nothing here.
+ *
+ * Before the script path, because Electron routes leading switches to Chromium and everything after
+ * the script to the app.
+ */
+const electronArgs = [];
+if (process.platform === "linux") electronArgs.push("--password-store=basic");
+electronArgs.push(
+  "out/main/index.js",
+  `--remote-debugging-port=${CDP_PORT}`,
+  `--user-data-dir=${profile}`
 );
+
+electron = spawn(electronBinary, electronArgs, {
+  stdio: ["ignore", "pipe", "pipe"],
+  env: childEnv,
+});
 electron.stdout.on("data", (d) => (apiLog += `[app] ${d}`));
 electron.stderr.on("data", (d) => (apiLog += `[app] ${d}`));
 

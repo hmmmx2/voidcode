@@ -106,6 +106,25 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function onReady(): Promise<void> {
+  /**
+   * WHAT THE CREDENTIAL STORE ACTUALLY RESOLVED TO, under the smoke or the account harness only.
+   *
+   * The accounts E2E failed on a headless runner with `storage_unavailable` even after
+   * `--password-store=basic` was requested, and I could not tell from outside whether the switch
+   * had failed to apply or whether `basic` simply does not make `isEncryptionAvailable()` true on
+   * this Electron. These two values answer that in one run instead of a guess, and the harness
+   * captures this process's stdout into its failure output. Linux only for the backend name —
+   * `getSelectedStorageBackend` does not exist on Windows or macOS.
+   */
+  if (process.env.VOIDCODE_SMOKE === "1" || process.env.VOIDCODE_PASSWORD_STORE_BASIC === "1") {
+    const { safeStorage } = await import("electron");
+    const backend =
+      process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : "n/a";
+    console.log(
+      `[app] safeStorage: backend=${backend} available=${String(safeStorage.isEncryptionAvailable())}`
+    );
+  }
+
   // The renderer is the real VoidCode app, built by Next as a static export
   // (`renderer/out`). It is not produced by electron-vite, so the path is relative to the
   // project rather than to the main bundle — and packaging has to copy it explicitly, which
