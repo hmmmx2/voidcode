@@ -40,7 +40,7 @@ from __future__ import annotations
 import ast
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,8 +120,8 @@ def serving_rate() -> dict[str, object]:
     effective = last.get("effective_from")
     assert isinstance(effective, ast.Call), "effective_from is not a datetime(...) call"
     parts = [a.value for a in effective.args if isinstance(a, ast.Constant)]
-    when = datetime(*parts, tzinfo=timezone.utc)  # type: ignore[arg-type]
-    assert when <= datetime.now(timezone.utc), (
+    when = datetime(*parts, tzinfo=UTC)  # type: ignore[arg-type]
+    assert when <= datetime.now(UTC), (
         f"the last pricing row is dated {when.isoformat()}, which is in the future. The live row is "
         "therefore an earlier one, and exporting the last would publish a rate nobody is being "
         "charged at yet."

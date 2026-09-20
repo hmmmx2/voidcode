@@ -7,20 +7,18 @@ these tests are load-bearing for that argument rather than for the sweep alone.
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src.models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.services import gpu_sweep_service as sweep
 from src.services import gpu_wallet_service as wallet
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -73,7 +71,7 @@ async def _stranded(sessionmaker_np, user_id, *, hold=4_000, age_seconds=3600):
         await db.execute(
             update(GpuReservation)
             .where(GpuReservation.id == reservation.id)
-            .values(created_at=datetime.now(timezone.utc) - timedelta(seconds=age_seconds))
+            .values(created_at=datetime.now(UTC) - timedelta(seconds=age_seconds))
         )
         await db.commit()
     return reservation

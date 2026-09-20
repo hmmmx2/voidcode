@@ -42,7 +42,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, SmallInteger, String, func
+from sqlalchemy import DateTime, Index, SmallInteger, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

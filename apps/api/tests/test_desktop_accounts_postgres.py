@@ -21,17 +21,16 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 from src import config
 from src.database import get_db
 from src.models.auth_token import PURPOSE_PASSWORD_RESET_CODE, AuthToken
@@ -117,7 +116,7 @@ async def make_user(sessionmaker_np, email: str, *, password: str | None = PASSW
         db.add(User(
             id=user_id, email=email, name="test", role="student", is_active=active,
             password_hash=await hash_password(password) if password else None,
-            email_verified_at=datetime.now(timezone.utc) if verified else None,
+            email_verified_at=datetime.now(UTC) if verified else None,
         ))
         await db.commit()
     return user_id

@@ -32,16 +32,15 @@ No leader election, no advisory lock.
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import metrics
 from ..database import AsyncSessionLocal
 from ..models.gpu_billing import GpuLedger, GpuReservation, GpuWallet
-
-from .. import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ async def sweep_stale_reservations(db: AsyncSession, *, max_age_seconds: int) ->
     `max_age_seconds` must be comfortably longer than any legitimate request, or this races the
     settle it exists to back up and voids requests that were merely slow.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+    cutoff = datetime.now(UTC) - timedelta(seconds=max_age_seconds)
 
     # Claim first, in one statement. RETURNING gives back only the rows this call actually won, so a
     # second replica running concurrently gets the rows it won and never the same ones.
@@ -62,7 +61,7 @@ async def sweep_stale_reservations(db: AsyncSession, *, max_age_seconds: int) ->
             GpuReservation.state == "held",
             GpuReservation.created_at < cutoff,
         )
-        .values(state="voided", settled_micro=0, settled_at=datetime.now(timezone.utc))
+        .values(state="voided", settled_micro=0, settled_at=datetime.now(UTC))
         .returning(
             GpuReservation.id, GpuReservation.wallet_user_id, GpuReservation.hold_micro
         )
@@ -78,7 +77,7 @@ async def sweep_stale_reservations(db: AsyncSession, *, max_age_seconds: int) ->
             .where(GpuWallet.user_id == user_id)
             .values(
                 reserved_micro=GpuWallet.reserved_micro - hold_micro,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
         )
         await db.flush()

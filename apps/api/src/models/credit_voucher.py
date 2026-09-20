@@ -35,7 +35,7 @@ design, not a bigger version of this one. Issue N rows instead until that is act
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -88,7 +88,7 @@ class CreditVoucher(Base):
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
     @property
@@ -98,4 +98,4 @@ class CreditVoucher(Base):
     def is_expired(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
             return False
-        return self.expires_at <= (now or datetime.now(timezone.utc))
+        return self.expires_at <= (now or datetime.now(UTC))

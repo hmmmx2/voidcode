@@ -55,13 +55,15 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Index,
     Integer,
     String,
     UniqueConstraint,
     func,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column

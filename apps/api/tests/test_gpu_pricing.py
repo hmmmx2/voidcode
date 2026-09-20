@@ -7,11 +7,10 @@ this module can have lives in a pure function.
 
 import ast
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from src.services import gpu_pricing
 from src.services.gpu_pricing import PricingRow, ceil_div, hold_micro_for, rate_for
 
@@ -61,7 +60,7 @@ class TestPricingRow:
         hour recover exactly one pod-hour.
         """
         row = PricingRow(
-            effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
             pod_micro_per_hour=36_000_000, nominal_concurrency=10, margin_bps=10_000,
             gpu="test", model="test", measured=True,
         )
@@ -73,7 +72,7 @@ class TestPricingRow:
     def test_under_utilisation_under_recovers_which_is_the_correct_direction(self):
         """Idle capacity is the operator's cost, not a learner's. Half-busy recovers about half."""
         row = PricingRow(
-            effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
             pod_micro_per_hour=36_000_000, nominal_concurrency=10, margin_bps=10_000,
             gpu="test", model="test", measured=True,
         )
@@ -82,7 +81,7 @@ class TestPricingRow:
 
     def test_the_rate_is_an_integer(self):
         row = PricingRow(
-            effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
             pod_micro_per_hour=49_000_000, nominal_concurrency=16, margin_bps=15_000,
             gpu="test", model="test", measured=True,
         )
@@ -91,7 +90,7 @@ class TestPricingRow:
     def test_margin_raises_the_rate(self):
         def rate(margin: int) -> int:
             return PricingRow(
-                effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                effective_from=datetime(2026, 1, 1, tzinfo=UTC),
                 pod_micro_per_hour=49_000_000, nominal_concurrency=16, margin_bps=margin,
                 gpu="test", model="test", measured=True,
             ).rate_micro_per_slot_second
@@ -103,28 +102,28 @@ class TestDatedTable:
     def test_a_past_instant_gets_the_row_that_was_live_then_not_the_newest(self):
         """Why the table is dated at all: a settled request must never re-price."""
         old = PricingRow(
-            effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            effective_from=datetime(2026, 1, 1, tzinfo=UTC),
             pod_micro_per_hour=10_000_000, nominal_concurrency=8, margin_bps=10_000,
             gpu="old", model="m", measured=True,
         )
         new = PricingRow(
-            effective_from=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            effective_from=datetime(2026, 6, 1, tzinfo=UTC),
             pod_micro_per_hour=90_000_000, nominal_concurrency=8, margin_bps=10_000,
             gpu="new", model="m", measured=True,
         )
         original = gpu_pricing.PRICING
         gpu_pricing.PRICING = (old, new)
         try:
-            assert rate_for(datetime(2026, 3, 1, tzinfo=timezone.utc)).gpu == "old"
-            assert rate_for(datetime(2026, 7, 1, tzinfo=timezone.utc)).gpu == "new"
+            assert rate_for(datetime(2026, 3, 1, tzinfo=UTC)).gpu == "old"
+            assert rate_for(datetime(2026, 7, 1, tzinfo=UTC)).gpu == "new"
             # Exactly on the boundary the newer row wins — `effective_from` is inclusive.
-            assert rate_for(datetime(2026, 6, 1, tzinfo=timezone.utc)).gpu == "new"
+            assert rate_for(datetime(2026, 6, 1, tzinfo=UTC)).gpu == "new"
         finally:
             gpu_pricing.PRICING = original
 
     def test_an_instant_before_the_table_starts_raises_rather_than_guessing(self):
         with pytest.raises(ValueError):
-            rate_for(datetime(2000, 1, 1, tzinfo=timezone.utc))
+            rate_for(datetime(2000, 1, 1, tzinfo=UTC))
 
     def test_the_row_that_was_live_before_the_benchmark_is_marked_unmeasured(self):
         """A guard on honesty, not on arithmetic, and it is date-pinned on purpose.
@@ -138,22 +137,22 @@ class TestDatedTable:
         the LIVE row lives in `test_gpu_reconciliation_postgres.py`, and it now asserts the
         opposite -- that the shipped price is measured and says what measured it.
         """
-        row = rate_for(datetime(2026, 9, 10, tzinfo=timezone.utc))
+        row = rate_for(datetime(2026, 9, 10, tzinfo=UTC))
         assert row.measured is False
         assert "PLACEHOLDER" in row.note
 
 
 class TestHold:
     def test_the_hold_covers_the_worst_case_not_the_expected_case(self):
-        hold = hold_micro_for(120, floor_micro=0, when=datetime(2026, 9, 10, tzinfo=timezone.utc))
-        rate = rate_for(datetime(2026, 9, 10, tzinfo=timezone.utc)).rate_micro_per_slot_second
+        hold = hold_micro_for(120, floor_micro=0, when=datetime(2026, 9, 10, tzinfo=UTC))
+        rate = rate_for(datetime(2026, 9, 10, tzinfo=UTC)).rate_micro_per_slot_second
         assert hold == 120 * rate
 
     def test_the_floor_applies_to_the_hold_so_a_trivial_request_is_still_refusable(self):
         """A one-token reply still occupied a slot. If the floor were only applied at settle, a
         learner with almost nothing could start a request they cannot pay the floor on."""
         hold = hold_micro_for(
-            1, floor_micro=10**9, when=datetime(2026, 9, 10, tzinfo=timezone.utc)
+            1, floor_micro=10**9, when=datetime(2026, 9, 10, tzinfo=UTC)
         )
         assert hold == 10**9
 

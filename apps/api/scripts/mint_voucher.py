@@ -30,7 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from src.database import AsyncSessionLocal
 from src.models.credit_voucher import KIND_BETA, KIND_PROMO, KIND_REFUND
@@ -62,7 +62,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def _mint(args: argparse.Namespace) -> list[str]:
     expires_at = (
-        datetime.now(timezone.utc) + timedelta(days=args.expires_days)
+        datetime.now(UTC) + timedelta(days=args.expires_days)
         if args.expires_days
         else None
     )

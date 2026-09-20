@@ -18,18 +18,16 @@ one. The symptom is a backend that OOMs under a load its own metrics say it can 
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text, update
+from conftest import TEST_DATABASE_URL, requires_postgres
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
-from src.models.gpu_queue import STATE_ABANDONED, STATE_WAITING, GpuQueueTicket, GpuSlot
+from src.models.gpu_queue import STATE_ABANDONED, GpuQueueTicket, GpuSlot
 from src.services import queue_service as queue
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -161,7 +159,7 @@ class TestLeases:
             await db.execute(
                 update(GpuSlot)
                 .where(GpuSlot.id == slot)
-                .values(leased_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                .values(leased_until=datetime.now(UTC) - timedelta(seconds=1))
             )
             await db.commit()
 
@@ -184,7 +182,7 @@ class TestLeases:
             await db.execute(
                 update(GpuSlot)
                 .where(GpuSlot.id == slot)
-                .values(leased_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                .values(leased_until=datetime.now(UTC) - timedelta(seconds=1))
             )
             await db.commit()
 
@@ -214,7 +212,7 @@ class TestLeases:
             await db.execute(
                 update(GpuSlot)
                 .where(GpuSlot.id == slot)
-                .values(leased_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                .values(leased_until=datetime.now(UTC) - timedelta(seconds=1))
             )
             await db.commit()
 
@@ -247,7 +245,7 @@ class TestLeases:
             await db.execute(
                 update(GpuSlot)
                 .where(GpuSlot.id == slot)
-                .values(leased_until=datetime.now(timezone.utc) - timedelta(seconds=1))
+                .values(leased_until=datetime.now(UTC) - timedelta(seconds=1))
             )
             await db.commit()
             assert await queue.slots_in_use(db) == 0
@@ -319,7 +317,7 @@ class TestWaiting:
             )
         )
         await free_one_shortly()
-        ticket_id, slot_id = await waiter
+        _ticket_id, slot_id = await waiter
 
         assert slot_id == slots[0]
         assert seen and seen[0] == 1, f"position was reported as {seen}"

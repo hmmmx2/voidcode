@@ -27,7 +27,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from src import config
 from src.services import runpod_client as rp
 

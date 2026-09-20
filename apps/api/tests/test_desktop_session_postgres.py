@@ -18,12 +18,12 @@ from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src import identity
 from src.database import get_db
 from src.models.auth_token import (
@@ -35,8 +35,6 @@ from src.models.user import User
 from src.routers import auth as auth_router
 from src.services import token_service
 from src.services.password_service import hash_password
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 

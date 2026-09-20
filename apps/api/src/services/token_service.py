@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import config
 from ..models.auth_token import (
     PURPOSE_DESKTOP_SESSION,
-    PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET_CODE,
     AuthToken,
 )

@@ -268,15 +268,27 @@ describe("a Linux desktop with no keyring the app can use", () => {
     }
   });
 
-  it("does not consult the Linux-only backend on Windows or macOS", () => {
+  /*
+   * A GUARD, NOT AN ASSERTION, and the difference is why this failed the first time CI ever ran.
+   *
+   * It read `expect(process.platform).not.toBe("linux")` — meaning "this case only applies off
+   * Linux", written as a check. On a Linux runner that is a FAILING TEST rather than a skipped one:
+   * `expected 'linux' not to be 'linux'`. It passed for a year because every run was on Windows,
+   * and the repository had no git remote, so no workflow had ever executed.
+   *
+   * `skipIf` says the same thing in the place that can act on it, and the reason stays in the name.
+   */
+  it.skipIf(process.platform === "linux")(
+    "does not consult the Linux-only backend on Windows or macOS",
+    () => {
     // `getSelectedStorageBackend()` is documented Linux-only. Reading it elsewhere would gate
     // persistence on a value the platform does not define.
     __safeStorage.backend = "basic_text";
-    expect(process.platform).not.toBe("linux");
 
     expect(setSecret("openrouter", KEY)).toEqual({ storedDurably: true });
     expect(storedRow()).toBeDefined();
-  });
+    }
+  );
 });
 
 describe("a machine with no credential store at all", () => {

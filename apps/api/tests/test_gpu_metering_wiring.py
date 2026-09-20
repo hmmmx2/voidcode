@@ -79,7 +79,9 @@ class TestEveryReleaseIsAlsoASettle:
         Matching on the attribute `.release` rather than on the receiver's name is what closes that.
         """
         offenders = []
-        for label, tree, source in (
+        # `_source` because this loop reads the TREE; the source text beside it is carried for
+        # the other assertions in this class and unused here.
+        for label, tree, _source in (
             ("main.py", TREE, SOURCE),
             ("metering.py", METERING_TREE, METERING_SOURCE),
         ):

@@ -4,26 +4,24 @@ Assembled as a minimal app around the router rather than importing `main`, per t
 `main` pulls torch at module scope and the suite must not depend on the inference stack.
 """
 
+import dataclasses
 import uuid
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-import dataclasses
-
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src import identity
 from src.database import get_db
 from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.routers import credits as credits_router
-from src.services import credit_packs, gpu_pricing, gpu_wallet_service as wallet
-
-from conftest import TEST_DATABASE_URL, requires_postgres
+from src.services import credit_packs, gpu_pricing
+from src.services import gpu_wallet_service as wallet
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -216,7 +214,7 @@ class TestLedgerAndUsage:
         entries = (await client.get("/v1/credits/ledger")).json()["entries"]
         ids = [e["id"] for e in entries]
         assert ids == sorted(ids, reverse=True), "newest first, by id"
-        assert [e["type"] for e in entries][0] == "charge"
+        assert entries[0]["type"] == "charge"
         assert entries[0]["amountMicro"] == -2_000
 
     async def test_usage_shows_what_a_request_occupied_and_what_it_cost(
@@ -282,7 +280,7 @@ class TestARetiredPackCannotBeBoughtButStillCredits:
     ):
         live = credit_packs.packs_on_sale()[0]
         retired = dataclasses.replace(live, code="my-retired-test", on_sale=False)
-        monkeypatch.setattr(credit_packs, "PACKS", credit_packs.PACKS + (retired,))
+        monkeypatch.setattr(credit_packs, "PACKS", (*credit_packs.PACKS, retired))
         monkeypatch.setattr("src.config.PAYMENTS_ENABLED", True)
 
         response = await client.post(
@@ -298,7 +296,7 @@ class TestARetiredPackCannotBeBoughtButStillCredits:
         """The other half. A purchase started before the pack was pulled must still credit."""
         live = credit_packs.packs_on_sale()[0]
         retired = dataclasses.replace(live, code="my-retired-test", on_sale=False)
-        monkeypatch.setattr(credit_packs, "PACKS", credit_packs.PACKS + (retired,))
+        monkeypatch.setattr(credit_packs, "PACKS", (*credit_packs.PACKS, retired))
 
         found = credit_packs.pack_by_code("my-retired-test")
         assert found is not None, (

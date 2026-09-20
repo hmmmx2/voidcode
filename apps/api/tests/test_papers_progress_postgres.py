@@ -14,13 +14,13 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src.database import get_db
 from src.identity import ANONYMOUS_USER_ID
 from src.models.auth_token import AuthToken
@@ -28,8 +28,6 @@ from src.models.catalogue import Paper, PaperProgress
 from src.models.user import User
 from src.routers import papers as papers_router
 from src.services import token_service
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 

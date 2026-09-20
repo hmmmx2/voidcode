@@ -221,10 +221,18 @@ jobs:
 
       - name: Install the API's dependencies
         # Not `requirements.txt`: it pins torch, ~2.5 GB, and `USE_SGLANG=true` means no model is
-        # loaded in this process. The same reasoning and the same list as `ci.yml`'s API job.
+        # loaded in this process.
+        #
+        # `openai` IS REQUIRED HERE AND NOT IN `ci.yml`'s API job, and copying that job's list
+        # without it is what made this job fail the first time it ran. That suite never imports
+        # `main` — deliberately, because importing it pulls torch — so it never reaches the
+        # lifespan. THIS job spawns `uvicorn src.main:app`, and the lifespan's SGLang branch does
+        # `import openai as _openai` to build the backend client. Without it the app raises during
+        # startup, never becomes ready, and the harness reports that it never answered — which reads
+        # like a broken harness rather than a missing dependency.
         run: |
           python -m pip install --upgrade pip
-          pip install             "fastapi>=0.109.0" "uvicorn[standard]" "pydantic>=2.5.0"             "sqlalchemy[asyncio]>=2.0.0" asyncpg alembic psycopg2-binary             redis httpx python-dotenv             argon2-cffi email-validator prometheus-client
+          pip install             "fastapi>=0.109.0" "uvicorn[standard]" "pydantic>=2.5.0"             "sqlalchemy[asyncio]>=2.0.0" asyncpg alembic psycopg2-binary             redis httpx python-dotenv openai             argon2-cffi email-validator prometheus-client
 
       - name: Run migrations
         working-directory: apps/api
@@ -260,7 +268,20 @@ jobs:
           fi
           if ! grep -q "\[account\] PASS" smoke-account.log; then
             echo "::error::smoke:account did not report PASS."
-            tail -40 smoke-account.log
+            # ALSO INTO THE STEP SUMMARY, because job logs need admin rights to download through the
+            # API. The first time this job failed, all that could be read from outside was this
+            # step's one-line annotation; the reason was in a log nobody could fetch.
+            {
+              echo "### smoke:account did not report PASS"
+              echo ""
+              echo '```'
+              grep "\[account\]" smoke-account.log || echo "(the harness printed nothing)"
+              echo ""
+              echo "--- last 60 lines ---"
+              tail -60 smoke-account.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            tail -60 smoke-account.log
             exit 1
           fi
           grep "\[account\]" smoke-account.log

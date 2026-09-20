@@ -42,8 +42,7 @@ the insert would then fail on the index instead of returning a clean 409.
 
 import logging
 import uuid
-
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
@@ -138,7 +137,7 @@ async def _create_password_account(
         is_active=True,
         password_hash=await hash_password(password),
         # Recorded, not only checked. `/register` used to require the box and discard it.
-        terms_accepted_at=datetime.now(timezone.utc),
+        terms_accepted_at=datetime.now(UTC),
         terms_version=terms_version,
     )
     db.add(user)
@@ -236,7 +235,7 @@ async def change_password(
         ) from exc
 
     user.password_hash = await hash_password(payload.new_password)
-    user.password_changed_at = datetime.now(timezone.utc)
+    user.password_changed_at = datetime.now(UTC)
     await token_service.revoke_all(db, user.id, PURPOSE_PASSWORD_RESET_CODE)
     await token_service.revoke_desktop_sessions(
         db, user.id, except_hash=getattr(request.state, "session_token_hash", None)
@@ -267,7 +266,7 @@ async def _session_response(
     token and relied on `get_db` to commit afterwards would give the client a credential for a row a
     failed commit then threw away.
     """
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     token = await token_service.issue_desktop_session(db, user)
     await db.commit()
     return DesktopSessionResponse(
@@ -497,7 +496,7 @@ async def confirm_password_reset_code(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     user.password_hash = await hash_password(payload.new_password)
     user.password_changed_at = now
     if user.email_verified_at is None:

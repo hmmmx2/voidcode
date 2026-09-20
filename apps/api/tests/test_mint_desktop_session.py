@@ -6,18 +6,34 @@ primitive. The refusal is therefore the important test, and it asserts the datab
 """
 
 import asyncio
+import importlib.util
 import uuid
+from pathlib import Path
 
+from conftest import TEST_DATABASE_URL, requires_postgres
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
-from scripts import mint_desktop_session as minter
 from src.models.auth_token import AuthToken
 from src.models.user import User
 from src.services import token_service
 
-from conftest import TEST_DATABASE_URL, requires_postgres
+# ── `mint_desktop_session`, loaded BY PATH rather than by name ────────────────
+#
+# `from scripts import mint_desktop_session` worked from `apps/api` and FAILED FROM THE REPOSITORY
+# ROOT, because there is a `scripts` package at the root as well as this one and which wins depends
+# on the working directory pytest was started from. CI runs `pytest apps/api/tests` from the root,
+# so the first time any workflow executed, this module could not be collected at all and the whole
+# API job exited 2 before running a single test.
+#
+# `test_tunnel.py` loads its subject the same way, for the same reason.
+_spec = importlib.util.spec_from_file_location(
+    "_voidcode_mint_desktop_session",
+    Path(__file__).resolve().parents[1] / "scripts" / "mint_desktop_session.py",
+)
+assert _spec is not None and _spec.loader is not None, "mint_desktop_session.py has moved"
+minter = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(minter)
 
 
 def test_production_is_refused_before_any_database_work(monkeypatch, capsys):

@@ -32,7 +32,6 @@ from pathlib import Path
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-
 from src import config, identity
 
 SRC = Path(__file__).resolve().parents[1] / "src"

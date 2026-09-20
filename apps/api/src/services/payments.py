@@ -178,7 +178,7 @@ def verify_and_parse(payload: bytes, signature_header: str, *, now: float | None
 
     expected = hmac.new(
         secret.encode("utf-8"),
-        f"{timestamp}.".encode("utf-8") + payload,
+        f"{timestamp}.".encode() + payload,
         hashlib.sha256,
     ).hexdigest()
 

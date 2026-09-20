@@ -20,20 +20,18 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src import config
 from src.database import get_db
 from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.routers import credits as credits_router
 from src.services import credit_packs
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -110,7 +108,7 @@ def _event(user_id: uuid.UUID, *, pack_code="my-starter-20", event_id=None) -> b
 def _headers(payload: bytes) -> dict:
     timestamp = int(time.time())
     signature = hmac.new(
-        SECRET.encode("utf-8"), f"{timestamp}.".encode("utf-8") + payload, hashlib.sha256
+        SECRET.encode("utf-8"), f"{timestamp}.".encode() + payload, hashlib.sha256
     ).hexdigest()
     return {"Stripe-Signature": f"t={timestamp},v1={signature}", "Content-Type": "application/json"}
 

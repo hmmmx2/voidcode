@@ -36,7 +36,6 @@ import sys
 import uuid
 
 from sqlalchemy import func, select
-
 from src import config
 from src.database import AsyncSessionLocal
 from src.models.user import User

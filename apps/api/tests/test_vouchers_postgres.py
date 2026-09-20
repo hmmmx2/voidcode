@@ -29,16 +29,16 @@ way, by planting the mutation and watching three of them fail.
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src import identity
 from src.database import get_db
 from src.models.credit_voucher import CreditVoucher
@@ -46,8 +46,6 @@ from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWa
 from src.models.user import User
 from src.routers import credits as credits_router
 from src.services import voucher_service
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 
@@ -189,7 +187,7 @@ class TestOneCodeGrantsOnce:
 
     async def test_a_ten_way_race_still_grants_once(self, sessionmaker_np, voucher):
         """Two can pass by luck. Ten cannot. Same caveat as above: this is the pair, not the claim."""
-        voucher_id, code = voucher
+        _voucher_id, code = voucher
         users = [await _make_user(sessionmaker_np) for _ in range(10)]
         barrier = asyncio.Barrier(10)
 
@@ -229,7 +227,7 @@ class TestTheClaimAlone:
     async def test_two_concurrent_claims_admit_exactly_one(
         self, sessionmaker_np, learner, other_learner, voucher
     ):
-        voucher_id, code = voucher
+        _voucher_id, code = voucher
         code_hash = voucher_service.hash_code(code)
         barrier = asyncio.Barrier(2)
 
@@ -237,7 +235,7 @@ class TestTheClaimAlone:
             async with sessionmaker_np() as db:
                 await barrier.wait()
                 row = await voucher_service.claim(
-                    db, code_hash, user_id, datetime.now(timezone.utc)
+                    db, code_hash, user_id, datetime.now(UTC)
                 )
                 await db.commit()
                 return "claimed" if row is not None else "refused"
@@ -251,7 +249,7 @@ class TestTheClaimAlone:
 
     async def test_ten_concurrent_claims_admit_exactly_one(self, sessionmaker_np, voucher):
         """Two can serialise by accident. Ten will not."""
-        voucher_id, code = voucher
+        _voucher_id, code = voucher
         code_hash = voucher_service.hash_code(code)
         users = [await _make_user(sessionmaker_np) for _ in range(10)]
         barrier = asyncio.Barrier(10)
@@ -260,7 +258,7 @@ class TestTheClaimAlone:
             async with sessionmaker_np() as db:
                 await barrier.wait()
                 row = await voucher_service.claim(
-                    db, code_hash, user_id, datetime.now(timezone.utc)
+                    db, code_hash, user_id, datetime.now(UTC)
                 )
                 await db.commit()
                 return row is not None
@@ -288,7 +286,7 @@ class TestTheClaimAlone:
             async with sessionmaker_np() as db:
                 await barrier.wait()
                 row = await voucher_service.claim(
-                    db, code_hash, user_id, datetime.now(timezone.utc)
+                    db, code_hash, user_id, datetime.now(UTC)
                 )
                 await db.commit()
                 return user_id if row is not None else None
@@ -307,7 +305,7 @@ class TestTheClaimAlone:
         async with sessionmaker_np() as db:
             row, code = await voucher_service.issue(
                 db, amount_micro=100_000_000, kind="promo",
-                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+                expires_at=datetime.now(UTC) - timedelta(seconds=1),
             )
             voucher_id = row.id
             await db.commit()
@@ -315,7 +313,7 @@ class TestTheClaimAlone:
             async with sessionmaker_np() as db:
                 claimed = await voucher_service.claim(
                     db, voucher_service.hash_code(code), learner,
-                    datetime.now(timezone.utc),
+                    datetime.now(UTC),
                 )
                 await db.commit()
             assert claimed is None
@@ -341,7 +339,7 @@ class TestWhatIsRefused:
         async with sessionmaker_np() as db:
             row, code = await voucher_service.issue(
                 db, amount_micro=100_000_000, kind="promo",
-                expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+                expires_at=datetime.now(UTC) - timedelta(seconds=1),
             )
             voucher_id = row.id
             await db.commit()

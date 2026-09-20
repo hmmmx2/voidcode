@@ -21,7 +21,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -74,7 +74,7 @@ async def try_claim(db: AsyncSession, ticket_id: uuid.UUID) -> int | None:
     A lapsed lease is claimable regardless of `holder`. That is what makes a killed replica's slot
     recover itself with nothing sweeping the table -- see the model's docstring.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     claimed = await db.execute(
         text(
             """
@@ -111,7 +111,7 @@ async def renew(db: AsyncSession, slot_id: int, ticket_id: uuid.UUID) -> bool:
     result = await db.execute(
         update(GpuSlot)
         .where(GpuSlot.id == slot_id, GpuSlot.holder == ticket_id)
-        .values(leased_until=datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS))
+        .values(leased_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS))
     )
     await db.commit()
     return (result.rowcount or 0) > 0
@@ -140,7 +140,7 @@ async def capacity(db: AsyncSession) -> int:
 
 async def slots_in_use(db: AsyncSession) -> int:
     """Held AND not lapsed. A lapsed slot is free, whatever its `holder` column says."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return int(
         (
             await db.execute(
@@ -172,7 +172,7 @@ async def enqueue(
         request_id=request_id,
         state=STATE_WAITING,
         replica=_replica(),
-        heartbeat_at=datetime.now(timezone.utc),
+        heartbeat_at=datetime.now(UTC),
     )
     db.add(ticket)
     await db.commit()
@@ -216,7 +216,7 @@ async def _mark(db: AsyncSession, ticket_id: uuid.UUID, state: str) -> None:
     await db.execute(
         update(GpuQueueTicket)
         .where(GpuQueueTicket.id == ticket_id)
-        .values(state=state, heartbeat_at=datetime.now(timezone.utc))
+        .values(state=state, heartbeat_at=datetime.now(UTC))
     )
     await db.commit()
 
@@ -307,7 +307,7 @@ async def wait_for_slot_events(
                 await db.execute(
                     update(GpuQueueTicket)
                     .where(GpuQueueTicket.id == ticket_id)
-                    .values(heartbeat_at=datetime.now(timezone.utc))
+                    .values(heartbeat_at=datetime.now(UTC))
                 )
                 await db.commit()
 
@@ -399,7 +399,7 @@ class SlotLease:
     the pair impossible to separate. This is the same shape for the same reason.
     """
 
-    __slots__ = ("ticket_id", "slot_id", "_renewer", "_released")
+    __slots__ = ("_released", "_renewer", "slot_id", "ticket_id")
 
     def __init__(self, ticket_id: uuid.UUID, slot_id: int, renewer: asyncio.Task | None):
         self.ticket_id = ticket_id

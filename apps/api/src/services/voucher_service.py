@@ -39,7 +39,7 @@ import hashlib
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,7 +143,7 @@ async def redeem(session: AsyncSession, code: str, user_id: uuid.UUID) -> int:
 
     Raises `VoucherError` with a message meant for the learner.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     code_hash = hash_code(code)
 
     row = await claim(session, code_hash, user_id, now)

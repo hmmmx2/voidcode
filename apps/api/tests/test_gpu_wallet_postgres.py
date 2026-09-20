@@ -16,16 +16,14 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
 from src.models.gpu_billing import GpuGrantKey, GpuLedger, GpuReservation, GpuWallet
 from src.models.user import User
 from src.services import gpu_wallet_service as wallet
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 

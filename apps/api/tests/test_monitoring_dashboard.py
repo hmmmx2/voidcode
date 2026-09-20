@@ -167,11 +167,34 @@ def test_the_backend_state_panel_carries_the_alert_expression(dashboard, declare
     )
 
 
-def test_the_dashboard_stays_crlf_and_two_space_json(dashboard):
-    """Reformatting this file makes every future diff unreadable, which is how panels get lost."""
+def test_the_dashboard_stays_canonical_two_space_json(dashboard):
+    """Reformatting this file makes every future diff unreadable, which is how panels get lost.
+
+    LINE ENDINGS ARE NORMALISED BEFORE COMPARING, and the earlier version of this test got that
+    wrong in a way that could only ever fail somewhere else. It built the expected bytes by
+    replacing every newline with a carriage-return pair and compared them to the file, so it
+    asserted the file was CRLF **on disk**.
+
+    That is not a property of the repository. Git stores this blob with LF — `git show HEAD:<path>`
+    confirms it — and what lands in a working tree depends on the checker-out's `core.autocrlf`. So
+    it passed on the machine it was written on and would have failed on every CI runner. It did: the
+    first time any workflow ran this was among the failures, and it only became visible locally
+    after a branch switch re-materialised the file through git's own normalisation.
+
+    What IS worth holding is below. The content is exactly `json.dumps(indent=2)` output, so a diff
+    shows the panel that changed rather than the whole file; and the endings are CONSISTENT, because
+    a half-converted file is what makes a diff unreadable regardless of which convention won.
+    """
     raw = DASHBOARD.read_bytes()
-    canonical = (json.dumps(dashboard, indent=2) + "\n").replace("\n", "\r\n").encode()
-    assert raw == canonical, (
-        "the dashboard is no longer canonical 2-space JSON with CRLF endings. Write it with "
-        "json.dumps(indent=2) rather than by hand."
+    canonical = (json.dumps(dashboard, indent=2) + "\n").encode()
+    assert raw.replace(b"\r\n", b"\n") == canonical, (
+        "the dashboard is no longer canonical 2-space JSON. Write it with json.dumps(indent=2) "
+        "rather than by hand."
+    )
+
+    crlf_count = raw.count(b"\r\n")
+    bare_lf = raw.replace(b"\r\n", b"").count(b"\n")
+    assert crlf_count == 0 or bare_lf == 0, (
+        f"the dashboard has mixed line endings ({crlf_count} CRLF and {bare_lf} bare LF). "
+        "Whichever convention it uses it has to use one, or every diff shows lines nobody edited."
     )

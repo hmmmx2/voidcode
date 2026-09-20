@@ -22,7 +22,6 @@ That stays true across repricing, and fails the moment the units drift apart aga
 """
 
 import pytest
-
 from src.services import credit_packs, gpu_pricing
 
 #: Stripe's Malaysian FPX pricing: 3% plus RM1.00, in sen. Modelled explicitly rather than folded

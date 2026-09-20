@@ -20,7 +20,6 @@ import time
 import uuid
 
 import pytest
-
 from src import config
 from src.services import credit_packs, payments
 
@@ -59,7 +58,7 @@ def _session_event(
 def _sign(payload: bytes, *, secret: str = SECRET, timestamp: int | None = None) -> str:
     timestamp = timestamp if timestamp is not None else int(time.time())
     signature = hmac.new(
-        secret.encode("utf-8"), f"{timestamp}.".encode("utf-8") + payload, hashlib.sha256
+        secret.encode("utf-8"), f"{timestamp}.".encode() + payload, hashlib.sha256
     ).hexdigest()
     return f"t={timestamp},v1={signature}"
 

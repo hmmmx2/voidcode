@@ -148,7 +148,7 @@ async def one_request(
             usage = data.get("usage") or {}
             completion_tokens = usage.get("completion_tokens", 0)
             prompt_tokens = usage.get("prompt_tokens", 0)
-    except Exception as exc:  # noqa: BLE001 - every failure mode is a datum here
+    except Exception as exc:
         return RequestResult(
             ok=False,
             slot_seconds=time.monotonic() - start,
@@ -203,7 +203,7 @@ async def run_level(
     def percentile(values: list[float], q: float) -> float:
         if not values:
             return 0.0
-        index = min(len(values) - 1, int(round(q * (len(values) - 1))))
+        index = min(len(values) - 1, round(q * (len(values) - 1)))
         return values[index]
 
     return Level(

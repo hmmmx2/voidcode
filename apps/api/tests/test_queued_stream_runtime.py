@@ -27,12 +27,11 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from conftest import TEST_DATABASE_URL, requires_postgres
 from fastapi import HTTPException
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
-from conftest import TEST_DATABASE_URL, requires_postgres
 
 main = pytest.importorskip(
     "src.main",
@@ -41,7 +40,7 @@ main = pytest.importorskip(
 
 from src import config  # noqa: E402
 from src.models.gpu_queue import GpuQueueTicket, GpuSlot  # noqa: E402
-from src.services import backend_registry, queue_service  # noqa: E402
+from src.services import queue_service  # noqa: E402
 
 pytestmark = [requires_postgres, pytest.mark.asyncio]
 

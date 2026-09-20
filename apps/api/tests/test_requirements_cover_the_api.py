@@ -15,9 +15,8 @@ because that is exactly the environment it is protecting.
 """
 
 import re
-from pathlib import Path
-
 import sys
+from pathlib import Path
 
 import pytest
 

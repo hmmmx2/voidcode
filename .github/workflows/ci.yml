@@ -56,8 +56,13 @@ jobs:
           --health-retries 10
 
     env:
-      TEST_DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
-      DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@localhost:5433/alwin_tutor
+      # 127.0.0.1, NOT localhost, and `conftest.py` spells out why at length: on a dual-stack host
+      # `localhost` resolves to both 127.0.0.1 and ::1, Docker publishes an IPv4 listener only, and
+      # the reachability probe requires EVERY resolved address to answer. With `REQUIRE_POSTGRES`
+      # below that is not a skip — it is a collection-time failure for a database that is running.
+      # This file was not following the advice its own test suite gives.
+      TEST_DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
+      DATABASE_URL: postgresql+asyncpg://alwin:alwin_dev@127.0.0.1:5433/alwin_tutor
       # A skip is the right answer on a laptop with no Docker. It is the wrong answer HERE, where
       # Postgres is a declared service: "not reachable" is a broken job, not an absent dependency.
       # `conftest.py` raises at collection when this is set and nothing answers, so the run fails

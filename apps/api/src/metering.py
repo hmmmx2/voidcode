@@ -167,7 +167,7 @@ async def drain(timeout: float = 5.0) -> None:
         return
     pending = list(_settle_tasks)
     logger.info("waiting for %d gpu settle task(s) at shutdown", len(pending))
-    done, still_pending = await asyncio.wait(pending, timeout=timeout)
+    _done, still_pending = await asyncio.wait(pending, timeout=timeout)
     if still_pending:
         logger.warning(
             "%d gpu settle task(s) did not finish in %.1fs; the sweep will release them",
@@ -235,7 +235,7 @@ async def gpu_slot(
     """
     try:
         await asyncio.wait_for(semaphore.acquire(), timeout=acquire_timeout)
-    except (TimeoutError, asyncio.TimeoutError) as exc:
+    except TimeoutError as exc:
         raise SlotUnavailable(
             f"no serving slot became free within {acquire_timeout:.0f}s"
         ) from exc

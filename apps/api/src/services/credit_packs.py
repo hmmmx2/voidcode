@@ -32,7 +32,8 @@ numbers, so when a measured rate arrives the sizing can be re-derived without re
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import ClassVar
 
 MICRO_PER_CREDIT = 1_000_000
 
@@ -58,7 +59,9 @@ class CreditPack:
     #: How each currency is written where the buyer lives. Not `currency.upper()`: "MYR 20.00" is
     #: how a bank statement reads, and "RM20.00" is how a price is written on anything a Malaysian
     #: is asked to buy. Getting this wrong makes a real product look like an export of a database.
-    _SYMBOLS = {"myr": "RM", "usd": "$", "sgd": "S$"}
+    #: `ClassVar`, so `dataclass` cannot mistake it for a field. It was already not one — an
+    #: unannotated assignment is skipped — but that is inference rather than intent.
+    _SYMBOLS: ClassVar[dict[str, str]] = {"myr": "RM", "usd": "$", "sgd": "S$"}
 
     @property
     def price_display(self) -> str:
@@ -79,7 +82,7 @@ class CreditPack:
 PACKS: tuple[CreditPack, ...] = (
     CreditPack(
         code="my-starter-20",
-        effective_from=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 10, tzinfo=UTC),
         price_minor=2000,
         currency="myr",
         credits_micro=1200 * MICRO_PER_CREDIT,
@@ -87,7 +90,7 @@ PACKS: tuple[CreditPack, ...] = (
     ),
     CreditPack(
         code="my-regular-50",
-        effective_from=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 10, tzinfo=UTC),
         price_minor=5000,
         currency="myr",
         credits_micro=3300 * MICRO_PER_CREDIT,
@@ -95,7 +98,7 @@ PACKS: tuple[CreditPack, ...] = (
     ),
     CreditPack(
         code="my-heavy-100",
-        effective_from=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 10, tzinfo=UTC),
         price_minor=10000,
         currency="myr",
         credits_micro=7000 * MICRO_PER_CREDIT,
@@ -120,5 +123,5 @@ def pack_by_code(code: str) -> CreditPack | None:
 
 def packs_on_sale(when: datetime | None = None) -> list[CreditPack]:
     """What to show a buyer now. Retired and future-dated rows are excluded."""
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     return [p for p in PACKS if p.on_sale and p.effective_from <= when]

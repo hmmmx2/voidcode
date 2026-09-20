@@ -215,7 +215,7 @@ def _run_probe():
         if "No module named 'torch'" in proc.stderr or "No module named 'transformers'" in proc.stderr:
             pytest.skip("inference stack not installed; endpoint model cannot be imported")
         pytest.fail(f"probe failed rc={proc.returncode}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
-    line = [l for l in proc.stdout.splitlines() if l.startswith("PROBE")]
+    line = [out for out in proc.stdout.splitlines() if out.startswith("PROBE")]
     assert line, f"probe printed nothing parseable:\n{proc.stdout}\n{proc.stderr}"
     return json.loads(line[-1][len("PROBE"):])
 

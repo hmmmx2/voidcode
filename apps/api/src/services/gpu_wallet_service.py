@@ -20,7 +20,7 @@ guarded UPDATE is atomic and a constraint is a guarantee.
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -124,7 +124,7 @@ async def reserve(
         )
         .values(
             reserved_micro=GpuWallet.reserved_micro + hold_micro,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
     )
 
@@ -205,7 +205,7 @@ async def _finish(
             # Written with the claim rather than afterwards, so a row can never be `settled` with
             # revenue recorded and no cost beside it.
             cost_micro=cost_micro,
-            settled_at=datetime.now(timezone.utc),
+            settled_at=datetime.now(UTC),
         )
     )
     if (claimed.rowcount or 0) == 0:
@@ -221,7 +221,7 @@ async def _finish(
         .values(
             reserved_micro=GpuWallet.reserved_micro - reservation.hold_micro,
             balance_micro=GpuWallet.balance_micro - charge_micro,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
     )
     await db.flush()
@@ -342,7 +342,7 @@ async def grant(
         .where(GpuWallet.user_id == user_id)
         .values(
             balance_micro=GpuWallet.balance_micro + amount_micro,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
     )
     await db.flush()

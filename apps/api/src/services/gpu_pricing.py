@@ -23,7 +23,7 @@ measured row replaces it, and that failure is the point.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 MICRO_PER_CREDIT = 1_000_000
 
@@ -86,7 +86,7 @@ USD_TO_MYR_TENTHS = 47
 #: Dated, newest last. Add a row; never edit one that has settled requests behind it.
 PRICING: tuple[PricingRow, ...] = (
     PricingRow(
-        effective_from=datetime(2026, 9, 9, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 9, tzinfo=UTC),
         # ~$0.49/hr for a 48 GB A40, the figure `docs/specs/SCALING-PROPOSAL.md` recommends for
         # serving a ~30B tutor. Expressed as micro-credits by pinning 1 credit = 1 US cent, so an
         # hour is 49 cents = 49_000_000 micro-credits.
@@ -106,7 +106,7 @@ PRICING: tuple[PricingRow, ...] = (
         ),
     ),
     PricingRow(
-        effective_from=datetime(2026, 9, 10, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 10, tzinfo=UTC),
         # THE CORRECTION: one credit is one SEN, not one US cent, because that is the currency the
         # product sells in. RunPod bills ~$0.49/hr for the A40, so the pod costs
         # 0.49 x USD_TO_MYR = ~RM2.30/hr = 230 sen = 230 credits per hour.
@@ -134,7 +134,7 @@ PRICING: tuple[PricingRow, ...] = (
         # 08:56 UTC: the minute the benchmark finished. Dated to when the measurement
         # exists rather than to midnight, so the row above stays the one that was live
         # for the whole period when nobody had measured anything.
-        effective_from=datetime(2026, 9, 10, 8, 56, tzinfo=timezone.utc),
+        effective_from=datetime(2026, 9, 10, 8, 56, tzinfo=UTC),
         # Same money as the row above. What changed is that the concurrency divisor is no longer a
         # guess, so `measured` can finally be True.
         pod_micro_per_hour=(49 * USD_TO_MYR_TENTHS // 10) * 1_000_000,
@@ -172,7 +172,7 @@ PRICING: tuple[PricingRow, ...] = (
 
 def rate_for(when: datetime | None = None) -> PricingRow:
     """The row live at `when` (default now). Raises if the table starts after that instant."""
-    when = when or datetime.now(timezone.utc)
+    when = when or datetime.now(UTC)
     live = [row for row in PRICING if row.effective_from <= when]
     if not live:
         raise ValueError(f"no pricing row is effective at {when.isoformat()}")

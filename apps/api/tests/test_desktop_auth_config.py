@@ -11,7 +11,6 @@ that its settings cannot come back: see the two tests at the end of this file.
 import importlib
 
 import pytest
-
 from src import config
 
 #: A production environment with every other check satisfied, so each test varies exactly one thing.
