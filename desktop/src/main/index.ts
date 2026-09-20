@@ -2660,7 +2660,27 @@ async function runBuildSmoke(): Promise<string[]> {
 
     expect("on /build", report.onBuildRoute, true);
     expect("react mounted", report.mountedSomething, true);
-    expect("workbench frame rendered", report.renderedAppNav, true);
+    /**
+     * OFF macOS ONLY, because on macOS this is not in the page to find.
+     *
+     * `renderedAppNav` matches the menu bar's own words — "Terminal" and "Selection" — in
+     * `document.body.innerText`. Electron puts the application menu in the SYSTEM menu bar on
+     * darwin, so the page contains none of its labels and this reported
+     * `expected true, got false` there while passing on the other two. Nothing was broken: the
+     * check was asking a Windows and Linux question on a Mac.
+     *
+     * It only became visible once the Cmd/Ctrl fix cleared the six keybinding failures ahead of it,
+     * which is the second time in this file that fixing one platform assumption exposed another.
+     *
+     * THE FRAME IS STILL ASSERTED ON ALL THREE, which is what makes this a narrowing rather than a
+     * hole: `activeDestination` below reads `nav[aria-label="Destinations"]` out of the DOM, and
+     * `renderedEditorChrome` matches the assistant panel's label. Both exist on macOS. What is
+     * skipped there is the in-window menu bar specifically — and the native menu has its own check,
+     * printed as `[smoke] shell: Account is live in the native menu from any surface`.
+     */
+    if (process.platform !== "darwin") {
+      expect("in-window menu bar rendered", report.renderedAppNav, true);
+    }
     expect("editor chrome rendered", report.renderedEditorChrome, true);
     expect("Code lit in the activity bar", report.activeDestination, "Code");
 

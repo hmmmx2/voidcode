@@ -2290,3 +2290,52 @@ than keep guessing where Electron parses a switch that arrives after the script 
 `app.commandLine.appendSwitch` before `app` is ready, which is the documented place — guarded on
 `VOIDCODE_SMOKE` **and** Linux, so no installed build is ever quietly downgraded to a plaintext
 store. A real user with no keyring keeps the refusal and the sentence explaining it.
+
+## The accounts step reported success for every failure, and `tee` is why
+
+It printed no PASS, no SKIP and no FAIL, and exited 0. The step was:
+
+    xvfb-run --auto-servernum npm run smoke:account 2>&1 | tee smoke-account.log
+
+**Without `pipefail`, a pipeline's exit code is the LAST command's** -- `tee` -- so this step
+reported success whatever the harness did. It reported success while the harness was failing, which
+is why the only evidence anywhere was the guard step saying "did not report PASS" with no reason
+attached.
+
+The step's own comment said `tee` was there so the following step could read the output. True, and
+incomplete: `tee` was also swallowing every failure this step existed to surface.
+
+And the cause was invisible a second way. The harness logged `api: up on 8031` and then threw, so
+Node printed a bare stack with no `[account]` prefix -- and the annotation emitter greps for that
+prefix. Two annotations saying the API started, one saying it did not pass, and the stack nowhere.
+The guard now emits the log TAIL as well.
+
+### The fix for that had the same bug in it
+
+First attempt: `... | tee smoke-account.log || true` and then
+`echo "harness exit: ${PIPESTATUS[0]}"`. `true` is itself a pipeline, so PIPESTATUS had already
+been reset to `(0)` by the time it was read -- the line would have reported success for every
+failure, which is precisely the bug being fixed. Measured rather than reasoned about:
+
+    (exit 7) | tee /dev/null || true        -> PIPESTATUS[0] = 0
+    (exit 7) | tee /dev/null || code=$?     -> code = 7
+
+An assignment does not run a pipeline before `$?` is read. That is the idiom now. Third time this
+session that the exit code of a pipeline has been wrong in a different way.
+
+## macOS again: the menu bar is not in the page
+
+`build/workbench frame rendered: expected true, got false`, and nothing was broken. `renderedAppNav`
+matches the menu bar's own words -- "Terminal" and "Selection" -- in `document.body.innerText`, and
+Electron puts the application menu in the SYSTEM menu bar on darwin. The page contains none of those
+labels. A Windows and Linux question, asked on a Mac.
+
+It only surfaced once the Cmd/Ctrl fix cleared the six keybinding failures ahead of it. **That is
+twice in one file that fixing one platform assumption exposed another underneath it**, which is
+worth naming as a pattern rather than meeting twice as a surprise: a suite that fails early on a
+platform is hiding how many platform assumptions it holds.
+
+Asserted off darwin only, and narrowed rather than holed: `activeDestination` reads
+`nav[aria-label="Destinations"]` out of the DOM and `renderedEditorChrome` matches the assistant
+panel, both of which exist on macOS, so the frame is still proven on all three. The native menu has
+its own check.
