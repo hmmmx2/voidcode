@@ -2339,3 +2339,63 @@ Asserted off darwin only, and narrowed rather than holed: `activeDestination` re
 `nav[aria-label="Destinations"]` out of the DOM and `renderedEditorChrome` matches the assistant
 panel, both of which exist on macOS, so the frame is still proven on all three. The native menu has
 its own check.
+
+## The agent diff was a regression from the root fix, and instrumentation is what found it
+
+Four rounds, three wrong guesses, and the count `got 0` is why each one was plausible.
+
+`workspace.ts`'s `bindRoot` canonicalises whatever root it is given, through
+`fs.realpathSync.native`. That was the right fix for every displayed path being computed against the
+wrong spelling. What it also did was make the root MAIN STORES differ from the raw `mkdtemp` result
+the smoke had created — and the agent's transcript is keyed by project root, so
+`recentRuns(projectRoot)` from the raw path found nothing the run had written under the canonical
+one. The turn worked perfectly. The smoke looked in the wrong drawer.
+
+The platforms say it plainly, once you know: it failed on Windows, whose runner home `runneradmin`
+has the 8.3 alias `RUNNER~1`, and on macOS, where `/var/folders` resolves to `/private/var/folders`.
+It passed on Linux and on every developer machine, because `os.tmpdir()` there is already its own
+realpath.
+
+**THE GUESSES, because the pattern is the lesson.** A race reading the store — plausible, the read
+WAS unsynchronised, I fixed that, and it was not this. A provider list the panel had fetched before
+the smoke scripted one — plausible, it had; a reload did not help. A stored preference this machine
+had and a runner did not — disproved by running the smoke with a fresh `--user-data-dir`, which
+passes. Each was a mechanism that could produce zero diffs. None was the one that did.
+
+What ended it was printing four values from the handler under `VOIDCODE_SMOKE`:
+
+    [smoke] agent turn: provider="ollama" resolved=true installed=["llama3.1:8b"] chose="llama3.1:8b"
+
+The provider resolved. A model was chosen. The turn ran. So the count was never about the model at
+all, and three rounds of reasoning about providers had been reasoning about the wrong half of the
+sentence. **A failure that reports a count cannot distinguish "it refused" from "it never got
+there"; only the values can.**
+
+### What was actually changed
+
+One helper, `smokeProjectRoot`, replacing five copies of `mkdtemp(join(os.tmpdir(), ...))`. It
+resolves with `realpathSync.native` — the plain `realpathSync` returns an 8.3 name UNCHANGED, which
+would have fixed macOS and left Windows exactly as it was, and `fs/promises` has no `.native` at
+all. Checked this time, having assumed it once and been corrected by `tsc`.
+
+Resolved in the helper rather than beside each caller, for the reason `bindRoot` gives: one call
+site forgetting is the same bug again, and no assertion would notice.
+
+### Reproduced properly, after reproducing it wrongly
+
+A junction plus `TMP` gives Windows a symlinked temp directory, which is the macOS condition. It is
+NOT the Windows condition: a junction is resolved by plain `realpathSync`, and an 8.3 alias is not.
+The real fixture is a directory whose name is longer than eight characters, and its short form —
+`vctmp-longname-for-83` becomes `VCTMP-~1`. With `TMP` pointed at the short form the smoke
+reproduced the failure, and then passed with the fix.
+
+**A harness that reproduces one of two mechanisms reads exactly like a harness that reproduces the
+bug** — the second time this session that sentence has had to be written.
+
+### Two flaky failures, recorded rather than claimed
+
+One junction run reported `build/typing did not mark the buffer unsaved` and `build/opening a file:
+editor painted nothing`, both with `editor text: ""`. A rerun passed, and so did the 8.3 run. I
+guessed MAX_PATH and then measured it: 240 characters against a 260 limit, so that was wrong too.
+They are timing-sensitive Monaco paint checks, and they are noted here as observed, unexplained and
+not reproduced — not as fixed, and not as nothing.
