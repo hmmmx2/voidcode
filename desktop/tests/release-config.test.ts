@@ -52,6 +52,9 @@ interface Step {
   if?: string;
   env?: Record<string, string>;
   "working-directory"?: string;
+  /** Action steps, which have no `run` at all — how artifacts move between jobs. */
+  uses?: string;
+  with?: Record<string, string>;
 }
 interface Job {
   steps?: Step[];
@@ -306,6 +309,56 @@ describe("the installers reach the two repositories that hand them out", () => {
     // And the job refuses to start without it, rather than failing after the main release is made.
     expect(script("Refuse to run without the scoped token")).toContain("DIST_RELEASE_TOKEN");
     expect(job().steps[0]?.name).toBe("Refuse to run without the scoped token");
+  });
+
+  it("does not read the draft release it just made, which it has no permission to see", () => {
+    /*
+     * THIS JOB COULD NOT HAVE WORKED, and nothing here noticed until the permissions and the
+     * `--draft` flag were read together.
+     *
+     * It fetched the release's assets with `gh release download "$TAG"` while holding
+     * `contents: read`. GitHub shows DRAFT releases only to tokens with push access, and the
+     * release above is created with `--draft` deliberately — so the first real tag would have
+     * failed here with "release not found", which reads as "the release was never created" rather
+     * than "this token cannot see drafts". A whole release, at the last step, on a message pointing
+     * at the wrong thing.
+     *
+     * The fix was not `contents: write`. This job writes to two OTHER repositories and its own
+     * comment says it must hold nothing here — so instead it takes the run's artifacts, which is
+     * where the installers came from in the first place, and `release` uploads the checksums file
+     * it computes so that it is an artifact too.
+     *
+     * Both halves are asserted, because either alone leaves it broken: no `gh release download` in
+     * this job, and a `checksums` artifact for it to find.
+     */
+    const readsTheRelease = job().steps.some((step) =>
+      String(step.run ?? "").includes("gh release download")
+    );
+    expect(
+      readsTheRelease,
+      "`distribute` reads the draft release, which its `contents: read` token cannot see"
+    ).toBe(false);
+
+    const downloads = job().steps.some((step) =>
+      String(step.uses ?? "").startsWith("actions/download-artifact")
+    );
+    expect(downloads, "`distribute` does not download the run's artifacts, so it has no installers").toBe(
+      true
+    );
+
+    const releaseJob = release.jobs.release;
+    if (releaseJob === undefined) throw new Error("release.yml has no `release` job");
+    const uploads = releaseJob.steps.filter((step) =>
+      String(step.uses ?? "").startsWith("actions/upload-artifact")
+    );
+    expect(
+      uploads.some((step) => String(step.with?.path ?? "").includes("SHA256SUMS.txt")),
+      "`release` does not upload SHA256SUMS.txt as an artifact, so `distribute` cannot find it"
+    ).toBe(true);
+
+    // And the permission it was reading the draft with is still deliberately narrow, because
+    // widening it would make the old approach work and this test pass for the wrong reason.
+    expect(job().permissions?.contents, "`distribute` now holds write on this repository").toBe("read");
   });
 
   it("publishes both as drafts", () => {

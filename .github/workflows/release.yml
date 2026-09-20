@@ -85,6 +85,21 @@ jobs:
           mv ../SHA256SUMS.txt .
           cat SHA256SUMS.txt
 
+      # UPLOADED AS AN ARTIFACT, NOT ONLY ATTACHED TO THE RELEASE, and `distribute` is the reason.
+      # It used to fetch the release's assets with `gh release download`, holding `contents: read` —
+      # and GitHub shows draft releases only to tokens with PUSH access, so that download would have
+      # 404'd on the first real tag with "release not found", which reads as "the release was never
+      # created" rather than "this token cannot see drafts". The alternatives were to give that job
+      # `contents: write` on this repository — the one thing its comment says it must not have, since
+      # it writes to two OTHERS — or to stop depending on the draft being readable. This is the
+      # second. Every installer is already an artifact of this run; the checksums were the only file
+      # that was not.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: assets/SHA256SUMS.txt
+          if-no-files-found: error
+
       # Real SLSA provenance: a signed statement of which workflow, at which commit, produced these
       # bytes. `subject-checksums` reads the file above, so one call covers every asset in the release
       # and the attestation cannot drift from the checksums a user verifies against.
@@ -187,13 +202,23 @@ jobs:
       - name: Resolve the tag
         run: echo "TAG=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
 
-      - name: Download this release's assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p assets && cd assets
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"
-          ls -l
+      # FROM THE RUN'S ARTIFACTS, NOT FROM THE RELEASE. `gh release download "$TAG"` stood here and
+      # could not have worked: the release above is a DRAFT, GitHub shows drafts only to tokens with
+      # push access, and this job holds `contents: read` on purpose. It would have failed the first
+      # real tag with "release not found".
+      #
+      # The same bytes either way — `release` attaches these very artifacts plus the checksums file
+      # it computes over them, and this job cannot start unless that succeeded. What is given up is
+      # small and worth naming: this no longer proves the assets are IN the release, only that the
+      # job which attached them exited 0.
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: What came down
+        working-directory: assets
+        run: ls -l
 
       # ── COUNT BEFORE COPYING ──────────────────────────────────────────────────────────────────
       #
