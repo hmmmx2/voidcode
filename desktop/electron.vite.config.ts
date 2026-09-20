@@ -11,14 +11,21 @@ import path from "node:path";
  *
  * Read from `VOIDCODE_BUILD_*` in the environment of whoever runs the build — CI passes them as
  * repository VARIABLES, not secrets, because every value here is public: an API address, a website,
- * and OAuth client ids, which identify the app to Google and Microsoft and grant nothing on their
- * own. No secret is ever baked into the installer; the Google client secret lives only in the API.
+ * No secret is ever baked into the installer.
+ *
+ * `googleClientId` and `microsoftClientId` WERE HERE, read from
+ * `VOIDCODE_BUILD_GOOGLE_CLIENT_ID` and `VOIDCODE_BUILD_MICROSOFT_CLIENT_ID`. Provider sign-in is
+ * removed, and the only reader of the baked values -- `oauthClientId()` in
+ * `platform/config.ts` -- had no callers left, so the whole chain from a repository variable to a
+ * packaged installer moved four values that nothing could act on.
+ *
+ * It survived the removal because `release-config.test.ts` pinned the variables to the workflow
+ * that passes them, and that pin held: both ends agreed, and both ends were useless. A pair of
+ * settings that agree with each other is not the same as a pair that does something.
  */
 const BUILD = {
   apiUrl: process.env.VOIDCODE_BUILD_API_URL ?? null,
   siteUrl: process.env.VOIDCODE_BUILD_SITE_URL ?? null,
-  googleClientId: process.env.VOIDCODE_BUILD_GOOGLE_CLIENT_ID ?? null,
-  microsoftClientId: process.env.VOIDCODE_BUILD_MICROSOFT_CLIENT_ID ?? null,
   allowOverride: process.env.VOIDCODE_BUILD_ALLOW_OVERRIDE === "1",
 };
 

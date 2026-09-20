@@ -490,16 +490,11 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
   /**
    * Cleared for the duration, and not merely assumed absent.
    *
-   * With a client id configured, the provider check below would open a REAL browser at a REAL
-   * consent screen on whatever machine runs the smoke. A developer who has these set to drive the
-   * flow by hand would otherwise get a browser window every time they ran `npm run smoke`.
+   * The two client-id variables were saved and deleted here, so a developer who had them set to
+   * drive the provider flow by hand did not get a real browser window on every `npm run smoke`.
+   * The provider check they protected is gone, nothing reads those variables any more, and
+   * `oauthClientId()` -- their only consumer -- had no callers.
    */
-  const previousClientIds = {
-    google: process.env.VOIDCODE_GOOGLE_CLIENT_ID,
-    microsoft: process.env.VOIDCODE_MICROSOFT_CLIENT_ID,
-  };
-  delete process.env.VOIDCODE_GOOGLE_CLIENT_ID;
-  delete process.env.VOIDCODE_MICROSOFT_CLIENT_ID;
 
   try {
     await window.loadURL(`${APP_ORIGIN}/models`);
@@ -563,11 +558,6 @@ async function runSignedOutSmoke(window: Electron.BrowserWindow): Promise<string
   } finally {
     if (previous === undefined) delete process.env.VOIDCODE_API_URL;
     else process.env.VOIDCODE_API_URL = previous;
-    for (const [provider, value] of Object.entries(previousClientIds)) {
-      const name = provider === "google" ? "VOIDCODE_GOOGLE_CLIENT_ID" : "VOIDCODE_MICROSOFT_CLIENT_ID";
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   return failures;

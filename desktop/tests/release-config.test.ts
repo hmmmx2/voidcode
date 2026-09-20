@@ -26,12 +26,24 @@ const read = (relative: string): string =>
 const readRepo = (relative: string): string =>
   fs.readFileSync(path.join(repoRoot, relative), "utf8").replace(/\r\n/g, "\n");
 
-/** The four build-time settings, and what each one decides. */
+/**
+ * The build-time settings, and what each one decides.
+ *
+ * THIS TABLE HELD TWO DEAD ENTRIES THROUGH A WHOLE FEATURE REMOVAL, and that is worth recording
+ * because the pin worked exactly as designed while protecting nothing. It listed
+ * `VOIDCODE_BUILD_GOOGLE_CLIENT_ID` and `VOIDCODE_BUILD_MICROSOFT_CLIENT_ID`, and the assertions
+ * below checked that every name here is both baked by `electron.vite.config.ts` and passed by
+ * `desktop.yml`. Both were — so nothing failed when provider sign-in was deleted, because the two
+ * ends still agreed with each other. They agreed about a value no code could act on:
+ * `oauthClientId()`, the only reader of the baked ids, had no callers at all.
+ *
+ * A pair of settings that agree with each other is not the same as a pair that does something. What
+ * catches this now is not a stronger pin here — it is the rule the repository already holds
+ * elsewhere, that a knob nothing reads is worse than no knob, applied on removal.
+ */
 const BUILD_VARS = {
   VOIDCODE_BUILD_API_URL: "where the app sends a session; null disables every account feature",
   VOIDCODE_BUILD_SITE_URL: "the public site, for the legal links and the payment return pages",
-  VOIDCODE_BUILD_GOOGLE_CLIENT_ID: "identifies the app to Google; absent hides the button",
-  VOIDCODE_BUILD_MICROSOFT_CLIENT_ID: "identifies the app to Microsoft; absent hides the button",
 } as const;
 
 interface Step {

@@ -27,8 +27,6 @@ import { app } from "electron";
 export interface BuildConfig {
   apiUrl: string | null;
   siteUrl: string | null;
-  googleClientId: string | null;
-  microsoftClientId: string | null;
   allowOverride: boolean;
 }
 
@@ -42,8 +40,6 @@ export function buildConfig(): BuildConfig {
   return {
     apiUrl: baked?.apiUrl ?? null,
     siteUrl: baked?.siteUrl ?? null,
-    googleClientId: baked?.googleClientId ?? null,
-    microsoftClientId: baked?.microsoftClientId ?? null,
     allowOverride: baked?.allowOverride === true,
   };
 }
@@ -112,27 +108,9 @@ export function siteUrl(): string | null {
   }
 }
 
-/**
- * The public client id this build presents to Google or Microsoft, or `null` when it has none.
- *
- * WHY A CLIENT ID IS NOT A SECRET, AND WHY IT IS STILL BUILD-TIME. It identifies the application to
- * the provider and every installed copy presents the same one; Google's own documentation calls it
- * public, and it is visible in the browser's address bar during the consent screen. What is secret
- * is Google's client SECRET, which never ships here — the API redeems the authorization code, so
- * the secret stays in server configuration (see `apps/api/src/services/oidc.py`).
- *
- * `null` is a supported state rather than a misconfiguration: a fork's build has no client ids, so
- * the provider buttons are not drawn and `account:signInOAuth` refuses with `not_configured`
- * without opening a browser. The alternative — a baked-in default — would have every fork's users
- * consenting to OUR application registration.
- *
- * The environment override exists so the flow can be driven against a developer's own registration
- * without rebuilding, and is read on the same terms as `apiBase()`: unpackaged builds only.
+/*
+ * `oauthClientId()` STOOD HERE, with a long note on why a client id is public and why `null` was a
+ * supported state rather than a misconfiguration. Provider sign-in is removed and the function had
+ * NO CALLERS -- `grep oauthClientId` found only its own definition. The build no longer bakes the
+ * ids either; see `electron.vite.config.ts` for why the pair outlived the feature.
  */
-export function oauthClientId(provider: "google" | "microsoft"): string | null {
-  const variable = provider === "google" ? "VOIDCODE_GOOGLE_CLIENT_ID" : "VOIDCODE_MICROSOFT_CLIENT_ID";
-  const fromEnv = overridesAllowed() ? process.env[variable] : undefined;
-  const baked = provider === "google" ? buildConfig().googleClientId : buildConfig().microsoftClientId;
-  const candidate = (fromEnv !== undefined && fromEnv !== "" ? fromEnv : null) ?? baked;
-  return candidate === null || candidate.trim() === "" ? null : candidate.trim();
-}
