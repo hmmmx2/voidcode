@@ -301,6 +301,17 @@ jobs:
         working-directory: apps/api
         run: alembic upgrade head
 
+      # A REAL CREDENTIAL STORE, because the diagnostic proved the alternative does not exist.
+      #
+      # This script's central assertion goes through `safeStorage`, and Electron 43 reports the
+      # `basic_text` fallback as unavailable (`isEncryptionAvailable() === false`) — confirmed by the
+      # `[app] safeStorage: backend=basic_text available=false` line the last run finally surfaced.
+      # So `--password-store=basic` cannot work; the runner needs an actual keyring, which is also
+      # the backend a real Linux desktop user has, so the E2E exercises the real path rather than a
+      # stand-in. `dbus-x11` provides `dbus-run-session`, which the account step wraps the run in.
+      - name: Install a keyring for safeStorage
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring libsecret-1-0 dbus-x11
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -335,8 +346,17 @@ jobs:
           # the exact bug this step was being changed to fix. Measured, not assumed --
           # `(exit 7) | tee /dev/null || true` gives PIPESTATUS[0]=0, while `|| code=$?` gives 7,
           # because an assignment does not run a pipeline before `$?` is read.
+          #
+          # `dbus-run-session` + an unlocked gnome-keyring, so `safeStorage` has a real backend.
+          # The daemon must be running with its `secrets` component unlocked BEFORE Electron probes
+          # OSCrypt, so it is started inside the same dbus session, unlocked with an empty password
+          # (the CI keyring holds nothing worth protecting), and only then does the harness run.
+          # `--auto-servernum` gives that inner shell its own X display.
           code=0
-          xvfb-run --auto-servernum npm run smoke:account 2>&1 | tee smoke-account.log || code=$?
+          dbus-run-session -- bash -c '
+            echo "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1 || true
+            xvfb-run --auto-servernum npm run smoke:account
+          ' 2>&1 | tee smoke-account.log || code=$?
           echo "harness exit: $code" | tee -a smoke-account.log
         working-directory: desktop
 

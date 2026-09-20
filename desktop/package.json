@@ -2,6 +2,7 @@
   "name": "@voidcode/desktop",
   "version": "0.1.0",
   "description": "Local-first desktop IDE for studying research papers and solving the problems inside them",
+  "homepage": "https://github.com/hmmmx2/voidcode",
   "license": "Apache-2.0",
   "private": true,
   "//type": "Deliberately NOT \"module\". Main and the sandboxed preload must be CommonJS (a sandboxed preload has no ESM loader), and with type:module Node would treat the emitted .js as ESM and fail on require. Source is written as ESM and bundled to CJS by electron-vite; the renderer bundle is ESM but loaded via <script type=module> over app://, so it is unaffected.",

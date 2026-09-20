@@ -411,21 +411,27 @@ const childEnv = { ...process.env, VOIDCODE_API_URL: `http://127.0.0.1:${API_POR
 delete childEnv.VOIDCODE_DEV_SESSION_TOKEN;
 
 /**
- * A credential store that exists, on Linux only.
+ * NO `--password-store=basic` ANY MORE, and the diagnostic is why.
  *
- * THIS SCRIPT'S CENTRAL ASSERTION GOES THROUGH `safeStorage`: with no dev token, `sessionToken()`
- * can only answer from the vault, which is what makes "signed in" mean the token was really stored.
- * On a headless runner there is no keyring, so `isEncryptionAvailable()` is false and `setSecret`
- * refuses — correctly; that refusal is the product's behaviour and `inference/vault.ts` explains it.
- * The refusal would surface here as a failed sign-in, which reads as a broken account flow.
+ * This script's central assertion goes through `safeStorage`: with no dev token, `sessionToken()`
+ * can only answer from the vault, so "signed in" means the token was really stored. On a headless
+ * runner there is no keyring by default, and the two earlier attempts to paper over that both
+ * failed — first `appendSwitch` in main, then `--password-store=basic` as a real argv. The
+ * diagnostic main now prints settled it in one line:
  *
- * `VOIDCODE_SMOKE` is not usable for this. It also changes session restoration and opens a scripted
- * window, and the point of this script is the real one. So main honours a second variable that does
- * nothing else — see the switch at the top of `src/main/index.ts`.
+ *     [app] safeStorage: backend=basic_text available=false
  *
- * Linux only, and set on the CHILD rather than the whole process, so nothing else inherits it.
+ * So the switch APPLIED (the backend is basic_text) and Electron 43 reports basic_text as NOT
+ * available — `isEncryptionAvailable()` is false, `setSecret` throws, sign-in fails. Forcing
+ * `basic` was the wrong direction: it selected a backend the runtime refuses.
+ *
+ * The fix is not here, it is in the job: `.github/workflows/desktop.yml`'s `verify-accounts` now
+ * installs `gnome-keyring` and runs this whole script under `dbus-run-session` with the keyring
+ * unlocked, so Electron auto-selects the real `gnome-libsecret` backend and encryption is genuinely
+ * available. That is the same backend a Linux desktop user has, so the E2E exercises the real path
+ * rather than a CI-only stand-in. Anything this script forced would only override that, which is
+ * exactly what went wrong — so it forces nothing.
  */
-if (process.platform === "linux") childEnv.VOIDCODE_PASSWORD_STORE_BASIC = "1";
 
 /**
  * ASK ELECTRON WHERE ITS BINARY IS. Do not construct the path.
@@ -450,21 +456,10 @@ if (typeof electronBinary !== "string" || !existsSync(electronBinary)) {
 }
 
 /**
- * `--password-store=basic` AS A REAL ARGV, not only via the env var above.
- *
- * The env var reaches main, which calls `app.commandLine.appendSwitch("password-store", "basic")`
- * — and the accounts run still failed with `storage_unavailable`, the vault reporting no credential
- * store. The likeliest reason is timing: Chromium reads `--password-store` while it initialises
- * OSCrypt, which can be before the main script's `appendSwitch` runs, so the switch arrives too
- * late. This script spawns Electron directly, so it can pass the switch on the ACTUAL command line,
- * where nothing can be too late for it. Kept the env var too: it is what covers `npm run smoke`,
- * which does not build its own argv, and belt-and-braces costs nothing here.
- *
- * Before the script path, because Electron routes leading switches to Chromium and everything after
- * the script to the app.
+ * No credential-store switch: the job provides a real keyring (see the block above), and Electron
+ * auto-selects `gnome-libsecret` from it. Forcing a backend here only overrode that.
  */
 const electronArgs = [];
-if (process.platform === "linux") electronArgs.push("--password-store=basic");
 electronArgs.push(
   "out/main/index.js",
   `--remote-debugging-port=${CDP_PORT}`,
