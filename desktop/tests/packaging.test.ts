@@ -443,7 +443,10 @@ describe("the release workflow", () => {
     ]);
 
   it("finds the jobs, so nothing below is vacuous", () => {
-    expect(Object.keys(release.jobs).sort()).toEqual(["gate", "release"]);
+    // `distribute` joined these when the installers began being copied into their own
+    // repositories. Spelled out rather than loosened to a length: this list is what makes the
+    // assertions below non-vacuous, and "at least two jobs" would pass against the wrong two.
+    expect(Object.keys(release.jobs).sort()).toEqual(["distribute", "gate", "release"]);
     expect(release.jobs.release?.needs).toContain("gate");
   });
 

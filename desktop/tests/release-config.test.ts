@@ -231,3 +231,116 @@ describe("one workflow owns a version tag", () => {
     expect(readRepo(".gitignore")).toMatch(/^desktop\/release\/$/m);
   });
 });
+
+describe("the installers reach the two repositories that hand them out", () => {
+  /**
+   * `release.yml`'s `distribute` job copies the macOS and Windows installers into `voidcode-mac`
+   * and `voidcode-windows` — repositories that hold no source, so that downloading VoidCode is one
+   * page with one file on it. Five properties of that job are load-bearing, and each has a way of
+   * being removed that leaves the workflow syntactically fine and the outcome wrong.
+   */
+  const release = parse(readRepo(".github/workflows/release.yml")) as {
+    on?: Record<string, unknown>;
+    jobs: Record<string, { needs?: string | string[]; permissions?: Record<string, string>; steps: Step[] }>;
+  };
+  /**
+   * Indexing a `Record` is `| undefined` under `noUncheckedIndexedAccess`, and a `!` here would be
+   * the wrong fix: if the job is genuinely missing, every assertion below should fail with a
+   * sentence saying so rather than a `TypeError` from the first property access.
+   */
+  function job() {
+    const found = release.jobs.distribute;
+    if (found === undefined) throw new Error("release.yml has no `distribute` job");
+    return found;
+  }
+  const script = (name: string): string =>
+    String(job().steps.find((step) => step.name === name)?.run ?? "");
+  const platforms = ["macOS", "Windows"] as const;
+
+  it("exists at all, so the rest of this block is not vacuous", () => {
+    expect(() => job(), "release.yml has no `distribute` job").not.toThrow();
+    expect(job().steps.length).toBeGreaterThan(4);
+    for (const name of platforms) expect(script(name)).toContain("gh release create");
+  });
+
+  it("cannot publish before the checksums exist", () => {
+    /*
+     * `SHA256SUMS.txt` is written by the `release` job, and each distribution repository's
+     * `verify-release.yml` checks its installers against it. Run in parallel, this job would
+     * publish installers beside a checksums file that had not been written yet — or an earlier
+     * one, which is worse, because it verifies and is wrong.
+     */
+    const needs = Array.isArray(job().needs) ? job().needs : [job().needs];
+    expect(needs, "`distribute` does not wait for the release job").toContain("release");
+  });
+
+  it("uses the scoped token, not this repository's", () => {
+    /*
+     * `github.token` cannot write to another repository at all, so swapping it in would not be a
+     * security downgrade — it would be a job that fails at the last step of a release. The real
+     * requirement is the other half: a FINE-GRAINED token scoped to exactly two repositories,
+     * rather than a classic PAT with `repo`, which grants write to everything the account can reach
+     * from a job that needs two.
+     */
+    for (const name of platforms) {
+      const step = job().steps.find((s) => s.name === name);
+      const token = String(step?.env?.GH_TOKEN ?? "");
+      expect(token, `${name} publishes with the wrong token`).toContain("secrets.DIST_RELEASE_TOKEN");
+      expect(token, `${name} publishes with github.token, which cannot write elsewhere`).not.toContain(
+        "github.token"
+      );
+    }
+
+    // And the job refuses to start without it, rather than failing after the main release is made.
+    expect(script("Refuse to run without the scoped token")).toContain("DIST_RELEASE_TOKEN");
+    expect(job().steps[0]?.name).toBe("Refuse to run without the scoped token");
+  });
+
+  it("publishes both as drafts", () => {
+    // The download page reads `releases/latest`, which excludes drafts, so a human publishing is
+    // what makes a build visible to anyone. Dropping this hands out an unreviewed build.
+    for (const name of platforms) {
+      expect(script(name), `${name} does not pass --draft`).toMatch(/--draft/);
+    }
+  });
+
+  it("counts the installers before copying them, and the count matches what is built", () => {
+    /*
+     * `gh release create <tag> *.dmg` with no matching file creates an EMPTY RELEASE and exits 0.
+     * The only symptom is a visitor finding a release page with nothing on it.
+     *
+     * The expected counts are checked against `electron-builder.yml` rather than trusted, so adding
+     * or removing an architecture fails here instead of silently shipping one fewer installer than
+     * was built.
+     */
+    const check = script("Check the installers are actually here");
+    expect(check, "nothing counts the installers before the copy").toContain("exit 1");
+
+    const builder = parse(readRepo("desktop/electron-builder.yml")) as {
+      mac: { target: { target: string; arch: string[] }[] };
+      win: { target: { target: string; arch: string[] }[] };
+    };
+    const built = (config: { target: { arch: string[] }[] }): number =>
+      config.target.reduce((n, t) => n + t.arch.length, 0);
+
+    for (const [ext, count] of [
+      ["dmg", built(builder.mac)],
+      ["exe", built(builder.win)],
+    ] as const) {
+      expect(check, `the job does not expect ${count} .${ext} file(s), which is what the build makes`)
+        .toContain(`"${ext}:${count}"`);
+    }
+  });
+
+  it("stays in this workflow, because only one may own a `v*` tag", () => {
+    /*
+     * Asserted here as well as in the block above, from the other direction: that block checks no
+     * OTHER workflow claims `v*`, and this checks that `distribute` is inside the one that does.
+     * Moving it to a new workflow would be the natural refactor and would put two workflows in a
+     * race on one tag, which is how a release ends up half-published.
+     */
+    expect(release.on).toHaveProperty("push");
+    expect(JSON.stringify(release.on)).toContain("v*");
+    expect(Object.keys(release.jobs)).toContain("distribute");
+  });
+});

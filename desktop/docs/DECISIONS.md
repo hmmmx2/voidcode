@@ -1719,3 +1719,86 @@ existed, and `markdown links point at files that exist` failed.
 Verified: desktop 2300 passed across 141 files, both typechecks clean, `npm run build` for the
 website exit 0 with `prebuild` verifying both documents and all ten routes static, root
 `pytest tests` exit 0, and every API test that does not need Postgres exit 0.
+
+## The installers get their own repositories, and one job to put them there
+
+`voidcode-mac` and `voidcode-windows` hold no source and no history of this project -- a README
+saying which file to take and what the platform's own security prompt will say, a LICENSE, a NOTICE,
+and one workflow. The main release keeps everything: Linux builds, SBOMs, source maps, and the
+checksums over all of it.
+
+### The NOTICE call is different from the website's, on purpose
+
+There is no code in those repositories, but they are how the BUILT application is distributed, and
+Apache-2.0 section 4(d) attaches to distribution rather than to source. So Pyodide's MPL-2.0 notice
+PERTAINS there, and each NOTICE names where the full third-party licence text sits inside the
+package and which SBOMs carry the rest.
+
+`apps/web`'s NOTICE deliberately omits exactly those notices: it publishes pages, not the
+application, and a component bundled into the application does not pertain to it. Both files say
+which case they are and why, because the two look like the same decision made inconsistently until
+you read the reason.
+
+### The .gitignore is the guard that keeps them small
+
+`*.dmg`, `*.exe`, `SHA256SUMS.txt` and the SBOMs are ignored, so an installer dropped in the
+directory while testing a release cannot be committed by accident. Git keeps every version of every
+object forever: a repository that accumulates binaries makes `git clone` a download of every
+installer ever shipped, and `git filter-repo` plus a force-push is the only way back.
+
+### `verify-release.yml` counts before it verifies
+
+The READMEs tell people to check `SHA256SUMS.txt` and call it "the only provenance this distribution
+offers" -- true, because these builds are ad-hoc signed and not notarised on macOS and not signed at
+all on Windows. That instruction is only as good as the file, and nothing re-checked the pair AFTER
+the installers were copied into another repository.
+
+**`sha256sum --check` over a file listing nothing exits 0.** So does one whose every entry is
+missing under `--ignore-missing`. Either would report a green "verified" for a release nobody can
+actually check. So the workflow asserts the number of installers listed is non-zero AND equal to the
+number attached, and only then checks hashes with `--strict`. It filters to its own extension,
+because the checksums file covers every asset of the main release including files deliberately not
+copied there.
+
+Exercised against five scenarios before committing: a good release verifies; no checksums file, a
+checksums file listing no installer, an installer listed but not attached, and an attached installer
+whose bytes were altered are each caught, with a message naming which.
+
+### `distribute` lives in `release.yml`, and that is a constraint
+
+`release-config.test.ts` asserts `release.yml` is the only workflow triggered by a `v*` tag. A new
+`v*` workflow would fail that on day one, which is the test working -- two workflows racing on one
+tag is how a release ends up half-published. So the job goes in the existing file.
+
+`needs: release` is load-bearing: `SHA256SUMS.txt` is written there, and running in parallel would
+publish installers beside a checksums file that had not been written yet, or an earlier one -- which
+is worse, because it verifies and is wrong.
+
+It also counts before copying, for the same reason the verify workflow does:
+`gh release create <tag> *.dmg` with no matching file creates an EMPTY RELEASE and exits 0, and the
+only symptom is a visitor finding a release page with nothing on it. The expected counts are checked
+against `electron-builder.yml`'s target matrix rather than written down, so adding an architecture
+fails the test instead of silently shipping one fewer installer than was built.
+
+`DIST_RELEASE_TOKEN` must be a FINE-GRAINED token scoped to those two repositories. Not a classic
+PAT with `repo`, which grants write to everything the account can reach from a job that needs two --
+and `github.token` cannot write to another repository at all. The job refuses to start without it,
+rather than failing at the last step of a release that has already been made.
+
+Five mutants, all killed: drop `needs: release`; swap in `github.token`; remove `--draft`; drop an
+architecture from the build; empty the count loop.
+
+### Two guards noticed this change before I did
+
+`packaging.test.ts`'s vacuity guard pins the release workflow's job list exactly, so adding a third
+job failed it -- the guard working. It is spelled out as three names rather than loosened to a
+length, because "at least two jobs" would pass against the wrong two.
+
+And the desktop typecheck rejected my own test: indexing a `Record` is `| undefined` under
+`noUncheckedIndexedAccess`. A `!` would have been the wrong fix -- if the job is genuinely missing,
+the failure should be a sentence saying so rather than a `TypeError` from the first property access.
+
+Verified: desktop 2306 passed across 141 files, typecheck clean, root `pytest tests` exit 0. The
+three folders exist as git repositories with no remote: `voidcode-web` carries its seventeen commits
+of real history from `git subtree split`, and the two distribution repositories carry five files
+each.
