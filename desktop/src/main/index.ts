@@ -65,10 +65,23 @@ app.enableSandbox();
  * against, so the secret is kept for the launch only and `storedDurably` comes back false — exactly
  * what the smoke already tolerates off Windows and macOS.
  *
- * Guarded on `VOIDCODE_SMOKE` so no installed build is ever quietly downgraded to a plaintext
- * store. A real user with no keyring should keep getting the refusal and the sentence explaining it.
+ * OPT-IN BY ENVIRONMENT, so no installed build is ever quietly downgraded to a plaintext store. A
+ * real user with no keyring keeps the refusal and the sentence explaining it.
+ *
+ * TWO VARIABLES, and the second is not redundant. `VOIDCODE_SMOKE` covers `npm run smoke`.
+ * `scripts/account-e2e.mjs` cannot use it: `VOIDCODE_SMOKE` also changes session restoration and
+ * opens a scripted window, and that harness exists to exercise the REAL sign-in — so it needs the
+ * credential store without any of the rest. It signs in through `safeStorage` by design, on a
+ * headless Linux runner with no keyring, which is exactly the refusal this switch answers.
+ *
+ * Named for what it does rather than for who needs it, because the next caller will not be a smoke
+ * either. A person who sets it gets session-only storage, which the app already handles and reports
+ * honestly through `storedDurably`.
  */
-if (process.env.VOIDCODE_SMOKE === "1" && process.platform === "linux") {
+if (
+  process.platform === "linux" &&
+  (process.env.VOIDCODE_SMOKE === "1" || process.env.VOIDCODE_PASSWORD_STORE_BASIC === "1")
+) {
   app.commandLine.appendSwitch("password-store", "basic");
 }
 

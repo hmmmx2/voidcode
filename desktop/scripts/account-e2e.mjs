@@ -404,6 +404,23 @@ const childEnv = { ...process.env, VOIDCODE_API_URL: `http://127.0.0.1:${API_POR
 delete childEnv.VOIDCODE_DEV_SESSION_TOKEN;
 
 /**
+ * A credential store that exists, on Linux only.
+ *
+ * THIS SCRIPT'S CENTRAL ASSERTION GOES THROUGH `safeStorage`: with no dev token, `sessionToken()`
+ * can only answer from the vault, which is what makes "signed in" mean the token was really stored.
+ * On a headless runner there is no keyring, so `isEncryptionAvailable()` is false and `setSecret`
+ * refuses — correctly; that refusal is the product's behaviour and `inference/vault.ts` explains it.
+ * The refusal would surface here as a failed sign-in, which reads as a broken account flow.
+ *
+ * `VOIDCODE_SMOKE` is not usable for this. It also changes session restoration and opens a scripted
+ * window, and the point of this script is the real one. So main honours a second variable that does
+ * nothing else — see the switch at the top of `src/main/index.ts`.
+ *
+ * Linux only, and set on the CHILD rather than the whole process, so nothing else inherits it.
+ */
+if (process.platform === "linux") childEnv.VOIDCODE_PASSWORD_STORE_BASIC = "1";
+
+/**
  * ASK ELECTRON WHERE ITS BINARY IS. Do not construct the path.
  *
  * This built `node_modules/electron/dist/` + `electron.exe` or `electron` by platform, and on the
