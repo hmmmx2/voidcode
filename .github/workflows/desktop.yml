@@ -421,6 +421,21 @@ jobs:
       # packaging step's own vendor call a no-op instead of a download.
       - run: npm run vendor:pyodide
 
+      # libfuse2, WITHOUT WHICH THE APPIMAGE BUILD FAILS. This is the single most common
+      # electron-builder failure on a hosted Ubuntu runner: the AppImage target (in
+      # `electron-builder.yml`'s `linux.target`) runs `appimagetool`, which needs FUSE 2, and the
+      # runner ships FUSE 3 only — `libfuse2` is absent (confirmed: `dpkg -l | grep libfuse2` is
+      # empty on Ubuntu 24.04, and the same on the 22.04 runner). macOS `.dmg` and Windows `.exe`
+      # both build; only the Linux job fails at `npm run package`, which is exactly this shape.
+      #
+      # A HYPOTHESIS, not a confirmed diagnosis — the job's log needs admin rights to read and the
+      # build cannot be reproduced on this Windows machine. So the step below CAPTURES the
+      # electron-builder output and surfaces it if this does not fix it, rather than leaving the
+      # next failure as opaque as this one was.
+      - name: Install libfuse2 for the AppImage build
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+
       # No identity signing. Certificates cost money and this is an OSS project (spec §4.3). The
       # README's "Installing a build" section documents the SmartScreen and Gatekeeper prompts rather
       # than letting users discover them, and the download page walks through both. SignPath is the
@@ -447,10 +462,39 @@ jobs:
       #
       # VOIDCODE_BUILD_ALLOW_OVERRIDE is deliberately NOT set: leaving it off is what makes a
       # packaged build ignore `VOIDCODE_API_URL` from the environment it happens to run in.
-      - run: npm run package
+      # TEED AND SURFACED ON FAILURE, because this step's annotation is "Process completed with exit
+      # code 1" and nothing else — the same opacity that cost several blind rounds on the smoke and
+      # the accounts job. electron-builder prints the real reason (a missing FUSE, a download 403, a
+      # native-module mismatch) to stdout; capturing it means the NEXT failure names itself instead
+      # of needing admin rights to read. `shell: bash` on all three so the pipeline behaves the same
+      # on the Windows and macOS runners.
+      - name: Build the installer
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run package 2>&1 | tee package.log
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           VOIDCODE_BUILD_API_URL: ${{ vars.VOIDCODE_BUILD_API_URL }}
+
+      - name: What the packager said, if it failed
+        if: failure()
+        shell: bash
+        run: |
+          [ -f package.log ] || { echo "no package.log — npm run package did not start"; exit 0; }
+          {
+            echo "### npm run package (${{ matrix.os }})"
+            echo ""
+            echo '```'
+            grep -iE "error|failed|cannot|fuse|libfuse|appimage|enoent|exit code|✗" package.log | tail -40 \
+              || echo "(no error-shaped lines matched; last 40 lines follow)"
+            echo ""
+            tail -40 package.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::pkg: $line"
+          done < <(grep -iE "error|failed|cannot|fuse|libfuse|appimage|enoent" package.log | tail -20)
 
       # The signature the hook made, checked by something other than the hook. `codesign --verify`
       # walks the nested helpers with `--deep --strict`, so a bundle whose outer app is signed and

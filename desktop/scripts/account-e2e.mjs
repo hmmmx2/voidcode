@@ -302,6 +302,13 @@ function stopEverything() {
 
 const die = (why) => {
   console.log("[account] FAIL:", why);
+  // SPECIFIC LINES FIRST, then the tail. The credential-store diagnostic main prints
+  // (`[app] safeStorage: backend=… available=…`) logs at startup, so `slice(-2500)` cut it out of
+  // the captured tail and the last run's failure could not say why the vault refused. Pull any such
+  // line to the front where the annotation emitter will keep it, then dump the tail as before.
+  for (const line of apiLog.split("\n")) {
+    if (/safeStorage:|password.store/i.test(line)) console.log(`[account] diag: ${line.trim()}`);
+  }
   console.log("--- api log (tail) ---");
   console.log(apiLog.slice(-2500));
   stopEverything();
