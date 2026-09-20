@@ -2051,6 +2051,23 @@ async function runRestrictedWindowSmoke(): Promise<string[]> {
 }
 
 /**
+ * The modifier this platform's bindings actually want, as a `KeyboardEvent` property.
+ *
+ * SIX SMOKE CHECKS SENT `ctrlKey: true` ON EVERY PLATFORM, and six of the seven macOS failures in
+ * the first readable CI run were that and nothing else: the command palette, the side bar, both
+ * Ctrl+Enter runs, Ctrl+F reaching Monaco, and "the run never started" as a knock-on.
+ *
+ * `renderer/src/lib/shell/keybindings.ts` computes `wantMeta = binding.cmdOrCtrl && isMac` and then
+ * requires `event.metaKey === wantMeta`. So a synthetic `ctrlKey: true` matches nothing on a Mac —
+ * correctly, because a Mac user presses Cmd. The app was right and the smoke was asking it the
+ * wrong question, which is the more dangerous way round: it reads as six broken features.
+ *
+ * Interpolated into the `executeJavaScript` payloads rather than branched inside them, so there is
+ * one place to read and no chance of two payloads disagreeing.
+ */
+const CMD_OR_CTRL = process.platform === "darwin" ? "metaKey: true" : "ctrlKey: true";
+
+/**
  * The IDE renders at `/build`, inside the ordinary app window.
  *
  * This catches a failure that would otherwise be silent: `/build` missing from the static
@@ -2136,7 +2153,7 @@ async function runBuildSmoke(): Promise<string[]> {
         // bindings alive on layouts where Alt changes the produced character — so an event
         // with only \`key\` is not a keystroke this app would ever see.
         window.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "k", code: "KeyK", ctrlKey: true, bubbles: true,
+          key: "k", code: "KeyK", ${CMD_OR_CTRL}, bubbles: true,
         }));
 
         // Opening is a state update; give React a frame to commit it.
@@ -2228,7 +2245,7 @@ async function runBuildSmoke(): Promise<string[]> {
 
         const press = (code, key) =>
           window.dispatchEvent(new KeyboardEvent("keydown", {
-            key, code, ctrlKey: true, bubbles: true,
+            key, code, ${CMD_OR_CTRL}, bubbles: true,
           }));
         const settle = () =>
           new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -2251,7 +2268,7 @@ async function runBuildSmoke(): Promise<string[]> {
         // chord must fall through WITHOUT preventDefault, so the key still reaches Monaco or
         // the browser. Swallowing it would make honest-disable a lie at the keyboard.
         const disabled = new KeyboardEvent("keydown", {
-          key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true,
+          key: "Enter", code: "Enter", ${CMD_OR_CTRL}, bubbles: true, cancelable: true,
         });
         window.dispatchEvent(disabled);
 
@@ -2336,7 +2353,7 @@ async function runBuildSmoke(): Promise<string[]> {
 
         const pressCtrlF = () => {
           window.dispatchEvent(new KeyboardEvent("keydown", {
-            key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+            key: "f", code: "KeyF", ${CMD_OR_CTRL}, bubbles: true, cancelable: true,
           }));
         };
 
@@ -2454,7 +2471,7 @@ async function runBuildSmoke(): Promise<string[]> {
         await new Promise((r) => setTimeout(r, 200));
 
         window.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true,
+          key: "Enter", code: "Enter", ${CMD_OR_CTRL}, bubbles: true, cancelable: true,
         }));
 
         const deadline = Date.now() + 20000;
@@ -2532,7 +2549,7 @@ async function runBuildSmoke(): Promise<string[]> {
         await window.webContents.executeJavaScript(`
           new Promise((done) => {
             window.dispatchEvent(new KeyboardEvent("keydown", {
-              key: "Enter", code: "Enter", ctrlKey: true, bubbles: true, cancelable: true,
+              key: "Enter", code: "Enter", ${CMD_OR_CTRL}, bubbles: true, cancelable: true,
             }));
             // Long enough for the run to settle and push its idle state, so the recorder
             // has both edges before it is torn down.
@@ -3618,12 +3635,26 @@ async function runBuildSmoke(): Promise<string[]> {
             if (send.disabled) return { ok: false, message: "Send stayed disabled" };
             send.click();
 
-            // Watch the button rather than sleeping blind.
+            // Watch the button rather than sleeping blind — and REPORT WHETHER IT WAS SEEN.
+            //
+            // No backticks anywhere in this comment: it lives inside a template literal, which is
+            // stated twenty lines above and which I broke anyway on the first attempt.
+            //
+            // This returned ok:true either way, so running out of budget was indistinguishable
+            // from the run finishing. On the CI runners it ran out, the store had no steps yet,
+            // and the failure surfaced twenty lines later as
+            // "agent/expected one proposed diff, got 0" — which names the symptom and gives no
+            // hint that the cause was a clock. The settled flag is the difference between those
+            // two messages, and main polls the store below rather than trusting this at all.
+            let settled = false;
             for (let i = 0; i < 80; i++) {
               await new Promise((r) => setTimeout(r, 250));
-              if (/^Send$/.test((send.textContent || "").trim()) && i > 2) break;
+              if (/^Send$/.test((send.textContent || "").trim()) && i > 2) {
+                settled = true;
+                break;
+              }
             }
-            return { ok: true };
+            return { ok: true, settled };
           } catch (e) {
             return { ok: false, message: String(e && e.message) };
           }
@@ -3635,12 +3666,40 @@ async function runBuildSmoke(): Promise<string[]> {
       // Read straight from the store rather than through the channel, so this asserts the row
       // exists rather than that one handler agrees with another.
       const { recentRuns, stepsFor } = await import("./store/agent.js");
-      // Read straight from the store, so this asserts the row exists rather than that one
-      // handler agrees with another.
-      const historyRuns = recentRuns(projectRoot);
-      const storedSteps = (
-        historyRuns[0] === undefined ? [] : stepsFor(projectRoot, historyRuns[0].id)
-      ).map((s) => ({ kind: s.kind, diff_id: s.diffId }));
+
+      /**
+       * Read straight from the store, so this asserts the row exists rather than that one handler
+       * agrees with another — and POLL FOR IT rather than reading once.
+       *
+       * The single read was a race the developer machine always won. The renderer waits on the
+       * composer's button returning to "Send", which says the turn is over as React sees it, and
+       * the step rows are written on a path this side does not synchronise with. On a loaded CI
+       * runner the read landed first, `diffIds` was empty, and the failure read
+       * "agent/expected one proposed diff, got 0" — a real assertion reporting a scheduling
+       * accident, on two of three platforms, having passed every local run.
+       *
+       * Thirty seconds and then the same assertion as before: this only removes the race, it does
+       * not weaken what is checked. A run that genuinely proposes nothing still fails, and now the
+       * `settled` flag above distinguishes "the turn never finished" from "it finished and
+       * proposed nothing".
+       */
+      let storedSteps: { kind: string; diff_id: string | null }[] = [];
+      let historyRuns = recentRuns(projectRoot);
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        historyRuns = recentRuns(projectRoot);
+        storedSteps = (
+          historyRuns[0] === undefined ? [] : stepsFor(projectRoot, historyRuns[0].id)
+        ).map((s) => ({ kind: s.kind, diff_id: s.diffId }));
+        if (storedSteps.some((step) => step.diff_id !== null)) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      if (run.settled !== true) {
+        failures.push(
+          "agent/the composer never returned to Send within 20s, so the turn did not finish — " +
+            "any count of proposed diffs below is about an interrupted run"
+        );
+      }
 
       /**
        * The diff ids come from the stored transcript now.

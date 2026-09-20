@@ -29,7 +29,7 @@
  *    is a hard failure, not a skip: a green run with that variable set is a lie.
  * 2. `VOIDCODE_E2E_DATABASE_URL` must be set EXPLICITLY, with no default. A default pointing at the
  *    development database is a script that deletes rows from a database its caller did not name.
- * 3. NOTHING MAY ALREADY BE LISTENING on either port. This one was learned the hard way: a uvicorn
+ * 3. NOTHING MAY ALREADY BE LISTENING on any of its three ports. This one was learned the hard way: a uvicorn
  *    leaked from an earlier run kept serving 8031, the new one failed to bind, `/health` went green
  *    against the stale process, and every assertion below passed against an API whose configuration
  *    and log this script did not own. The reset code was being written to a file nobody was reading.
@@ -68,10 +68,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import WebSocket from "ws";
 
 const API_PORT = Number(process.env.VOIDCODE_E2E_API_PORT ?? 8031);
 const CDP_PORT = Number(process.env.VOIDCODE_E2E_CDP_PORT ?? 9335);
+const BACKEND_PORT = Number(process.env.VOIDCODE_E2E_BACKEND_PORT ?? 8032);
+//: The one model the stub lists AND the value the API is configured with, so
+//: `choose_model` lands in its quiet 'configured and served' branch.
+const BACKEND_MODEL = "voidcode-e2e-stub";
 const ORIGIN = "app://bundle";
 const PYTHON = process.env.VOIDCODE_E2E_PYTHON ?? "python";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -120,6 +125,7 @@ function portIsFree(port) {
 for (const [what, port] of [
   ["the API", API_PORT],
   ["the app's remote debugger", CDP_PORT],
+  ["the stub inference backend", BACKEND_PORT],
 ]) {
   if (await portIsFree(port)) continue;
   console.log(
@@ -127,7 +133,7 @@ for (const [what, port] of [
       `${what}. That is almost always a process leaked by an earlier run: the new one fails to bind, ` +
       "the health check goes green against the old one, and every assertion afterwards is about an " +
       "API this script neither configured nor can read the log of. Stop it and run again, or set " +
-      "VOIDCODE_E2E_API_PORT / VOIDCODE_E2E_CDP_PORT."
+      "VOIDCODE_E2E_API_PORT / VOIDCODE_E2E_CDP_PORT / VOIDCODE_E2E_BACKEND_PORT."
   );
   process.exit(1);
 }
@@ -182,12 +188,64 @@ if (!existsSync(join("out", "main", "index.js"))) {
 const apiRoot = join("..", "apps", "api");
 if (!existsSync(join(apiRoot, "src", "main.py"))) skip(`no API source at ${apiRoot}`);
 
+// -- A stub inference backend, so the API can finish starting ------------------------------------
+//
+// THE COMMENT BELOW USED TO SAY THE ABSENT BACKEND COST "ABOUT A MINUTE" AND THAT WAS WRONG BY 5x,
+// which is what made this job time out on its first real run. The arithmetic, from
+// `apps/api/src/main.py`: the lifespan polls the backend 30 times with a 10-second sleep between
+// attempts -- 290 seconds before it gives up -- and then fires six KV-cache warmup requests through
+// a client whose default timeout is `SGLANG_TIMEOUT_SECONDS = 900`. Worse, `SGLANG_BASE_URL`
+// defaults to `http://sglang-server:30000/v1`, a Docker-internal hostname that does not resolve
+// outside compose, so none of those attempts fails fast for the reason a refused connection would.
+// The harness waited its whole 480-second budget and reported that the API never answered.
+//
+// So the backend is present instead. Nine lines of stub, and every one of them is load-bearing:
+//
+//   * `GET /v1/models` is what both the lifespan's readiness poll and `backend_registry.probe()`
+//     ask for, and 200 on the first attempt collapses 290 seconds into milliseconds.
+//   * ONE model in the list, named by `SGLANG_MODEL_NAME` below, puts `choose_model` in its
+//     "configured and served" case -- the one branch that returns no message at all. Serving none
+//     would be a warning and serving several with nothing configured would be FATAL, and neither
+//     belongs in a test of the account flow.
+//   * `POST /v1/chat/completions` answers the six warmup calls immediately, so a 900-second
+//     timeout can never be reached.
+//
+// NOTHING IN THE ACCOUNT FLOW TOUCHES INFERENCE. Registration, sign-in, reset-by-code and the
+// vault never reach a model, so a stub here removes a startup cost without weakening a single
+// assertion below. What it deliberately does NOT do is change the application to make itself
+// easier to test: the app's five-minute poll and its refusal to serve weights nobody chose are
+// both correct, and both stay.
+const backend = createHttpServer((request, response) => {
+  const url = request.url ?? "";
+  if (request.method === "GET" && url.startsWith("/v1/models")) {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ object: "list", data: [{ id: BACKEND_MODEL, root: BACKEND_MODEL }] }));
+    return;
+  }
+  if (request.method === "POST" && url.startsWith("/v1/chat/completions")) {
+    request.resume(); // drain, or the socket is left half-read and the client waits
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        id: "stub", object: "chat.completion", created: 0, model: BACKEND_MODEL,
+        choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      })
+    );
+    return;
+  }
+  response.writeHead(404, { "content-type": "application/json" });
+  response.end(JSON.stringify({ error: `the stub backend does not serve ${request.method} ${url}` }));
+});
+await new Promise((ready) => backend.listen(BACKEND_PORT, "127.0.0.1", ready));
+console.log(`[account] stub backend: serving ${BACKEND_MODEL} on ${BACKEND_PORT}`);
+
 // -- The API, as the application defines it -----------------------------------------------------
 //
-// `USE_SGLANG=true` so no model is loaded in this process; the backend it then polls is absent,
-// which costs about a minute of warmup retries at startup and nothing afterwards. `EMAIL_PROVIDER`
-// is `console`, which is how the reset code becomes readable at all -- `assert_production_config()`
-// refuses that setting in production, so this is a development-only mechanism by construction.
+// `USE_SGLANG=true` so no model is loaded in this process — the stub above is what it talks to.
+// `EMAIL_PROVIDER` is `console`, which is how the reset code becomes readable at all --
+// `assert_production_config()` refuses that setting in production, so this is a development-only
+// mechanism by construction.
 const api = spawn(
   PYTHON,
   ["-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", String(API_PORT), "--log-level", "info"],
@@ -197,6 +255,8 @@ const api = spawn(
     env: {
       ...process.env,
       USE_SGLANG: "true",
+      SGLANG_BASE_URL: `http://127.0.0.1:${BACKEND_PORT}/v1`,
+      SGLANG_MODEL_NAME: BACKEND_MODEL,
       EMAIL_PROVIDER: "console",
       DATABASE_URL: ASYNC_URL,
       DATABASE_URL_SYNC: SYNC_URL,
@@ -214,6 +274,9 @@ let cleanedUp = false;
 function stopEverything() {
   if (cleanedUp) return;
   cleanedUp = true;
+  // The stub is an in-process listener, not a child, so it needs its own close or the script
+  // never exits — the event loop stays alive on an idle server.
+  backend.close();
   for (const child of [electron, api]) {
     if (child === undefined || child.pid === undefined || child.killed) continue;
     if (process.platform === "win32") {

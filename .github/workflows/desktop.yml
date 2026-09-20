@@ -185,10 +185,24 @@ jobs:
       # native command's stderr with `2>&1` wraps each line in an ErrorRecord and can report
       # failure for a process that exited 0, so the same line would mean different things on
       # different runners. bash is present on every GitHub-hosted runner.
+      # `--password-store=basic` ON LINUX ONLY, and the vault's own error message is what asks for
+      # it: "On Linux that usually means no keyring is running — install gnome-keyring or kwallet,
+      # or run with --password-store to pick one." A headless runner has no keyring, so
+      # `safeStorage.isEncryptionAvailable()` is false, `setSecret` throws
+      # `EncryptionUnavailableError`, and the smoke failed with `build/threw: ...`. Not a durability
+      # problem — that one was already guarded off Linux — but no credential store AT ALL.
+      #
+      # `basic_text` is a backend `vault.ts` handles deliberately: `backendIsDurable()` names it as
+      # one it can "vouch against", so the secret is kept for the launch only and `storedDurably`
+      # comes back false, which is exactly what the smoke already tolerates here. So this selects
+      # the state the code was written for rather than working around it.
+      #
+      # `npm run smoke -- <flag>` appends to the end of the script's `&&` chain, which is the
+      # `electron out/main/index.js` invocation.
       - name: Smoke — Study window privilege boundary
         if: runner.os == 'Linux'
         shell: bash
-        run: xvfb-run --auto-servernum npm run smoke 2>&1 | tee smoke.log
+        run: xvfb-run --auto-servernum npm run smoke -- --password-store=basic 2>&1 | tee smoke.log
       - name: Smoke — Study window privilege boundary
         if: runner.os != 'Linux'
         shell: bash

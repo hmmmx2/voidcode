@@ -2175,3 +2175,78 @@ mutating the gate to size-only still fails it. Checked.
 
 A test that depends on wall-clock behaviour nothing promises is a test that will fail on someone
 else's machine and blame the code.
+
+## Four platform failures, once the annotations could be read
+
+The `::error::` emission paid for itself immediately: the first run that carried it named all four
+causes, and not one of them was what had been guessed from the exit codes.
+
+### macOS: six failures, one cause, and the app was right
+
+`keybindings.ts` computes `wantMeta = binding.cmdOrCtrl && isMac` and then requires
+`event.metaKey === wantMeta`. The smoke synthesised `ctrlKey: true` at six sites, so on a Mac it
+matched nothing -- correctly, because a Mac user presses Cmd. The command palette, the side bar,
+both Ctrl+Enter runs and Ctrl+F all failed, plus "the run never started" as a knock-on.
+
+THE APP WAS RIGHT AND THE TEST WAS ASKING THE WRONG QUESTION, which is the more dangerous way round
+than the reverse: it reads as six broken features. One `CMD_OR_CTRL` constant now, interpolated into
+the payloads rather than branched inside them, so two of them cannot disagree.
+
+### Linux: the vault threw, which is not the case that was guarded
+
+`storedDurably` was already guarded off Linux. What was not guarded is having NO credential store at
+all: a headless runner has no keyring, `safeStorage.isEncryptionAvailable()` is false, and
+`setSecret` throws `EncryptionUnavailableError`. The error message prescribes its own remedy -- "run
+with --password-store to pick one" -- so the workflow passes `--password-store=basic` on Linux only.
+
+`basic_text` is a backend `vault.ts` handles deliberately: `backendIsDurable()` names it as one it
+can "vouch against", the secret is kept for the launch only, and `storedDurably` comes back false,
+which is exactly what the smoke already tolerates there. This selects a state the code was written
+for rather than working around one it was not.
+
+Correcting a note carried in memory from an earlier session: Electron does NOT auto-select
+`basic_text` on a keyring-less Linux box. It refuses, and you have to ask.
+
+### The accounts job could never have passed, and a comment of mine is why
+
+It timed out waiting 480 seconds for an API that had started. The comment above the spawn said the
+absent backend cost "about a minute of warmup retries". The arithmetic in `apps/api/src/main.py`:
+**30 poll attempts with a 10-second sleep between them** -- 290 seconds -- and then six KV-cache
+warmup requests through a client whose default `SGLANG_TIMEOUT_SECONDS` is **900**. And
+`SGLANG_BASE_URL` defaults to `http://sglang-server:30000/v1`, a Docker-internal hostname that does
+not resolve outside compose, so nothing failed fast for the reason a refused connection would.
+
+An estimate off by 5x is what made a 480-second budget look generous.
+
+The harness now runs a nine-line stub backend: `GET /v1/models` returning exactly ONE model, named
+by the `SGLANG_MODEL_NAME` it also sets, which puts `choose_model` in its "configured and served"
+branch -- the only one that reports nothing. `POST /v1/chat/completions` answers the six warmups
+instantly. Startup goes from "never" to seconds.
+
+Nothing in the account flow touches inference, so this removes a cost without weakening an
+assertion. What it deliberately does not do is change the application: the five-minute poll and the
+refusal to serve weights nobody chose are both correct and both stay.
+
+ALSO CORRECTED, having been asserted wrongly mid-diagnosis: `choose_model` does NOT refuse to start
+when the backend serves nothing. That returns a WARNING. Fatal is only "unset with several served".
+The timeout was the poll and the warmups, not a refusal.
+
+### The agent diff: a race the developer machine always won
+
+`agent/expected one proposed diff, got 0` on two of three platforms, passing every local run.
+
+The renderer waited up to 20 seconds for the composer button to return to "Send" and then returned
+`ok: true` WHETHER OR NOT IT SAW THAT. So running out of budget was indistinguishable from the turn
+finishing, and the real assertion twenty lines later reported a count -- a scheduling accident
+wearing an assertion's clothes.
+
+Two changes. The wait reports a `settled` flag, so "the turn never finished" and "it finished and
+proposed nothing" are different messages. And main now POLLS the store for the evidence it is about
+to assert, rather than reading once on a path it does not synchronise with. Same assertion, no race.
+
+### What is not verified, said plainly
+
+The Linux and macOS fixes cannot be checked on this machine. The local smoke passes and Windows is
+unaffected -- `CMD_OR_CTRL` resolves to `ctrlKey` there, so a green local run says nothing about the
+Cmd branch. Both are mechanical and both follow a rule read out of the code they fix, which is the
+best that is available without those runners.
