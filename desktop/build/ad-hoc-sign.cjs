@@ -40,6 +40,13 @@ const path = require("node:path");
 exports.default = async function adHocSign(context) {
   if (context.electronPlatformName !== "darwin") return;
 
+  // MACOS SIGNING SWITCH (dormant). When a real Developer ID identity is configured — electron-builder
+  // exports CSC_LINK for it, or we set VOIDCODE_MAC_SIGNING=on — electron-builder signs with that
+  // identity and notarises, and this ad-hoc pass must NOT run: re-signing with "-" would strip the
+  // real signature. Unset today (CI sets CSC_IDENTITY_AUTO_DISCOVERY=false and no CSC_LINK), so this is
+  // a no-op until macOS notarization is turned on.
+  if (process.env.CSC_LINK || process.env.VOIDCODE_MAC_SIGNING === "on") return;
+
   const productName = context.packager.appInfo.productFilename;
   const app = path.join(context.appOutDir, `${productName}.app`);
 

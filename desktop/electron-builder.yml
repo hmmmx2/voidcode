@@ -1,6 +1,6 @@
 appId: ai.voidcode.desktop
 productName: VoidCode
-copyright: Copyright © 2026 VoidCode contributors
+copyright: Copyright © 2026 Alwin Tay Jing Xue
 
 directories:
   output: release
@@ -124,15 +124,13 @@ win:
     - target: nsis
       arch: [x64, arm64]
   icon: build/icon.png
-  # Unsigned. Certificates cost money, and the consequence is documented rather than hidden: the
-  # README's "Installing a build" section quotes the SmartScreen dialog, says the Run anyway button is
-  # behind More info, and says plainly that signing would silence the warning without changing the
-  # file (spec §4.3). Verified against the built artifact — `Get-AuthenticodeSignature` reports
-  # `NotSigned` for all three Windows installers.
-  #
-  # Checksums are the substitute for a signature and there is no release workflow yet to publish them
-  # with, so that half is a follow-up and not a present-tense claim. SignPath, free for OSS, is the
-  # follow-up for the signature itself rather than a paid cert.
+  # electron-builder does NOT sign here — it has no certificate on the runner and would fail. The NSIS
+  # installer is Authenticode-signed POST-BUILD by SignPath (free for open source) in the signing steps
+  # of .github/workflows/release.yml, gated on the SIGNPATH_* repository variables. So `false` means
+  # "leave signing to SignPath", not "ship unsigned": once SignPath is configured the downloaded
+  # installer is signed, and SmartScreen fades as that signature earns download reputation. `false`
+  # also keeps electron-builder from rewriting the exe, which needs the winCodeSign toolchain whose
+  # symlinks break local Windows packaging (docs/RELEASE.md Q-008).
   signAndEditExecutable: false
 
 nsis:
@@ -157,6 +155,14 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # MACOS NOTARIZATION SWITCH (dormant — do not half-enable). When the owner enrols in the Apple
+  # Developer Program, turning macOS from ad-hoc to a clean Gatekeeper experience is one coordinated
+  # change: add `notarize:` here (e.g. `notarize: { teamId: <TEAM_ID> }`); supply a Developer ID via
+  # CSC_LINK/CSC_KEY_PASSWORD and APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID (or an App Store
+  # Connect API key) in desktop.yml gated on `vars.VOIDCODE_MAC_SIGNING == 'on'`; add @electron/notarize
+  # as a direct devDependency; and flip the ad-hoc pins in desktop/tests/{packaging,release-config}.test.ts
+  # in the same commit. Left ABSENT on purpose: a test asserts `mac.notarize` is undefined so it cannot
+  # be half-enabled. The ad-hoc hook (build/ad-hoc-sign.cjs) already steps aside when CSC_LINK is set.
 
 # AD-HOC SIGN THE PACKED APP. See build/ad-hoc-sign.cjs for the whole argument; the short
 # version is that arm64 macOS REFUSES to execute a binary with no signature at all, so a

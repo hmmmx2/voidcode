@@ -39,16 +39,23 @@ nobody can close is a complaint.
 
 ## Q-001 — Code signing on Windows
 
-**Unsigned.** SmartScreen shows "Windows protected your PC" on first run and hides **Run anyway**
-behind **More info**. Verified against the built artifact: `Get-AuthenticodeSignature` reports
-`NotSigned` for all three Windows installers.
+**Wired, dormant.** `.github/workflows/release.yml` has a `sign-windows` job that Authenticode-signs
+the installers with **SignPath** (free for open-source projects) via
+`signpath/github-action-submit-signing-request@v3`, before the release attaches them. It is GATED on
+`vars.SIGNPATH_ORGANIZATION_ID`, so it is skipped — and installers ship unsigned — until the owner
+finishes SignPath's OSS onboarding and sets `SIGNPATH_API_TOKEN` (secret) plus the
+`SIGNPATH_ORGANIZATION_ID` / `SIGNPATH_PROJECT_SLUG` / `SIGNPATH_SIGNING_POLICY_SLUG` /
+`SIGNPATH_ARTIFACT_CONFIG_SLUG` variables. While unsigned, `Get-AuthenticodeSignature` reports
+`NotSigned` and SmartScreen shows "Windows protected your PC" with **Run anyway** behind **More info**.
 
-A certificate is an annual fee. **SignPath** is free for open-source projects and is the intended
-route.
+SmartScreen is reputation-based, so even once signed the warning fades as downloads accumulate rather
+than vanishing instantly (only an EV certificate is instant, and this project uses the free SignPath
+route deliberately).
 
-*Settled by:* applying to SignPath and wiring the signing step into `.github/workflows/release.yml`.
-Until then the README's "Installing a build" section documents the prompt rather than hiding it, and
-`desktop/tests/packaging.test.ts` fails if that section stops matching the config.
+*Settled by:* the owner completing SignPath onboarding and setting the secret + variables. The
+`sign-windows` job stays UNPRIVILEGED (no `contents: write`), so the third-party action never runs in
+the publishing job — `desktop/tests/{packaging,release-config}.test.ts` pin that boundary and the
+job's shape.
 
 ## Q-002 — Notarisation on macOS, and whether anyone can test it
 

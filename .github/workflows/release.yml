@@ -45,11 +45,83 @@ jobs:
   gate:
     uses: ./.github/workflows/desktop.yml
 
+  # ── SIGN THE WINDOWS INSTALLERS (SignPath) ───────────────────────────────────────────────────────
+  #
+  # A SEPARATE, UNPRIVILEGED JOB on purpose. It runs SignPath's third-party action, so it must NOT hold
+  # `contents: write` — that lives only in `release`, which runs no third-party code (packaging.test.ts
+  # enforces that boundary). SignPath (free for open source) Authenticode-signs the NSIS installers in
+  # the cloud; this is legitimate code signing that proves who built the file, not evasion.
+  #
+  # GATED on `vars.SIGNPATH_ORGANIZATION_ID`, so the job is SKIPPED until the owner finishes SignPath
+  # onboarding and sets the secret + vars. `release` tolerates the skip (see its `if:`) and ships the
+  # unsigned installers, so landing this cannot break a release. Verified action:
+  # signpath/github-action-submit-signing-request@v3.
+  sign-windows:
+    name: sign Windows installers (SignPath)
+    needs: gate
+    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    runs-on: ubuntu-22.04            # SignPath is a cloud service; no Windows runner needed
+    permissions:
+      contents: read
+      actions: read                  # the action reads this run's uploaded artifact via the token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-windows-latest
+          path: unsigned
+      - name: Stage the unsigned installers flat
+        run: |
+          set -euo pipefail
+          mkdir -p to-sign
+          find unsigned -name '*win*.exe' -exec cp -f {} to-sign/ \;
+          test -n "$(ls -A to-sign)" || { echo "::error::no Windows .exe to sign"; exit 1; }
+          ls -l to-sign
+      - id: unsigned-win
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-unsigned
+          path: to-sign/*.exe
+          if-no-files-found: error
+      - name: Submit signing request
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-win.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+      - name: Collect the signed installers
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          # `find`, because the artifact configuration may nest the signed files in a subdirectory.
+          find signed -name '*.exe' -exec cp -f {} out/ \;
+          count=$(ls -1 out/*.exe 2>/dev/null | wc -l)
+          [ "$count" -gt 0 ] || { echo "::error::SignPath returned no signed .exe"; exit 1; }
+          echo "signed $count installer(s)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows-signed
+          path: out/*.exe
+          if-no-files-found: error
+
   release:
     name: draft release
-    needs: gate
+    # `always()` so a SKIPPED sign-windows (SignPath not configured) does not skip the release too. The
+    # gate must have passed, and sign-windows must not have FAILED — a configured signing that fails
+    # must stop the release rather than ship an installer claiming a signature it does not have.
+    needs: [gate, sign-windows]
+    if: >-
+      ${{ always()
+      && needs.gate.result == 'success'
+      && needs.sign-windows.result != 'failure'
+      && needs.sign-windows.result != 'cancelled' }}
     runs-on: ubuntu-22.04
-    # Scoped to this job, not the workflow. The gate above inherits none of it.
+    # Scoped to this job, not the workflow. The gate above inherits none of it. NO third-party action
+    # runs here (packaging.test.ts enforces that), which is why signing is the separate job above.
     permissions:
       contents: write
       # Both required by attest-build-provenance: the OIDC token it signs with, and the store it
@@ -59,12 +131,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # `merge-multiple` flattens installer-*, sourcemaps-* and sbom into one directory, which is what
-      # a single checksum file over the whole release wants.
+      # EXPLICIT per-artifact downloads, not a blanket `merge-multiple`. The Windows installers come
+      # from `sign-windows` when it signed them, and from the gate's unsigned artifact when SignPath is
+      # not configured (that job skipped). A blanket download cannot express that choice, and would let
+      # the unsigned and signed exes — identically named — collide.
+      - uses: actions/download-artifact@v4
+        with: { name: installer-ubuntu-22.04, path: assets, merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { name: installer-macos-14, path: assets, merge-multiple: true }
       - uses: actions/download-artifact@v4
         with:
+          name: ${{ needs.sign-windows.result == 'success' && 'installer-windows-signed' || 'installer-windows-latest' }}
           path: assets
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with: { pattern: sourcemaps-*, path: assets, merge-multiple: true }
+      - uses: actions/download-artifact@v4
+        with: { name: sbom, path: assets, merge-multiple: true }
+
+      - name: Windows signing status
+        run: |
+          if [ "${{ needs.sign-windows.result }}" = "success" ]; then
+            echo "Windows installers: signed via SignPath."
+          else
+            echo "::warning::Windows installers are UNSIGNED (sign-windows was ${{ needs.sign-windows.result }}). Set the SIGNPATH_* variables to sign them."
+          fi
 
       - name: Refuse a tag that is not a version
         run: |
@@ -159,14 +250,23 @@ jobs:
       - name: Create or refresh the draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNPATH_ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
         run: |
+          # The Windows line reflects the actual state: signed once SignPath is configured, unsigned
+          # until then. Kept out of the quoted heredoc so its markdown and quotes stay literal.
+          if [ -n "$SIGNPATH_ORG" ]; then
+            WIN_NOTE='**Windows:** the installer is Authenticode-signed (via SignPath). Windows SmartScreen may still show "Windows protected your PC" until the signature earns download reputation — click **More info → Run anyway**; it stops as reputation builds.'
+          else
+            WIN_NOTE='**Windows:** the installer is not code-signed yet, so SmartScreen shows "Windows protected your PC" — click **More info → Run anyway**.'
+          fi
           cat > notes.md <<'BODY'
           ## Install
 
-          Read **Installing a build** in the README first. These installers are **not code-signed** on
-          any platform: Windows will show a SmartScreen prompt whose "Run anyway" is hidden behind
-          "More info", and macOS will refuse the app until you allow it in System Settings → Privacy &
-          Security.
+          Read **Installing a build** in the README first.
+
+          __WIN_NOTE__
+
+          **macOS:** the app is not yet notarised, so macOS refuses the first launch — allow it in **System Settings → Privacy & Security → Open Anyway**.
 
           Verify what you downloaded against `SHA256SUMS.txt`:
 
@@ -191,6 +291,10 @@ jobs:
             original file, so the filename and function in a resolved frame are exact and the line
             number is approximate — `scripts/resolve-log.mjs` explains this at length.
           BODY
+          # Inject the platform-accurate Windows line. Bash replacement, so no sed metacharacter
+          # escaping of the note text is needed.
+          tmp="$(cat notes.md)"
+          printf '%s\n' "${tmp/__WIN_NOTE__/$WIN_NOTE}" > notes.md
           # IDEMPOTENT, because re-cutting the same tag must not fail on "release already exists". An
           # existing draft is refreshed in place — its assets replaced with this run's — rather than
           # deleted, so a release a human has already started editing keeps its notes and its state.

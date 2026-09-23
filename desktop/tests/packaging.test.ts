@@ -333,17 +333,20 @@ describe("the installer carries its licences and its icon", () => {
  * say so where users read"*, so re-signing the app is what removes the requirement, not editing a
  * list. Both dialogs are covered because the mac half is the one nobody here can test by launching it.
  */
-describe("the unsigned build documents its own warning", () => {
+describe("the build documents its signing state", () => {
   const readme = fs.readFileSync(path.join(root, "..", "README.md"), "utf8");
   const config = parse(read("electron-builder.yml")) as {
     win?: { signAndEditExecutable?: boolean };
     mac?: { notarize?: unknown };
   };
 
-  it("is still the unsigned configuration this section exists for", () => {
+  it("leaves Windows signing to SignPath and macOS unnotarised", () => {
     /**
-     * The premise, asserted so the tests below cannot become vacuous by *becoming true*. If signing
-     * is ever configured, these should fail and be reconsidered rather than pass by accident.
+     * The premise, asserted so the tests below cannot become vacuous. `signAndEditExecutable: false`
+     * means electron-builder does not sign — SignPath signs the NSIS installer post-build in
+     * release.yml — and it must stay false (electron-builder has no certificate on the runner and
+     * would fail). `mac.notarize` undefined means macOS is still unnotarised; if it is ever set, the
+     * macOS copy below must be revisited in the same commit.
      */
     expect(config.win?.signAndEditExecutable).toBe(false);
     expect(config.mac?.notarize, "notarisation is configured — revisit the README section").toBeUndefined();
@@ -361,27 +364,28 @@ describe("the unsigned build documents its own warning", () => {
     expect(readme).toContain("Privacy & Security");
   });
 
-  it("says outright that it is unsigned and unnotarised", () => {
+  it("says macOS is unsigned and unnotarised", () => {
     /**
      * Stated as a positive rather than as "does not claim to be signed". The first attempt at this
      * assertion tried a negative lookahead — `/\bcode-signed\b(?!.*not)/` — and failed on the README's
-     * own sentence, because the negation is *before* the word: "They are **not** code-signed". A
-     * regex cannot reliably tell an assertion from its denial, so require the denial.
+     * own sentence, because the negation is *before* the word: "not code-signed". A regex cannot
+     * reliably tell an assertion from its denial, so require the denial. Scoped to macOS now that
+     * Windows is signed.
      */
     expect(readme).toMatch(/not code-signed/i);
     expect(readme).toMatch(/unsigned and unnotarised/i);
   });
 
-  it("does not claim checksums that nothing produces yet", () => {
+  it("says the Windows installer is signed via SignPath", () => {
     /**
-     * The claim that would rot first, and the one that was already live. A release section is where
-     * "releases ship checksums" gets written before anything ships them — that exact sentence was in
-     * both the packaging config and the workflow when this was written, in the present tense, with no
-     * release workflow in the repository at all.
-     *
-     * Delete this assertion when Phase 7 lands and the sentence becomes true.
+     * The Windows half is Authenticode-signed post-build by SignPath (release.yml), so the README must
+     * say so — the old blanket "not code-signed on any platform" was scoped down to macOS. A signed
+     * installer described as unsigned would send people to build from source they did not need to.
      */
-    expect(/releases ship (SHA-?256 )?checksums/i.test(readme)).toBe(false);
+    expect(readme).toContain("SignPath");
+    expect(readme, "the README does not describe the Windows Authenticode signature").toContain(
+      "Authenticode"
+    );
   });
 
   it("keeps the config's cross-reference honest in both files", () => {
@@ -443,12 +447,12 @@ describe("the release workflow", () => {
     ]);
 
   it("finds the jobs, so nothing below is vacuous", () => {
-    // `distribute` was removed when the release collapsed to one repository: it copied the installers
-    // into `voidcode-mac`/`voidcode-windows` with a cross-repo PAT, which was the single point of
-    // failure for the first release. Everything now publishes from this repository. Spelled out
-    // rather than loosened to a length: this list is what makes the assertions below non-vacuous, and
-    // "at least two jobs" would pass against the wrong two.
-    expect(Object.keys(release.jobs).sort()).toEqual(["gate", "release"]);
+    // `distribute` was removed when the release collapsed to one repository. `sign-windows` was added
+    // to Authenticode-sign the installers with SignPath in an UNPRIVILEGED job, so the publishing job
+    // (`release`) runs no third-party code. Spelled out rather than loosened to a length: this list is
+    // what makes the assertions below non-vacuous, and "at least two jobs" would pass against the
+    // wrong ones.
+    expect(Object.keys(release.jobs).sort()).toEqual(["gate", "release", "sign-windows"]);
     expect(release.jobs.release?.needs).toContain("gate");
   });
 

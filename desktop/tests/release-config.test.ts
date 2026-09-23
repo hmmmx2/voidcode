@@ -400,3 +400,78 @@ describe("the release publishes the installers the download page links", () => {
     expect(Object.keys(release.jobs)).toContain("release");
   });
 });
+
+describe("Windows installers are code-signed via SignPath before release", () => {
+  /**
+   * The downloaded NSIS installers trigger SmartScreen while unsigned. A dedicated, UNPRIVILEGED
+   * `sign-windows` job signs them with SignPath (free for open source) and re-uploads them as
+   * `installer-windows-signed`; the `release` job downloads THAT instead of the unsigned artifact, so
+   * the stable names, `SHA256SUMS.txt` and the SLSA attestation all cover the SIGNED bytes. Signing is
+   * gated on `vars.SIGNPATH_ORGANIZATION_ID`, and `release` tolerates a skipped signing job, so landing
+   * this cannot break a release. This block pins that shape.
+   */
+  const release = parse(readRepo(".github/workflows/release.yml")) as {
+    jobs: Record<
+      string,
+      { if?: string; needs?: string | string[]; permissions?: Record<string, string>; steps: Step[] }
+    >;
+  };
+  function job(name: string) {
+    const found = release.jobs[name];
+    if (found === undefined) throw new Error(`release.yml has no \`${name}\` job`);
+    return found;
+  }
+
+  it("signs in a dedicated job that uses the SignPath action", () => {
+    const signs = job("sign-windows").steps.some((s) =>
+      String(s.uses ?? "").startsWith("signpath/github-action-submit-signing-request")
+    );
+    expect(signs, "the sign-windows job does not run the SignPath action").toBe(true);
+  });
+
+  it("keeps the third-party signing action OUT of the job that can publish", () => {
+    /*
+     * The security boundary. `release` holds `contents: write` and an OIDC token, so it must run only
+     * first-party actions — SignPath's action therefore lives in `sign-windows`, which holds no write.
+     * This is the same property packaging.test.ts asserts from the other direction.
+     */
+    for (const step of job("release").steps) {
+      expect(String(step.uses ?? ""), "a third-party action is in the publishing job").not.toContain(
+        "signpath"
+      );
+    }
+    expect(job("sign-windows").permissions?.contents, "the signing job can publish").not.toBe(
+      "write"
+    );
+  });
+
+  it("gates signing on the SignPath org variable, so it is a no-op until configured", () => {
+    /*
+     * The whole job is conditional on `vars.SIGNPATH_ORGANIZATION_ID`; otherwise a release cut before
+     * SignPath is set up would fail instead of shipping unsigned.
+     */
+    expect(String(job("sign-windows").if ?? ""), "sign-windows is not gated").toContain(
+      "SIGNPATH_ORGANIZATION_ID"
+    );
+  });
+
+  it("release waits for signing, tolerates its skip, and ships the signed artifact", () => {
+    const rel = job("release");
+    const needs = Array.isArray(rel.needs) ? rel.needs : [rel.needs];
+    expect(needs, "release does not depend on sign-windows").toContain("sign-windows");
+    // Tolerates a skipped signing job (SignPath not configured) so the release still runs.
+    expect(String(rel.if ?? ""), "release does not tolerate a skipped sign-windows").toMatch(
+      /always\(\)/
+    );
+    expect(String(rel.if ?? "")).toContain("sign-windows");
+    // Downloads the SIGNED windows artifact when signing succeeded, not the unsigned one.
+    expect(
+      readRepo(".github/workflows/release.yml"),
+      "release never downloads the signed Windows artifact"
+    ).toContain("installer-windows-signed");
+  });
+
+  it("gives the signing job actions:read, which the SignPath action needs", () => {
+    expect(job("sign-windows").permissions?.actions).toBe("read");
+  });
+});

@@ -198,31 +198,32 @@ Recorded so the diff against either source repo is explainable:
 
 ## Installing a build, and the warning you will get
 
-`npm run package` produces installers in `desktop/release/`. **They are not code-signed**, on any
-platform, and that is a deliberate trade rather than an oversight — a Windows certificate is an annual
-fee and notarisation needs a paid Apple developer account. The consequence is a scary dialog on first
-run, so here is what it says and what to do about it.
+`npm run package` produces installers in `desktop/release/`, and every release attaches them alongside a
+`SHA256SUMS.txt` you can verify against. What each platform does on first run differs, so here is what
+you will see and what to do about it.
 
-**Windows.** `VoidCode-0.1.0-win-x64.exe` triggers SmartScreen: *"Windows protected your PC — Microsoft
-Defender SmartScreen prevented an unrecognised app from starting."* There is no **Run anyway** button
-visible; it is behind **More info**. This is reputation, not detection — SmartScreen says the same thing
-about every unsigned installer nobody has downloaded yet, and signing would silence it without making
-the file any different. If you would rather not click through it, build from source with the commands
-above.
+**Windows.** The installer is **code-signed** via [SignPath](https://signpath.io) (free for open-source
+projects), so it carries a genuine Authenticode signature. SmartScreen is reputation-based, not
+detection: until a freshly-issued signature has been downloaded enough times, Windows may still show
+*"Windows protected your PC — Microsoft Defender SmartScreen prevented an unrecognised app from
+starting,"* with the **Run anyway** button hidden behind **More info**. This fades as the signed
+installer earns download reputation; it is not a sign that anything is wrong with the file.
 
-**macOS.** The `.dmg` is unsigned and unnotarised, so Gatekeeper refuses it: *"VoidCode cannot be opened
-because Apple cannot check it for malicious software."* On macOS 15 and later the old Control-click →
-**Open** shortcut no longer clears this — the documented path is **System Settings → Privacy & Security**,
-where an **Open Anyway** button appears after the first refused launch. Two notes on honesty: this is
-Apple's documented behaviour rather than something we have observed, because nobody here has a Mac to
-test it on; and `hardenedRuntime` is on in `electron-builder.yml` while notarisation is not, which is
-the truthful configuration rather than a claim to something we do not have.
+**macOS.** The `.dmg` is **not code-signed** with an Apple identity — it is **unsigned and unnotarised**
+(the build is ad-hoc signed only, which is what lets Apple silicon launch it at all). Gatekeeper
+therefore refuses the first launch: *"VoidCode cannot be opened because Apple cannot check it for
+malicious software."* On macOS 15 and later the old Control-click → **Open** shortcut no longer clears
+this — the documented path is **System Settings → Privacy & Security**, where an **Open Anyway** button
+appears after the first refused launch. This is Apple's documented behaviour rather than something we
+have observed, because nobody here has a Mac to test it on. Notarisation needs a paid Apple Developer
+account and is a planned follow-up; `hardenedRuntime` is on in `electron-builder.yml` while notarisation
+is not, which is the truthful configuration rather than a claim to something we do not have.
 
 **Linux.** No equivalent prompt. The AppImage needs `chmod +x` before it will run; the `.deb` installs
 with `sudo apt install ./<the file>` — the leading `./` matters, or apt reads the name as a package to
 fetch from a repository.
 
-**What none of this gives you.** An unsigned installer means you cannot verify who built the file from
-the file itself. Checksums are the usual substitute and there is no release to publish them with yet, so
-the only thing that establishes provenance today is building it yourself. SignPath is free for
-open-source projects and is the intended fix for the Windows half.
+**Verifying what you downloaded.** Every release ships a `SHA256SUMS.txt` covering all its files. Check
+your download against it before installing — `sha256sum --check --ignore-missing SHA256SUMS.txt` on
+Linux and macOS, or `Get-FileHash <file> -Algorithm SHA256` on Windows — and on Windows you can also
+confirm the signature with `Get-AuthenticodeSignature <file>` (it reports `Valid` for a signed build).
