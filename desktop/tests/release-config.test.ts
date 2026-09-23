@@ -259,12 +259,17 @@ describe("one workflow owns a version tag", () => {
   });
 });
 
-describe("the installers reach the two repositories that hand them out", () => {
+describe("the release publishes the installers the download page links", () => {
   /**
-   * `release.yml`'s `distribute` job copies the macOS and Windows installers into `voidcode-mac`
-   * and `voidcode-windows` — repositories that hold no source, so that downloading VoidCode is one
-   * page with one file on it. Five properties of that job are load-bearing, and each has a way of
-   * being removed that leaves the workflow syntactically fine and the outcome wrong.
+   * ONE REPOSITORY NOW. The macOS and Windows installers are published from THIS repository's
+   * release, under version-less names `voidcode-web` links directly. The `distribute` job that copied
+   * them into `voidcode-mac`/`voidcode-windows` was removed: it needed a fine-grained cross-repo PAT
+   * (`DIST_RELEASE_TOKEN`), and `github.token` cannot write to another repository at all, so the
+   * whole release turned on one secret being present and correctly scoped — and it was not, so
+   * nothing ever reached the download page. Collapsing to one repository removed that dependency.
+   *
+   * The properties below are what keep the download page working, and each has a way of being removed
+   * that leaves the workflow syntactically fine and the outcome wrong.
    */
   const release = parse(readRepo(".github/workflows/release.yml")) as {
     on?: Record<string, unknown>;
@@ -276,124 +281,42 @@ describe("the installers reach the two repositories that hand them out", () => {
    * sentence saying so rather than a `TypeError` from the first property access.
    */
   function job() {
-    const found = release.jobs.distribute;
-    if (found === undefined) throw new Error("release.yml has no `distribute` job");
+    const found = release.jobs.release;
+    if (found === undefined) throw new Error("release.yml has no `release` job");
     return found;
   }
   const script = (name: string): string =>
     String(job().steps.find((step) => step.name === name)?.run ?? "");
-  const platforms = ["macOS", "Windows"] as const;
 
-  it("exists at all, so the rest of this block is not vacuous", () => {
-    expect(() => job(), "release.yml has no `distribute` job").not.toThrow();
-    expect(job().steps.length).toBeGreaterThan(4);
-    for (const name of platforms) expect(script(name)).toContain("gh release create");
-  });
-
-  it("cannot publish before the checksums exist", () => {
+  it("has no distribute job and no cross-repo token, because that was the failure removed", () => {
     /*
-     * `SHA256SUMS.txt` is written by the `release` job, and each distribution repository's
-     * `verify-release.yml` checks its installers against it. Run in parallel, this job would
-     * publish installers beside a checksums file that had not been written yet — or an earlier
-     * one, which is worse, because it verifies and is wrong.
+     * The whole point of the collapse: nothing in this workflow writes to another repository, so
+     * there is no `DIST_RELEASE_TOKEN` that must be present, scoped and correct before a release can
+     * finish. Reintroducing either is reintroducing the single point of failure.
      */
-    const needs = Array.isArray(job().needs) ? job().needs : [job().needs];
-    expect(needs, "`distribute` does not wait for the release job").toContain("release");
-  });
-
-  it("uses the scoped token, not this repository's", () => {
-    /*
-     * `github.token` cannot write to another repository at all, so swapping it in would not be a
-     * security downgrade — it would be a job that fails at the last step of a release. The real
-     * requirement is the other half: a FINE-GRAINED token scoped to exactly two repositories,
-     * rather than a classic PAT with `repo`, which grants write to everything the account can reach
-     * from a job that needs two.
-     */
-    for (const name of platforms) {
-      const step = job().steps.find((s) => s.name === name);
-      const token = String(step?.env?.GH_TOKEN ?? "");
-      expect(token, `${name} publishes with the wrong token`).toContain("secrets.DIST_RELEASE_TOKEN");
-      expect(token, `${name} publishes with github.token, which cannot write elsewhere`).not.toContain(
-        "github.token"
-      );
-    }
-
-    // And the job refuses to start without it, rather than failing after the main release is made.
-    expect(script("Refuse to run without the scoped token")).toContain("DIST_RELEASE_TOKEN");
-    expect(job().steps[0]?.name).toBe("Refuse to run without the scoped token");
-  });
-
-  it("does not read the draft release it just made, which it has no permission to see", () => {
-    /*
-     * THIS JOB COULD NOT HAVE WORKED, and nothing here noticed until the permissions and the
-     * `--draft` flag were read together.
-     *
-     * It fetched the release's assets with `gh release download "$TAG"` while holding
-     * `contents: read`. GitHub shows DRAFT releases only to tokens with push access, and the
-     * release above is created with `--draft` deliberately — so the first real tag would have
-     * failed here with "release not found", which reads as "the release was never created" rather
-     * than "this token cannot see drafts". A whole release, at the last step, on a message pointing
-     * at the wrong thing.
-     *
-     * The fix was not `contents: write`. This job writes to two OTHER repositories and its own
-     * comment says it must hold nothing here — so instead it takes the run's artifacts, which is
-     * where the installers came from in the first place, and `release` uploads the checksums file
-     * it computes so that it is an artifact too.
-     *
-     * Both halves are asserted, because either alone leaves it broken: no `gh release download` in
-     * this job, and a `checksums` artifact for it to find.
-     */
-    const readsTheRelease = job().steps.some((step) =>
-      String(step.run ?? "").includes("gh release download")
-    );
+    expect(Object.keys(release.jobs), "the distribute job is back").not.toContain("distribute");
+    // The PARSED jobs, not the raw file: YAML comments are stripped on parse, so the paragraph above
+    // this workflow explaining why the token was removed cannot trip a guard against the token being
+    // USED. Scanning the source text would fail on the word in its own rationale — the exact trap
+    // this repo has hit before.
     expect(
-      readsTheRelease,
-      "`distribute` reads the draft release, which its `contents: read` token cannot see"
-    ).toBe(false);
-
-    const downloads = job().steps.some((step) =>
-      String(step.uses ?? "").startsWith("actions/download-artifact")
-    );
-    expect(downloads, "`distribute` does not download the run's artifacts, so it has no installers").toBe(
-      true
-    );
-
-    const releaseJob = release.jobs.release;
-    if (releaseJob === undefined) throw new Error("release.yml has no `release` job");
-    const uploads = releaseJob.steps.filter((step) =>
-      String(step.uses ?? "").startsWith("actions/upload-artifact")
-    );
-    expect(
-      uploads.some((step) => String(step.with?.path ?? "").includes("SHA256SUMS.txt")),
-      "`release` does not upload SHA256SUMS.txt as an artifact, so `distribute` cannot find it"
-    ).toBe(true);
-
-    // And the permission it was reading the draft with is still deliberately narrow, because
-    // widening it would make the old approach work and this test pass for the wrong reason.
-    expect(job().permissions?.contents, "`distribute` now holds write on this repository").toBe("read");
+      JSON.stringify(release.jobs),
+      "a cross-repo token is back in the release workflow"
+    ).not.toContain("DIST_RELEASE_TOKEN");
   });
 
   it("publishes a version-less copy of every installer, under the names the website links", () => {
     /*
-     * THE DOWNLOAD PAGE CANNOT READ THE API AND MUST STILL OFFER A FILE.
+     * `voidcode-web` links `releases/latest/download/<name>`, a redirect with no API limit, which
+     * needs a name that does not change between releases — and `artifactName` carries the version. So
+     * the release copies each installer to a fixed name. These four strings are a CONTRACT with that
+     * page's `stableName` fields and `scripts/resolve-release.mjs`'s `STABLE`.
      *
-     * `voidcode-web`'s DownloadSection reads `api.github.com` from the VISITOR'S browser to
-     * discover asset names, and unauthenticated requests there are capped at 60 an hour PER IP —
-     * so one office or campus NAT exhausts it for everyone behind it and the page said
-     * "No download yet". `releases/latest/download/<name>` is a redirect with no such limit, but
-     * it needs a name that does not change between releases, and `artifactName` carries the
-     * version.
-     *
-     * So `distribute` copies each artefact to a fixed name. These four strings are a CONTRACT with
-     * that page's `stableName` fields.
-     *
-     * WHAT THIS TEST CAN AND CANNOT DO, stated because the difference matters: it pins this side,
-     * so the workflow cannot be renamed without the change being deliberate. It CANNOT see the
-     * other repository, so the two lists are kept in step by a person. That is exactly the shape
-     * this repo warns about elsewhere — a pair that agrees with itself is not a pair that does
-     * something — and the honest remedy if these ever change is a committed contract file, the way
-     * `contracts/credit-packs.json` and `contracts/demo-snippet.json` already work. Four strings
-     * written once did not seem to earn that; a fifth would.
+     * WHAT THIS TEST CAN AND CANNOT DO: it pins THIS side, so the workflow cannot be renamed without
+     * the change being deliberate. It CANNOT see the other repository, so the two lists are kept in
+     * step by a person — the same shape this repo warns about elsewhere, and the honest remedy if
+     * these ever change is a committed contract file the way `contracts/credit-packs.json` already
+     * works. Four strings written once did not seem to earn that; a fifth would.
      */
     const copy = script("Copy each installer to a version-less name");
     expect(copy, "no step copies the installers to stable names").toContain("cp ");
@@ -408,61 +331,72 @@ describe("the installers reach the two repositories that hand them out", () => {
       expect(copy, `${stable} is not the name published`).toContain(stable);
     }
 
-    // And it refuses rather than publishing a name with no file behind it, which would be a
-    // button on the website that 404s.
+    // And it refuses rather than publishing a name with no file behind it, which would be a button on
+    // the website that 404s. `set -euo pipefail` plus the per-pattern count guard is that refusal.
     expect(copy, "a missing artefact does not stop the copy").toContain("exit 1");
-
-    // The copies must be attached, not just made: both publishes glob the extension.
-    for (const [name, ext] of [["macOS", "dmg"], ["Windows", "exe"]] as const) {
-      expect(script(name), `${name} does not attach *.${ext}`).toContain(`*.${ext}`);
-    }
   });
 
-  it("publishes both as drafts", () => {
-    // The download page reads `releases/latest`, which excludes drafts, so a human publishing is
-    // what makes a build visible to anyone. Dropping this hands out an unreviewed build.
-    for (const name of platforms) {
-      expect(script(name), `${name} does not pass --draft`).toMatch(/--draft/);
-    }
-  });
-
-  it("counts the installers before copying them, and the count matches what is built", () => {
+  it("names the stable copies before the checksums are computed, so the checksums cover them", () => {
     /*
-     * `gh release create <tag> *.dmg` with no matching file creates an EMPTY RELEASE and exits 0.
-     * The only symptom is a visitor finding a release page with nothing on it.
-     *
-     * The expected counts are checked against `electron-builder.yml` rather than trusted, so adding
-     * or removing an architecture fails here instead of silently shipping one fewer installer than
-     * was built.
+     * A visitor downloads `VoidCode-macOS-AppleSilicon.dmg` and verifies it against SHA256SUMS.txt.
+     * If the copy ran AFTER the checksums step, that fixed name would not be listed, and the verify
+     * command the download page prints would find no entry for the file the person actually has.
      */
-    const check = script("Check the installers are actually here");
-    expect(check, "nothing counts the installers before the copy").toContain("exit 1");
+    const names = job().steps.map((step) => step.name);
+    const copyAt = names.indexOf("Copy each installer to a version-less name");
+    const sumsAt = names.indexOf("Checksums");
+    expect(copyAt, "no copy step").toBeGreaterThanOrEqual(0);
+    expect(sumsAt, "no checksums step").toBeGreaterThanOrEqual(0);
+    expect(
+      copyAt,
+      "the version-less names are created after the checksums, so they are unlisted"
+    ).toBeLessThan(sumsAt);
+  });
 
-    const builder = parse(readRepo("desktop/electron-builder.yml")) as {
-      mac: { target: { target: string; arch: string[] }[] };
-      win: { target: { target: string; arch: string[] }[] };
-    };
-    const built = (config: { target: { arch: string[] }[] }): number =>
-      config.target.reduce((n, t) => n + t.arch.length, 0);
+  it("attaches every asset, and publishes as a draft", () => {
+    /*
+     * The create step globs `assets/*`, which holds the versioned installers, the stable copies, the
+     * SBOMs, the source maps and the checksums. `--draft` because the download page reads
+     * `releases/latest`, which excludes drafts, so a human clicking Publish is what makes a build
+     * visible. Dropping it hands out an unreviewed build.
+     */
+    const create = script("Create or refresh the draft release");
+    expect(create, "the release does not attach the run's assets").toContain("assets/*");
+    expect(create, "the release is not a draft").toMatch(/--draft/);
+  });
 
-    for (const [ext, count] of [
-      ["dmg", built(builder.mac)],
-      ["exe", built(builder.win)],
-    ] as const) {
-      expect(check, `the job does not expect ${count} .${ext} file(s), which is what the build makes`)
-        .toContain(`"${ext}:${count}"`);
-    }
+  it("is idempotent, so re-cutting a tag does not fail on an existing release", () => {
+    /*
+     * The first v0.1.0 run created a draft; a re-cut of the same tag must refresh it rather than fail
+     * on "release already exists". Without this, a re-run of a fixed pipeline dies at the last step
+     * with a message about a release that is, correctly, already there.
+     */
+    const create = script("Create or refresh the draft release");
+    expect(create, "the release step does not check whether the release already exists").toContain(
+      "gh release view"
+    );
+    expect(create, "an existing release is not refreshed").toContain("--clobber");
+  });
+
+  it("uses this repository's own token and waits for the gate", () => {
+    /*
+     * It publishes to THIS repository, so `github.token` with `contents: write` is exactly right and
+     * sufficient — there is no secret to configure and nothing to authorize. And it cannot run before
+     * the gate that built the assets it attaches.
+     */
+    const createStep = job().steps.find((s) => s.name === "Create or refresh the draft release");
+    expect(
+      String(createStep?.env?.GH_TOKEN ?? ""),
+      "the release publishes with something other than github.token"
+    ).toContain("github.token");
+    expect(job().permissions?.contents, "the release job cannot write releases").toBe("write");
+    const needs = Array.isArray(job().needs) ? job().needs : [job().needs];
+    expect(needs, "the release does not wait for the gate").toContain("gate");
   });
 
   it("stays in this workflow, because only one may own a `v*` tag", () => {
-    /*
-     * Asserted here as well as in the block above, from the other direction: that block checks no
-     * OTHER workflow claims `v*`, and this checks that `distribute` is inside the one that does.
-     * Moving it to a new workflow would be the natural refactor and would put two workflows in a
-     * race on one tag, which is how a release ends up half-published.
-     */
     expect(release.on).toHaveProperty("push");
     expect(JSON.stringify(release.on)).toContain("v*");
-    expect(Object.keys(release.jobs)).toContain("distribute");
+    expect(Object.keys(release.jobs)).toContain("release");
   });
 });

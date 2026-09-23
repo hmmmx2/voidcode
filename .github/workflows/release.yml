@@ -1,12 +1,19 @@
 name: release
 
-# ── NOTHING IN THIS FILE HAS EVER RUN ─────────────────────────────────────────────────────────────
+# ── ONE REPOSITORY, ONE RELEASE ───────────────────────────────────────────────────────────────────
 #
-# There is no git remote on this repository, so no workflow here has executed once — which is exactly
-# how the original CI bug survived review. That is stated at the top rather than buried, because it
-# changes how this should be read: the YAML is checked by `tests/packaging.test.ts` and the *substance*
-# of every step was rehearsed locally by hand (checksums computed, the archive extracted elsewhere, a
-# real stack from the packaged app resolved against it), but the orchestration is unproven.
+# This workflow runs the whole gate on a `v*` tag and publishes a single draft release on THIS
+# repository, carrying every installer — Linux, macOS and Windows — plus SBOMs, source maps and one
+# checksums file over all of it. The macOS and Windows installers are ALSO copied to version-less
+# names that `voidcode-web` links directly, so the download page needs no API call at view time.
+#
+# IT USED TO COPY THE INSTALLERS INTO TWO OTHER REPOSITORIES (`voidcode-mac`, `voidcode-windows`) in a
+# `distribute` job, which needed a fine-grained cross-repo PAT (`DIST_RELEASE_TOKEN`). That token was
+# the single point of failure for the first release: `github.token` cannot write to another
+# repository at all, so the whole release turned on one secret being present and correctly scoped —
+# and it was not, so nothing ever reached the download page. Collapsing to one repository removes that
+# dependency entirely. The download page reads this repository's PUBLIC releases, and there is nothing
+# left to authorize. The two installer repositories are now unused.
 #
 # Separate from `desktop.yml` for two concrete reasons rather than tidiness:
 #
@@ -70,6 +77,50 @@ jobs:
           fi
           echo "TAG=$TAG" >> "$GITHUB_ENV"
 
+      # ── A NAME THAT DOES NOT MOVE BETWEEN RELEASES ───────────────────────────────────────────────
+      #
+      # `artifactName` in electron-builder.yml carries the version, so every release renames every
+      # file. That is right for an archive and wrong for a download page: `voidcode-web` links
+      # `https://github.com/<repo>/releases/latest/download/<name>`, a redirect subject to no API
+      # limit — but it needs a name that will be the same next release. So each macOS and Windows
+      # installer is COPIED to a fixed name and both are published: the versioned one for anyone
+      # archiving a specific build, the fixed one for the page to link. `cp`, not `mv`, because losing
+      # the versioned name would make two downloaded releases indistinguishable.
+      #
+      # THE NAMES ARE A CONTRACT with `voidcode-web`'s `DownloadSection.tsx` (`stableName`) and its
+      # `scripts/resolve-release.mjs` (`STABLE`), which must match these exactly. A typo on any side is
+      # a download button that 404s, and nothing here would notice until a person clicked it.
+      #
+      # This runs BEFORE the checksums step below on purpose, so `SHA256SUMS.txt` covers the fixed
+      # names a visitor actually downloads, not only the versioned ones. It also refuses rather than
+      # publishing a stable name with no file behind it — the exact failure that is otherwise found by
+      # a visitor clicking a 404.
+      - name: Copy each installer to a version-less name
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          copy() {
+            pattern="$1"
+            stable="$2"
+            count=$(ls -1 $pattern 2>/dev/null | wc -l)
+            if [ "$count" -eq 0 ]; then
+              echo "::error::no file matched $pattern, so $stable cannot be published. The download"
+              echo "::error::page links that name directly and would 404."
+              exit 1
+            fi
+            if [ "$count" -ne 1 ]; then
+              echo "::error::$pattern matched $count files; one stable name cannot stand for several."
+              exit 1
+            fi
+            cp "$(ls -1 $pattern)" "$stable"
+            echo "  $(ls -1 $pattern) -> $stable"
+          }
+          copy '*-mac-arm64.dmg' 'VoidCode-macOS-AppleSilicon.dmg'
+          copy '*-mac-x64.dmg'   'VoidCode-macOS-Intel.dmg'
+          copy '*-win-x64.exe'   'VoidCode-Windows-x64-Setup.exe'
+          copy '*-win-arm64.exe' 'VoidCode-Windows-ARM64-Setup.exe'
+          ls -l
+
       # ── ONE CHECKSUM FILE, OVER EVERYTHING ATTACHED ──────────────────────────────────────────────
       #
       # The substitute for a code signature, and the only thing a user can currently check a download
@@ -84,21 +135,6 @@ jobs:
           find . -maxdepth 1 -type f -printf '%f\0' | sort -z | xargs -0 sha256sum > ../SHA256SUMS.txt
           mv ../SHA256SUMS.txt .
           cat SHA256SUMS.txt
-
-      # UPLOADED AS AN ARTIFACT, NOT ONLY ATTACHED TO THE RELEASE, and `distribute` is the reason.
-      # It used to fetch the release's assets with `gh release download`, holding `contents: read` —
-      # and GitHub shows draft releases only to tokens with PUSH access, so that download would have
-      # 404'd on the first real tag with "release not found", which reads as "the release was never
-      # created" rather than "this token cannot see drafts". The alternatives were to give that job
-      # `contents: write` on this repository — the one thing its comment says it must not have, since
-      # it writes to two OTHERS — or to stop depending on the draft being readable. This is the
-      # second. Every installer is already an artifact of this run; the checksums were the only file
-      # that was not.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: checksums
-          path: assets/SHA256SUMS.txt
-          if-no-files-found: error
 
       # Real SLSA provenance: a signed statement of which workflow, at which commit, produced these
       # bytes. `subject-checksums` reads the file above, so one call covers every asset in the release
@@ -118,8 +154,9 @@ jobs:
       #
       # `--draft` is the load-bearing flag. A human writes the notes and can delete a bad build before
       # anyone can download it. Packaging already runs under `--publish never`, so building and
-      # publishing stay separable at both ends.
-      - name: Create the draft release
+      # publishing stay separable at both ends. The download page reads `releases/latest`, which
+      # excludes drafts, so a human clicking Publish is what makes a build visible to anyone.
+      - name: Create or refresh the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -154,176 +191,16 @@ jobs:
             original file, so the filename and function in a resolved frame are exact and the line
             number is approximate — `scripts/resolve-log.mjs` explains this at length.
           BODY
-          gh release create "$TAG" \
-            --draft \
-            --title "VoidCode $TAG" \
-            --notes-file notes.md \
-            assets/*
-
-  # ── THE TWO DISTRIBUTION REPOSITORIES ──────────────────────────────────────────────────────────
-  #
-  # The installers a person downloads live in `voidcode-mac` and `voidcode-windows`, which hold no
-  # source and no history of this project — just a README saying which file to take and what the
-  # platform's own security prompt will say. The main release above keeps everything: Linux builds,
-  # SBOMs, source maps, and the checksums over all of it.
-  #
-  # IN THIS WORKFLOW RATHER THAN A NEW ONE, and that is a constraint rather than a preference.
-  # `release-config.test.ts` asserts that `release.yml` is the ONLY workflow triggered by a `v*` tag
-  # (containers are on `api-v*`). A second `v*` workflow would fail that test on day one, which is
-  # the test working: two workflows racing on one tag is how a release ends up half-published.
-  #
-  # `needs: release` is load-bearing. `SHA256SUMS.txt` is produced there, over every asset, and the
-  # distribution repositories' own `verify-release.yml` checks the installers against it. Running
-  # these in parallel would publish installers alongside a checksums file that had not been written
-  # yet — or worse, an earlier one.
-  distribute:
-    name: copy the installers to their own repositories
-    needs: release
-    runs-on: ubuntu-22.04
-    # NO `contents: write`. This job writes to OTHER repositories, which `github.token` cannot do at
-    # all; it needs no permission on this one beyond reading the release it just made.
-    permissions:
-      contents: read
-    steps:
-      - name: Refuse to run without the scoped token
-        env:
-          DIST_RELEASE_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
-        run: |
-          if [ -z "$DIST_RELEASE_TOKEN" ]; then
-            echo "::error::DIST_RELEASE_TOKEN is not set, so the installers cannot be copied to"
-            echo "::error::voidcode-mac and voidcode-windows. It must be a FINE-GRAINED token with"
-            echo "::error::Contents: Read and write, scoped to exactly those two repositories — not a"
-            echo "::error::classic PAT with 'repo', which grants write to every repository the account"
-            echo "::error::can reach, from a job that needs two."
-            exit 1
+          # IDEMPOTENT, because re-cutting the same tag must not fail on "release already exists". An
+          # existing draft is refreshed in place — its assets replaced with this run's — rather than
+          # deleted, so a release a human has already started editing keeps its notes and its state.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; refreshing its assets"
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" \
+              --draft \
+              --title "VoidCode $TAG" \
+              --notes-file notes.md \
+              assets/*
           fi
-
-      # The tag, resolved the same way the release job resolves it: a dispatch can name any ref.
-      - name: Resolve the tag
-        run: echo "TAG=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
-
-      # FROM THE RUN'S ARTIFACTS, NOT FROM THE RELEASE. `gh release download "$TAG"` stood here and
-      # could not have worked: the release above is a DRAFT, GitHub shows drafts only to tokens with
-      # push access, and this job holds `contents: read` on purpose. It would have failed the first
-      # real tag with "release not found".
-      #
-      # The same bytes either way — `release` attaches these very artifacts plus the checksums file
-      # it computes over them, and this job cannot start unless that succeeded. What is given up is
-      # small and worth naming: this no longer proves the assets are IN the release, only that the
-      # job which attached them exited 0.
-      - uses: actions/download-artifact@v4
-        with:
-          path: assets
-          merge-multiple: true
-
-      - name: What came down
-        working-directory: assets
-        run: ls -l
-
-      # ── COUNT BEFORE COPYING ──────────────────────────────────────────────────────────────────
-      #
-      # `gh release create <tag> *.dmg` with no matching file creates an EMPTY RELEASE and exits 0.
-      # The distribution repository would then publish a release page with nothing on it, and the
-      # only symptom is a visitor finding no download — discovered by them, not by us.
-      #
-      # The expected counts are two per platform because `electron-builder.yml` builds x64 and arm64
-      # for both. `tests/release-config.test.ts` holds these numbers to that file, so adding a third
-      # architecture fails there rather than silently shipping one fewer installer than was built.
-      - name: Check the installers are actually here
-        working-directory: assets
-        run: |
-          for pair in "dmg:2" "exe:2"; do
-            ext="${pair%%:*}"; want="${pair##*:}"
-            got=$(ls -1 *."$ext" 2>/dev/null | wc -l)
-            echo "$ext: $got present, $want expected"
-            if [ "$got" -ne "$want" ]; then
-              echo "::error::expected $want .$ext installer(s) in $TAG and found $got."
-              echo "::error::Copying them now would publish a release page with nothing on it."
-              exit 1
-            fi
-          done
-          test -f SHA256SUMS.txt || { echo "::error::no SHA256SUMS.txt to copy"; exit 1; }
-
-      # ── THE COPY ──────────────────────────────────────────────────────────────────────────────
-      #
-      # `--draft` on both, for the same reason the main release is a draft: the download page reads
-      # `releases/latest`, which excludes drafts, so a human publishing is what makes a build visible
-      # to anyone. A bad build can be deleted before it is ever handed out.
-      #
-      # `SHA256SUMS.txt` goes with each. It lists every asset of the main release, including files
-      # not copied here — which is why each repository's `verify-release.yml` filters to its own
-      # extension rather than running a plain `--check`.
-      # ── A NAME THAT DOES NOT MOVE BETWEEN RELEASES ────────────────────────────────────────────
-      #
-      # `artifactName` in electron-builder.yml carries the version, so every release renames every
-      # file. That is right for an archive and wrong for a download page: the page was reading
-      # `api.github.com` from the VISITOR'S browser to discover the current names, and
-      # unauthenticated requests there are capped at 60 an hour PER IP. One office or campus NAT
-      # exhausts it for everyone behind it, and the page then said "No download yet — GitHub is
-      # rate-limiting this network, so the file list could not be read". A true sentence with the
-      # wrong conclusion: the release existed and the visitor could not reach it.
-      #
-      # `https://github.com/<repo>/releases/latest/download/<name>` is a redirect rather than an API
-      # call and is subject to no such limit — but it needs a name that will be the same next
-      # release. So each artefact is COPIED to a fixed name and both are published: the versioned
-      # one for anyone archiving a specific build, the fixed one for the page to link.
-      #
-      # `cp`, not `mv`. Losing the versioned name would make two downloaded releases
-      # indistinguishable, which is what the version was in the name for.
-      #
-      # THE NAMES ARE A CONTRACT WITH `voidcode-web`'s `DownloadSection.tsx`, whose `stableName`
-      # fields must match these exactly. A typo on either side is a download button that 404s, and
-      # nothing in either repository would notice until a person clicked it.
-      - name: Copy each installer to a version-less name
-        working-directory: assets
-        run: |
-          set -euo pipefail
-          copy() {
-            pattern="$1"
-            stable="$2"
-            count=$(ls -1 $pattern 2>/dev/null | wc -l)
-            if [ "$count" -eq 0 ]; then
-              echo "::error::no file matched $pattern, so $stable cannot be published. The download"
-              echo "::error::page links that name directly and would 404."
-              exit 1
-            fi
-            if [ "$count" -ne 1 ]; then
-              echo "::error::$pattern matched $count files; one stable name cannot stand for several."
-              exit 1
-            fi
-            cp "$(ls -1 $pattern)" "$stable"
-            echo "  $(ls -1 $pattern) -> $stable"
-          }
-          copy '*-mac-arm64.dmg' 'VoidCode-macOS-AppleSilicon.dmg'
-          copy '*-mac-x64.dmg'   'VoidCode-macOS-Intel.dmg'
-          copy '*-win-x64.exe'   'VoidCode-Windows-x64-Setup.exe'
-          copy '*-win-arm64.exe' 'VoidCode-Windows-ARM64-Setup.exe'
-          ls -l
-
-      - name: macOS
-        env:
-          GH_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
-          REPO: ${{ vars.VOIDCODE_RELEASES_REPO_MAC }}
-        working-directory: assets
-        run: |
-          test -n "$REPO" || { echo "::error::VOIDCODE_RELEASES_REPO_MAC is not set"; exit 1; }
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            --draft \
-            --title "VoidCode $TAG" \
-            --notes "macOS installers for VoidCode $TAG. Verify against SHA256SUMS.txt — see the README." \
-            *.dmg SHA256SUMS.txt
-
-      - name: Windows
-        env:
-          GH_TOKEN: ${{ secrets.DIST_RELEASE_TOKEN }}
-          REPO: ${{ vars.VOIDCODE_RELEASES_REPO_WIN }}
-        working-directory: assets
-        run: |
-          test -n "$REPO" || { echo "::error::VOIDCODE_RELEASES_REPO_WIN is not set"; exit 1; }
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            --draft \
-            --title "VoidCode $TAG" \
-            --notes "Windows installers for VoidCode $TAG. Verify against SHA256SUMS.txt — see the README." \
-            *.exe SHA256SUMS.txt

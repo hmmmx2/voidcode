@@ -443,10 +443,12 @@ describe("the release workflow", () => {
     ]);
 
   it("finds the jobs, so nothing below is vacuous", () => {
-    // `distribute` joined these when the installers began being copied into their own
-    // repositories. Spelled out rather than loosened to a length: this list is what makes the
-    // assertions below non-vacuous, and "at least two jobs" would pass against the wrong two.
-    expect(Object.keys(release.jobs).sort()).toEqual(["distribute", "gate", "release"]);
+    // `distribute` was removed when the release collapsed to one repository: it copied the installers
+    // into `voidcode-mac`/`voidcode-windows` with a cross-repo PAT, which was the single point of
+    // failure for the first release. Everything now publishes from this repository. Spelled out
+    // rather than loosened to a length: this list is what makes the assertions below non-vacuous, and
+    // "at least two jobs" would pass against the wrong two.
+    expect(Object.keys(release.jobs).sort()).toEqual(["gate", "release"]);
     expect(release.jobs.release?.needs).toContain("gate");
   });
 
@@ -538,8 +540,10 @@ describe("the release workflow", () => {
   });
 
   it("creates a draft, not a release", () => {
-    // A human writes the notes and can delete a bad build before anyone can download it.
-    const run = releaseStep("Create the draft release");
+    // A human writes the notes and can delete a bad build before anyone can download it. The step is
+    // idempotent — it refreshes an existing draft rather than failing on a re-cut tag — so the
+    // create path lives in the `else` branch, and `--draft`/`assets/*` are asserted there.
+    const run = releaseStep("Create or refresh the draft release");
     expect(run).toMatch(/gh release create/);
     expect(run).toMatch(/--draft/);
     expect(run).toMatch(/assets\/\*/);

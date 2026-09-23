@@ -11,16 +11,15 @@ half — that the page offers exactly those files — belongs with the page, and
 names is the contract between them.
 
 WHY NOT A CONTRACT FILE LIKE THE PRICES AND THE LEGAL TEXT. Because the names are already published,
-in a place both sides can read: every release carries `SHA256SUMS.txt`, listing every asset by name.
-The distribution repositories' `verify-release.yml` checks the installers against it, and the
-website reads the release feed itself rather than a committed list. A fourth contract would add a
-copy without adding a reader.
+in a place both sides can read: every release carries `SHA256SUMS.txt`, listing every asset by name,
+and the website reads the release feed itself rather than a committed list. A fourth contract would
+add a copy without adding a reader.
 
-So this asserts the matrix is what the release notes, the distribution READMEs and the download page
-all assume: x64 and arm64, for both desktop platforms, as `.dmg` and `.exe`. Dropping an
-architecture fails here — and `desktop/tests/release-config.test.ts` separately holds the
-`distribute` job's expected file counts to the same table, so a build that produces three installers
-cannot publish a release claiming four.
+So this asserts the matrix is what the release notes and the download page assume: x64 and arm64, for
+both desktop platforms, as `.dmg` and `.exe`. Dropping an architecture fails here — and
+`desktop/tests/release-config.test.ts` separately requires the release job to copy exactly one file
+to each version-less name, so a build that produces three installers cannot publish a release that
+links four.
 """
 
 from __future__ import annotations
@@ -71,15 +70,15 @@ def test_each_expected_installer_is_built(pair: tuple[str, str, str]) -> None:
     """Named one at a time, so a failure says which platform lost an architecture."""
     assert pair in built_pairs(), (
         f"electron-builder does not build {pair[0]}-{pair[1]}.{pair[2]}. The download page offers "
-        "it, the distribution README names it, and `release.yml`'s distribute job counts on it."
+        "it, and `release.yml`'s release job copies it to a version-less name the page links."
     )
 
 
 def test_no_desktop_installer_is_built_that_nothing_hands_out() -> None:
     """The other direction, scoped to macOS and Windows.
 
-    Linux is built and deliberately not distributed through the two installer repositories: the
-    AppImage and `.deb` stay on this repository's own release. So this filters rather than comparing
+    Linux is built and deliberately not offered on the download page: the AppImage and `.deb` are
+    attached to the release but the page has no Linux panel. So this filters rather than comparing
     whole sets — and that filter is why the website's footer no longer claims Linux builds are on
     "the releases page".
     """
